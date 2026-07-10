@@ -1,0 +1,4 @@
+{
+  "prompt": "Summarize this customer support ticket into one sentence for triage.",
+  "request_class": "standard"
+}

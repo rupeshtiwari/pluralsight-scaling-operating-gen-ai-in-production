@@ -1,0 +1,12 @@
+# Scaling & Operating Gen AI in Production — pinned recording baseline.
+# Python 3.13 for recording stability (retest 3.14 only if all deps pass).
+fastapi==0.139.0
+uvicorn[standard]==0.50.1
+redis==8.0.1
+psycopg[binary]==3.3.4
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-prometheus==0.64b0
+prometheus-client==0.25.0
+pytest==9.1.1
+httpx==0.28.1
