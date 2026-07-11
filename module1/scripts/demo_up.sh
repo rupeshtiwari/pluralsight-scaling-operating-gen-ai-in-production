@@ -10,7 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 API_BASE="${API_BASE:-http://localhost:8000}"
 SESSION="genai-m1"
 LIME=$'\033[38;2;207;255;110m'; PINK=$'\033[38;2;255;22;117m'
-BLUE=$'\033[38;2;42;236;250m'; R=$'\033[0m'
+BLUE=$'\033[38;2;42;236;250m'; LGRN=$'\033[38;2;64;255;191m'; R=$'\033[0m'
 
 cd "$ROOT"
 
@@ -45,3 +45,9 @@ if command -v tmux >/dev/null 2>&1; then
 else
   echo "${BLUE}tmux not found — run the demo steps from ${ROOT} directly.${R}"
 fi
+
+echo
+echo "${LIME}✔ Ready.${R} Next:"
+echo "  ${BLUE}1.${R} Follow the steps in ${LGRN}module1/README.md${R} (run them from ${LGRN}${ROOT}${R})"
+echo "  ${BLUE}2.${R} Reset any time with ${LGRN}./scripts/module1-demo-reset.sh${R}"
+echo "  ${BLUE}3.${R} When finished, stop everything with ${LGRN}bash module1/scripts/demo_down.sh${R}"

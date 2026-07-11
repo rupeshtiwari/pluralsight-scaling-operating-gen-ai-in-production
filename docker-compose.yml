@@ -1,5 +1,12 @@
 # Local-first demo stack for Scaling & Operating Gen AI in Production.
 # Pinned to the recording baseline in the course Author Notes.
+#
+# A fixed project name means `docker compose` commands (including the Step 6
+# `docker compose exec postgres ...`) resolve to the SAME stack regardless of
+# which folder they are run from — so a student never hits "service postgres is
+# not running" just because of their working directory.
+name: genai-scaling
+
 services:
   postgres:
     image: postgres:18
