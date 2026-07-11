@@ -47,7 +47,7 @@ for every step.
 
 | Module | Focus | Demos | README |
 |--------|-------|-------|--------|
-| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | Adapter layer ✅ · weighted routing · payload routing · receipt validation | [module1/README.md](module1/README.md) |
+| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/README.md) ✅ · [weighted routing](module1/clip3.md) ✅ · payload routing · receipt validation | [Clip 2](module1/README.md) · [Clip 3](module1/clip3.md) |
 | 2 — Protecting and Observing GenAI Reliability | Resilience + observability (T2, T3) | Queues/rate limits · circuit breaker/fallback · traces/logs/metrics · incident diagnosis | _planned_ |
 | 3 — Operating LLMOps Change and Production Readiness | LLMOps + readiness (T4, T5) | Prompt versioning · model validation · canary · readiness audit | _planned_ |
 
@@ -174,7 +174,7 @@ All package and container versions are pinned in `requirements.txt` and
 | LO | Description | Module | Demo Proof Point |
 |----|-------------|--------|------------------|
 | EO1a | Dedicated AI service layer that decouples app logic from providers | 1 | Uniform adapter contract + provider-agnostic PostgreSQL receipt |
-| EO1b | Weighted load balancing across model tiers | 1 | Redis counters prove distribution across tiers _(planned)_ |
+| EO1b | Weighted load balancing across model tiers | 1 | ✅ Redis counters prove 50/30/20 distribution; validation confirms observed == configured weights |
 | EO1c | Payload-based routing to appropriate tiers | 1 | Route reason + complexity flag per request _(planned)_ |
 | EO1d | Weighted vs deterministic trade-offs | 1 | Override rules bypass weighted routing intentionally _(planned)_ |
 | EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | k6 spike, HTTP 429 receipt, circuit states, backoff timing _(planned)_ |
@@ -207,7 +207,12 @@ Endpoints available today (Module 1). More are added as later modules land.
 | `/providers/conditions` | GET | Active + supported provider condition matrix |
 | `/route` | POST | Route a request; returns the decision and writes a receipt |
 | `/receipts` | GET | Normalized request receipts |
-| `/admin/reset` | POST | Reset to a clean state (clear receipts, all conditions healthy) |
+| `/admin/reset` | POST | Reset to a clean state (clear receipts + counters, all conditions healthy) |
+| `/routing/policy` | GET | Weighted routing policy — per-tier weights |
+| `/route/batch` | POST | Route N requests under the weighted policy |
+| `/routing/last-batch` | GET | Individual decisions from the last batch |
+| `/routing/counters` | GET | Per-tier distribution counters (Redis) |
+| `/routing/validate` | GET | Observed distribution vs configured weights |
 
 ## Project Structure
 

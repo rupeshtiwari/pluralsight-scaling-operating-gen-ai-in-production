@@ -23,9 +23,14 @@ from app.providers.registry import (
     BASE_ADAPTERS,
     CONDITIONS,
     DEFAULT_MODEL,
+    WEIGHTED_POLICY_NAME,
+    WEIGHTED_WEIGHTS,
+    weighted_sequence,
 )
 from app.routing.router import route
-from app.schemas import RouteRequest
+from app.routing.weighted import ROUTE_REASON as WEIGHTED_ROUTE_REASON
+from app.routing.weighted import route_weighted
+from app.schemas import BatchRequest, RouteRequest
 
 
 @asynccontextmanager
@@ -108,8 +113,78 @@ def admin_reset() -> dict:
     """Bring the demo to a clean, repeatable state: no receipts, all healthy."""
     postgres.clear_receipts()
     redis_client.reset_conditions()
+    redis_client.reset_routing()
     return {"status": "reset", "receipts": postgres.count_receipts(),
             "conditions": redis_client.all_conditions()}
+
+
+# --- Weighted routing (Clip 3) --------------------------------------------
+
+@app.get("/routing/policy")
+def routing_policy() -> dict:
+    return {
+        "policy_name": WEIGHTED_POLICY_NAME,
+        "weights": WEIGHTED_WEIGHTS,
+        "sequence": weighted_sequence(),
+    }
+
+
+@app.post("/route/batch")
+def route_batch(body: BatchRequest) -> dict:
+    """Route `count` requests under the weighted policy; persist each receipt
+    and tally per-tier counters. Returns a run summary; samples live in Redis
+    for /routing/last-batch."""
+    samples = []
+    for _ in range(body.count):
+        idx = redis_client.next_seq()
+        response, receipt = route_weighted(RouteRequest(prompt=body.prompt), idx)
+        postgres.insert_receipt(receipt)
+        redis_client.incr_count(response.selected_model)
+        samples.append({
+            "request_id": response.request_id,
+            "selected_model": response.selected_model,
+            "provider_tier": response.provider_tier,
+            "latency_target_ms": response.latency_target_ms,
+            "cost_estimate_usd": response.cost_estimate_usd,
+        })
+    summary = {
+        "policy_name": WEIGHTED_POLICY_NAME,
+        "route_reason": WEIGHTED_ROUTE_REASON,
+        "count": body.count,
+        "samples": samples,
+    }
+    redis_client.set_last_batch(summary)
+    return {"policy_name": WEIGHTED_POLICY_NAME,
+            "route_reason": WEIGHTED_ROUTE_REASON, "count": body.count}
+
+
+@app.get("/routing/last-batch")
+def routing_last_batch(limit: int = 6) -> dict:
+    data = redis_client.get_last_batch()
+    if data.get("samples"):
+        data = {**data, "samples": data["samples"][:limit]}
+    return data
+
+
+@app.get("/routing/counters")
+def routing_counters() -> dict:
+    counts = redis_client.routing_counts()
+    return {"policy_name": WEIGHTED_POLICY_NAME,
+            "counters": counts, "total": sum(counts.values())}
+
+
+@app.get("/routing/validate")
+def routing_validate() -> dict:
+    counts = redis_client.routing_counts()
+    total = sum(counts.values())
+    tiers = {}
+    for model, pct in WEIGHTED_WEIGHTS.items():
+        expected = round(total * pct / 100)
+        observed = counts.get(model, 0)
+        tiers[model] = {"weight_pct": pct, "expected": expected,
+                        "observed": observed, "match": observed == expected}
+    return {"policy_name": WEIGHTED_POLICY_NAME, "total": total,
+            "all_match": all(t["match"] for t in tiers.values()), "tiers": tiers}
 
 
 @app.get("/receipts")

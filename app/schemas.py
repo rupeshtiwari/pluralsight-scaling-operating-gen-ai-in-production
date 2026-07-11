@@ -34,6 +34,14 @@ class RouteRequest(BaseModel):
     request_class: str = Field("standard", description="Caller-declared class")
 
 
+class BatchRequest(BaseModel):
+    count: int = Field(20, ge=1, le=200, description="How many requests to route")
+    prompt: str = Field(
+        "Summarize this customer support ticket into one sentence for triage.",
+        description="Prompt used for every request in the batch",
+    )
+
+
 class RouteResponse(BaseModel):
     request_id: str
     selected_model: str

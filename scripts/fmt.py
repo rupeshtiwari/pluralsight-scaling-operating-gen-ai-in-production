@@ -240,6 +240,105 @@ def fmt_receipt(d: Any) -> str:
     return "\n".join(out)
 
 
+# --- Clip 3 views (weighted routing) --------------------------------------
+
+def fmt_policy(d: dict) -> str:
+    out = [header(
+        "Load the weighted routing policy",
+        "Traffic is split across tiers by weight — cheaper for volume, premium "
+        "for the few requests that need it")]
+    out += star("policy_name", d.get("policy_name"))
+    out += sect("weight per tier")
+    for model, pct in d.get("weights", {}).items():
+        out += star(model, f"{pct}%")
+    return "\n".join(out)
+
+
+def fmt_batch(d: dict) -> str:
+    out = [header(
+        "Run a controlled traffic batch",
+        "One endpoint, many requests — the weighted policy decides each")]
+    out += star("policy_name", d.get("policy_name"))
+    out += star("route_reason", d.get("route_reason"))
+    out += star("requests routed", d.get("count"))
+    return "\n".join(out)
+
+
+def fmt_samples(d: dict) -> str:
+    out = [header(
+        "Inspect the individual routed decisions",
+        "The same endpoint selects different tiers, request by request")]
+    rows = d.get("samples", []) or []
+    out.append(f"    {BLUE}{'request':<16}{'model':<14}{'tier':<10}"
+               f"{'latency':<9}{'cost'}{RESET}")
+    out.append("")
+    for r in rows:
+        rid = str(r.get("request_id", ""))[:14]
+        lat = f"{r.get('latency_target_ms')}ms"
+        cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{rid:<16}{str(r.get('selected_model')):<14}"
+            f"{str(r.get('provider_tier')):<10}{lat:<9}{cost}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_counters(d: dict) -> str:
+    out = [header(
+        "Prove distribution across tiers with Redis counters",
+        "Redis tallies every pick — the spread is measured, not assumed")]
+    out += star("total requests", d.get("total"))
+    out += sect("distribution across tiers")
+    for model, n in d.get("counters", {}).items():
+        out += star(model, n)
+    return "\n".join(out)
+
+
+def fmt_receipts(d: Any) -> str:
+    # Accept a JSON array, the /receipts wrapper, or newline-separated objects
+    # (psql -tA multi-row output is normalized to a list before we get here).
+    if isinstance(d, dict) and "receipts" in d:
+        rows = d["receipts"]
+    elif isinstance(d, list):
+        rows = d
+    else:
+        rows = [d]
+    out = [header(
+        "Connect each model choice to cost and policy",
+        "Every tier lands in the same receipt columns — cost differs, the "
+        "policy is identical")]
+    out.append(f"    {BLUE}{'model':<14}{'tier':<10}{'cost':<12}{'policy'}{RESET}")
+    out.append("")
+    for r in rows:
+        if not r:
+            continue
+        cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{str(r.get('selected_model')):<14}"
+            f"{str(r.get('provider_tier')):<10}{cost:<12}{RESET}"
+            f"{LIME}{r.get('policy_name')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_validate(d: dict) -> str:
+    out = [header(
+        "Confirm the distribution matches the configured weights",
+        "Observed picks equal the configured weights — the balancing is "
+        "intentional and repeatable")]
+    out += star("total requests", d.get("total"))
+    allm = d.get("all_match")
+    out += star("all_match", allm, LIME if allm else PINK)
+    out += sect("weight  expected  observed  match   (per tier)")
+    for model, t in d.get("tiers", {}).items():
+        mark = f"{LIME}✓{RESET}" if t.get("match") else f"{PINK}✗{RESET}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{model:<14}{str(t.get('weight_pct'))+'%':<8}"
+            f"{str(t.get('expected')):<10}{str(t.get('observed')):<10}{RESET}{mark}")
+        out.append("")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -247,6 +346,12 @@ VIEWS = {
     "conditions": fmt_conditions,
     "route": fmt_route,
     "receipt": fmt_receipt,
+    "policy": fmt_policy,
+    "batch": fmt_batch,
+    "samples": fmt_samples,
+    "counters": fmt_counters,
+    "receipts": fmt_receipts,
+    "validate": fmt_validate,
 }
 
 
@@ -262,8 +367,15 @@ def main() -> None:
     try:
         data = json.loads(raw) if raw else {}
     except json.JSONDecodeError:
-        print(f"{PINK}fmt.py: input was not valid JSON:{RESET}\n{raw}")
-        sys.exit(1)
+        # psql -tA emits one JSON object per row; treat multiple lines as a list.
+        lines = [ln for ln in raw.splitlines() if ln.strip()]
+        try:
+            data = [json.loads(ln) for ln in lines]
+            if len(data) == 1:
+                data = data[0]
+        except json.JSONDecodeError:
+            print(f"{PINK}fmt.py: input was not valid JSON:{RESET}\n{raw}")
+            sys.exit(1)
     # Normalize trailing whitespace, then add breathing room before the shell
     # prompt so no view ends flush against it.
     body = VIEWS[args.type](data).rstrip("\n")

@@ -54,6 +54,39 @@ BASE_ADAPTERS: dict[str, BaseAdapter] = {
 # Baseline routing default for Clip 2 (weighted/payload routing arrive later).
 DEFAULT_MODEL = "balanced-std"
 
+# --- Weighted routing policy (Clip 3) -------------------------------------
+# Distribute traffic across tiers by percentage. The percentages sum to 100
+# and every weight is a multiple of 10, so a deterministic sequence of length
+# 10 reproduces the distribution exactly over any multiple of ten requests —
+# making the weighted balancing fully repeatable, not random.
+WEIGHTED_POLICY_NAME = "weighted"
+WEIGHTED_WEIGHTS: dict[str, int] = {
+    "econo-mini": 50,
+    "balanced-std": 30,
+    "premium-max": 20,
+}
+
+
+def weighted_sequence() -> list[str]:
+    """A deterministic length-10 pick order that reflects WEIGHTED_WEIGHTS AND
+    interleaves the tiers, so any short sample shows variety instead of five
+    identical picks in a row. Even-spread (largest-deficit) selection: at each
+    slot pick the tier furthest behind its target share.
+    """
+    total = sum(pct // 10 for pct in WEIGHTED_WEIGHTS.values())  # 10
+    picked = {m: 0 for m in WEIGHTED_WEIGHTS}
+    seq: list[str] = []
+    for _ in range(total):
+        n = len(seq) + 1
+        best, best_deficit = None, None
+        for model, pct in WEIGHTED_WEIGHTS.items():
+            deficit = (pct / 100.0) * n - picked[model]
+            if best is None or deficit > best_deficit + 1e-9:
+                best, best_deficit = model, deficit
+        seq.append(best)
+        picked[best] += 1
+    return seq
+
 # --- Supported deterministic conditions -----------------------------------
 # Each condition maps to the status string shown on screen plus the way it
 # bends the effective latency and quality so the simulation is repeatable.
