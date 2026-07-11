@@ -13,6 +13,14 @@ LIME=$'\033[38;2;207;255;110m'; PINK=$'\033[38;2;255;22;117m'
 BLUE=$'\033[38;2;42;236;250m'; R=$'\033[0m'
 
 cd "$ROOT"
+
+# Make sure the environment is ready first — this auto-starts Docker Desktop if
+# it is installed but not open, and stops with clear fix steps otherwise.
+if ! bash "$ROOT/scripts/ensure-ready.sh"; then
+  echo "${PINK}✗ environment not ready — fix the items above and re-run.${R}"
+  exit 1
+fi
+
 echo "${BLUE}Starting stack via Docker Compose ...${R}"
 docker compose up -d --build
 

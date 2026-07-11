@@ -80,10 +80,15 @@ pip install -r requirements.txt
 Start a module's stack, then run its steps from the runbook:
 
 ```bash
-bash module1/scripts/demo_up.sh     # starts FastAPI + Redis + PostgreSQL, waits healthy, opens tmux
+bash module1/scripts/demo_up.sh     # readiness check → starts FastAPI + Redis + PostgreSQL, waits healthy, opens tmux
 # ... run the Step 1–6 commands from module1/README.md ...
 bash module1/scripts/demo_down.sh   # tears the stack down
 ```
+
+`demo_up.sh` first runs `scripts/ensure-ready.sh`, which verifies every required
+tool and **auto-starts Docker Desktop** if it's installed but not open (waiting
+until the daemon is ready) — so you don't hit "Docker daemon not running" mid
+demo. You can also run that check on its own: `bash scripts/ensure-ready.sh`.
 
 Every demo command pipes JSON into `scripts/fmt.py`, which renders it in the
 Pluralsight brand palette so only what the narration reads is on screen:
@@ -224,6 +229,7 @@ Endpoints available today (Module 1). More are added as later modules land.
 │
 ├── scripts/
 │   ├── fmt.py                   Pluralsight-branded output formatter
+│   ├── ensure-ready.sh          readiness check (auto-starts Docker Desktop)
 │   └── module1-demo-reset.sh    clean-state reset for Module 1
 │
 ├── data/payloads/               request payloads for the demos
