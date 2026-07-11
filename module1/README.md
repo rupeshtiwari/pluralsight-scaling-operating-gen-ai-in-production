@@ -43,11 +43,24 @@ routing are proven later on this same adapter boundary.
 
 ## Prerequisites
 
+**Start the stack first.** This runs the environment readiness check
+(`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
+installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits
+until healthy:
+
+```bash
+bash module1/scripts/demo_up.sh
+```
+
+Wait for `✔ stack healthy`. It then leaves you with a clean, reset stack.
+
+Confirm the layers are up (Step 1 shows this on screen too):
+
 - Server running: `curl -s http://localhost:8000/health | python3 -m json.tool`
 - Redis reachable (live provider conditions)
 - PostgreSQL reachable (the `backend: postgres` receipt proof in Step 6)
 
-To start from a clean state:
+To return to a clean state at any time while the stack is up:
 
 ```bash
 ./scripts/module1-demo-reset.sh
