@@ -43,6 +43,24 @@ routing are proven later on this same adapter boundary.
 
 ## Prerequisites
 
+### Software this clip needs — do you have it?
+
+This clip uses **Docker Desktop** (with Compose), **curl**, **jq**, **python3**,
+**psql**, and **tmux**. Two commands cover every case:
+
+```bash
+bash scripts/ensure-ready.sh       # CHECK  — ✔ / ✗ for each tool, with a fix for anything missing
+bash environment-setup/setup.sh    # INSTALL — one step: installs everything the course uses, then the pinned deps
+```
+
+- **First time on this Mac?** Run the install step once. It installs Homebrew,
+  Docker Desktop, Python 3.13, tmux, jq, curl, and psql — then builds the Python
+  environment. When it prints `READY`, you have everything this clip needs.
+- **Already set up?** The check confirms you're good in seconds. (`demo_up.sh`
+  below runs it for you anyway, so you can skip straight to starting the stack.)
+
+### Start the stack
+
 **Start the stack first.** This runs the environment readiness check
 (`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
 installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits
@@ -64,6 +82,15 @@ To return to a clean state at any time while the stack is up:
 
 ```bash
 ./scripts/module1-demo-reset.sh
+```
+
+**If a step shows `None` everywhere, or `curl` says connection refused:** the API
+isn't running the current code. Bring it up fresh — the container mounts the
+source and reloads, so this always serves the latest:
+
+```bash
+bash module1/scripts/demo_up.sh          # or, if you changed dependencies:
+docker compose up -d --build
 ```
 
 ## Demo steps
