@@ -522,17 +522,16 @@ def fmt_mixed(d: dict) -> str:
 
 def fmt_mixed_samples(d: dict) -> str:
     out = [header(
-        "Inspect the individual mixed decisions",
+        "Inspect representative routing decisions",
         "Each request tagged with its kind, policy, model, and route reason")]
-    out.append(f"    {BLUE}{'request':<14}{'kind':<10}{'model':<13}"
+    out.append(f"    {BLUE}{'kind':<10}{'policy':<15}{'model':<13}"
                f"{'tier':<10}{'route_reason'}{RESET}")
     out.append("")
     for r in d.get("samples", []) or []:
-        rid = str(r.get("request_id", ""))[:12]
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{rid:<14}{str(r.get('kind')):<10}"
-            f"{str(r.get('selected_model')):<13}{str(r.get('provider_tier')):<10}"
-            f"{r.get('route_reason')}{RESET}")
+            f"  {PINK}★{RESET} {LGRN}{str(r.get('kind')):<10}"
+            f"{str(r.get('policy_name')):<15}{str(r.get('selected_model')):<13}"
+            f"{str(r.get('provider_tier')):<10}{r.get('route_reason')}{RESET}")
         out.append("")
     return "\n".join(out)
 
@@ -558,10 +557,10 @@ def fmt_mixed_receipts(d: Any) -> str:
     else:
         rows = [d]
     out = [header(
-        "Full per-request receipts in PostgreSQL",
-        "The operator field set: id, policy, provider, latency, tokens, cost, quality")]
-    out.append(f"    {BLUE}{'request':<14}{'policy':<15}{'tier':<10}{'latency':<8}"
-               f"{'tokens':<7}{'cost':<11}{'quality'}{RESET}")
+        "Durable routing receipts in PostgreSQL",
+        "The operator field set: id, policy, provider, latency target, tokens, cost, quality")]
+    out.append(f"    {BLUE}{'request':<13}{'policy':<14}{'tier':<9}"
+               f"{'latency target':<15}{'tokens':<7}{'cost':<10}{'qual'}{RESET}")
     out.append("")
     for r in rows:
         if not r:
@@ -571,25 +570,29 @@ def fmt_mixed_receipts(d: Any) -> str:
         cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
         qual = f"{float(r.get('quality_score', 0)):.2f}"
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{rid:<14}{str(r.get('policy_name')):<15}"
-            f"{str(r.get('provider_tier')):<10}{lat:<8}{str(r.get('total_tokens')):<7}"
-            f"{cost:<11}{qual}{RESET}")
+            f"  {PINK}★{RESET} {LGRN}{rid:<13}{str(r.get('policy_name')):<14}"
+            f"{str(r.get('provider_tier')):<9}{lat:<15}{str(r.get('total_tokens')):<7}"
+            f"{cost:<10}{qual}{RESET}")
         out.append("")
     return "\n".join(out)
 
 
 def fmt_disposition(d: dict) -> str:
     out = [header(
-        "Confirm the final operator disposition",
-        "CONFIRMED only when API, Redis, and receipts agree and every policy is "
-        "consistent with its route reason")]
+        "Reconcile the evidence and confirm the disposition",
+        "CONFIRMED only when the API, Redis, and receipt views agree, every "
+        "request has a durable receipt, and every policy fits its route reason")]
     disp = d.get("disposition")
     out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)
-    out += star("sources_agree", d.get("sources_agree"),
-                LIME if d.get("sources_agree") else PINK)
+    out += star("counts_agree", d.get("counts_agree"),
+                LIME if d.get("counts_agree") else PINK)
+    out += star("receipts_complete", d.get("receipts_complete"),
+                LIME if d.get("receipts_complete") else PINK)
     out += star("policies_consistent", d.get("policies_consistent"),
                 LIME if d.get("policies_consistent") else PINK)
-    out += sect("api  redis  receipts  agree   (per kind)")
+    out.append(f"    {BLUE}{'kind':<12}{'api':<7}{'redis':<8}{'receipts':<10}"
+               f"{'agree'}{RESET}")
+    out.append("")
     for k in ("weighted", "payload", "override"):
         t = d.get("kinds", {}).get(k, {})
         mark = f"{LIME}✓{RESET}" if t.get("agree") else f"{PINK}✗{RESET}"

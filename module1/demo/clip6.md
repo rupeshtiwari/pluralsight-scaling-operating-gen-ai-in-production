@@ -5,25 +5,25 @@
 **The problem:** You have three routing policies now — baseline, weighted, and
 payload-based with deterministic overrides. Each one proved itself in isolation.
 But in production a single service runs *all* of them at once, and an operator has
-to trust the whole thing. The API says one request went to premium; the live
-counters say the spread is 5/3/2; the database holds a receipt for every call.
-What happens when those three records *disagree*? A routing bug, a dropped
-receipt, or a miscounted tier is exactly the kind of silent drift you must catch
-before you sign off. How do you confirm the routing is correct — not for one
-policy, but for the mixed traffic the service actually sees?
+to trust the whole thing. The API reports one decision; the live counters report
+an aggregate; the database keeps a receipt for every call. What happens when those
+records *disagree*? A routing bug, a dropped receipt, or a miscounted tier is
+exactly the kind of silent drift you must catch before you sign off. How do you
+confirm the routing is correct — not for one policy, but for the mixed traffic the
+service actually sees?
 
-**What you will see:** Six moments that turn three separate proofs into one
+**What you will see:** Five moments that turn three separate proofs into one
 operator sign-off — a mixed batch of weighted, payload, and override requests
-through one service; the individual decisions each tagged with its policy; the
-aggregate spread in the Redis datastore; the full per-request receipts in
-PostgreSQL with the operator field set; a reconciliation that lines the three
-records up side by side; and a final disposition that reads **CONFIRMED** only
-when the API, the counters, and the receipts all agree.
+through one service; the individual decisions each tagged with its policy and
+route reason; the aggregate spread in the Redis datastore; the durable per-request
+receipts in PostgreSQL with the operator field set; and a reconciliation that
+lines the three views up and reads **CONFIRMED** only when they agree.
 
 **What you walk away with:** A repeatable way to validate the whole routing layer
-at once — three independent records (API, Redis, PostgreSQL) reconciled per
-routing kind, plus a single go/no-go disposition an operator can act on. Policy,
-receipt, and model behavior must agree, or the disposition blocks.
+at once — three operational views (the API result, the Redis aggregate, and the
+durable PostgreSQL receipts) reconciled per routing kind, plus a single go/no-go
+disposition an operator can act on. Counts, receipts, and policies must all agree,
+or the disposition blocks.
 
 ## Learning objectives covered
 
@@ -40,11 +40,10 @@ receipt, and model behavior must agree, or the disposition blocks.
 | Step | Endpoint | What it teaches (nothing repeats) |
 |------|----------|-----------------------------------|
 | 1 | `/route/mixed` | One service runs weighted, payload, and override traffic together |
-| 2 | `/routing/mixed-batch` | Each request is tagged with its policy and route reason |
-| 3 | `mixed:counters` (redis) | The datastore's aggregate spread matches the API summary |
-| 4 | `receipts` (psql) | Every request carries the full operator field set, quality included |
-| 5 | `/routing/disposition` | API, Redis, and receipts reconcile per routing kind |
-| 6 | `/routing/disposition` | The operator decision is CONFIRMED only when all three agree |
+| 2 | `/routing/mixed-batch` | Each request is tagged with its kind, policy, model, and route reason |
+| 3 | `mixed:counters` (redis) | The fast operational aggregate matches the batch |
+| 4 | `receipts` (psql) | Every routing kind has a durable receipt with the full operator field set |
+| 5 | `/routing/disposition` | The views reconcile and the operator decision reads CONFIRMED only when they agree |
 
 ## Prerequisites
 
@@ -108,33 +107,39 @@ weighted`.
 
 **What the learner should notice:** This is the whole routing layer working at
 once, not one policy at a time. Sixteen requests: ten routed by the weighted
-policy, four by payload complexity, two pinned by a deterministic override. Two
-policy names appear because weighted and payload are different policies, and the
-overrides ride on the payload policy. Everything that follows checks this one
-batch three independent ways.
+policy, four by payload complexity, two pinned by a deterministic override. The
+10 / 4 / 2 split is the **declared test population** — a controlled mix that lets
+us exercise all three paths through one service. It is *not* a statistical claim
+that weighted routing converges to a target over ten requests; that proof lives in
+the weighted-routing clip. Here the batch exists so the next four steps can check
+it three ways.
 
-### Step 2: Inspect the individual mixed decisions
+### Step 2: Inspect representative routing decisions
 
 **Goal:** Look at individual requests and see each one tagged with its kind,
-policy, model, and route reason.
+policy, model, and route reason — with all three kinds visible.
 
 ```bash
 curl -s "http://localhost:8000/routing/mixed-batch?limit=6" | python3 scripts/fmt.py --type mixed-samples \
-  --title "Inspect the individual mixed decisions" \
+  --title "Inspect representative routing decisions" \
   --why "Each request tagged with its kind, policy, model, and route reason"
 ```
 
-**Expected output:** a table of ★ rows — each with request id, `kind`, `model`,
-`tier`, and `route_reason` — showing `weighted` (`weighted_distribution`),
-`payload` (`complexity_*`), and `override` (`override_*`) requests.
+**Expected output:** a table of ★ rows spanning all three kinds — `weighted`
+(policy `weighted`, reason `weighted_distribution`), `payload` (policy
+`payload_smart`, reason `complexity_*`), and `override` (policy `payload_smart`,
+reason `override_*`) — each with its `model` and `tier`.
 
-**What the learner should notice:** Every decision is self-describing. The `kind`
-column tells you *which policy* handled the request, and the `route_reason` says
-*why* — `weighted_distribution`, `complexity_complex`, `override_bulk_batch`.
-Same service, same batch, three different routing paths, each one leaving a clear
-trail. That trail is what makes the reconciliation possible.
+**What the learner should notice:** Every decision is self-describing, and this
+step proves *semantic* correctness, not just counts. The `kind` column tells you
+which routing path handled the request; `policy` tells you which policy owns it
+(weighted requests carry the `weighted` policy, payload and override requests
+carry `payload_smart`); and `route_reason` says exactly why —
+`weighted_distribution`, `complexity_complex`, `override_bulk_batch`. Same service,
+one batch, three paths, each leaving a clear trail. That trail is what makes the
+reconciliation in Step 5 meaningful.
 
-### Step 3: Prove the aggregate spread in Redis
+### Step 3: Verify the fast aggregate in Redis
 
 **Goal:** Read the per-kind counters straight from the Redis datastore and check
 they match the batch summary from Step 1.
@@ -142,88 +147,86 @@ they match the batch summary from Step 1.
 ```bash
 docker compose exec -T redis redis-cli --json HGETALL mixed:counters \
   | python3 scripts/fmt.py --type mixed-counters \
-  --title "Aggregate routing kinds in Redis" \
+  --title "Verify the fast aggregate in Redis" \
   --why "The datastore's per-kind tally — reconciles against the batch summary"
 ```
 
 **Expected output:** ★ `total: 16`, then `weighted 10`, `payload 4`, `override 2`
 — the same numbers the API reported in Step 1.
 
-**What the learner should notice:** These counts come straight from the Redis
-hash `mixed:counters`, read with `HGETALL` — the datastore, not the API. They
-match Step 1 exactly: ten, four, two. That is the first reconciliation — the
-service's own summary and the independent datastore agree on how the mixed
-traffic was routed.
+**What the learner should notice:** These counts come straight from the Redis hash
+`mixed:counters`, read with `HGETALL` — the datastore, not the API. They match
+Step 1 exactly. Redis is the **fast operational aggregate**: the right tool for
+dashboards, rate and distribution monitoring, and quick health checks. It is *not*
+the permanent audit ledger — Redis data can expire, be evicted, or be rebuilt — so
+the durable record belongs in PostgreSQL, which is the next step.
 
-### Step 4: Read the full per-request receipts in PostgreSQL
+### Step 4: Verify the durable receipts in PostgreSQL
 
-**Goal:** Query the receipts for the operator field set — the record an operator
-actually investigates.
+**Goal:** Query the receipts across every routing kind for the operator field set —
+the durable record an operator actually investigates.
 
 ```bash
 docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(r) FROM (
-  SELECT request_id, policy_name, provider_tier, latency_target_ms,
-         total_tokens, cost_estimate_usd, quality_score
-  FROM receipts ORDER BY created_at DESC LIMIT 6) r" \
+    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+       FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2)
+  UNION ALL
+    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+       FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2)
+  UNION ALL
+    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+       FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)
+  ) r" \
   | python3 scripts/fmt.py --type mixed-receipts \
-  --title "Full per-request receipts in PostgreSQL" \
-  --why "The operator field set: id, policy, provider, latency, tokens, cost, quality"
+  --title "Verify the durable receipts in PostgreSQL" \
+  --why "Every routing kind has a durable receipt with the full operator field set"
 ```
 
-**Expected output:** one ★ row per request with `request_id`, `policy_name`,
-`provider_tier`, `latency` target, `tokens`, `cost`, and `quality` — different
-policies and providers, each with its own cost and quality score.
+**Expected output:** six ★ rows deliberately spanning every kind — two `weighted`
+(policy `weighted`) and four `payload_smart` (payload + override) — each with
+`request_id`, `policy_name`, `provider_tier`, `latency target`, `tokens`, `cost`,
+and `quality`.
 
 **What the learner should notice:** This is the durable record behind the
-counters, and it carries everything an operator needs months later: which policy
-routed the request, which provider tier served it, its latency target, token
-count, cost, and quality score — all keyed by request id. Cost and quality move
-with the tier: the premium rows cost more and score higher. Nothing here is
+counters, and it carries everything an operator needs months later — keyed by
+request id. Both policies are present, so every routing path has a persisted
+receipt, not just the aggregate count. `latency target` is the tier's *configured*
+target (400 / 700 / 1200 ms), not a measured request latency. Cost and quality
+move with the tier: premium rows cost more and score higher. Nothing here is
 provider-specific; every policy lands in the same columns.
 
-### Step 5: Reconcile the three sources of truth
+### Step 5: Reconcile the evidence and confirm the disposition
 
-**Goal:** Line the three independent records — API summary, Redis counters, and
-PostgreSQL receipts — up side by side, per routing kind.
-
-```bash
-curl -s http://localhost:8000/routing/disposition | python3 scripts/fmt.py --type disposition \
-  --title "Reconcile the three sources of truth" \
-  --why "API, Redis, and receipts must agree per routing kind"
-```
-
-**Expected output:** ★ `sources_agree: true`, then a per-kind row showing `api`,
-`redis`, and `receipts` counts with a ✓ — `weighted 10/10/10`, `payload 4/4/4`,
-`override 2/2/2`.
-
-**What the learner should notice:** Three records that were written independently
-— the API summary as the batch ran, the Redis counters incremented per decision,
-and the PostgreSQL receipts persisted per request — and for every routing kind
-they hold the same number. That is the proof that no request was miscounted,
-dropped, or misrouted. If one column disagreed, its ✓ would be an ✗ and you would
-know exactly which kind to investigate.
-
-### Step 6: Confirm the final operator disposition
-
-**Goal:** Read the single go/no-go verdict that an operator acts on.
+**Goal:** Line the three views up per routing kind and read the single go/no-go
+verdict an operator acts on.
 
 ```bash
 curl -s http://localhost:8000/routing/disposition | python3 scripts/fmt.py --type disposition \
-  --title "Confirm the final operator disposition" \
-  --why "CONFIRMED only when API, Redis, and receipts agree and every policy is consistent"
+  --title "Reconcile the evidence and confirm the disposition" \
+  --why "CONFIRMED only when the views agree, every request has a receipt, and every policy fits its route reason"
 ```
 
-**Expected output:** ★ `disposition: CONFIRMED`, ★ `sources_agree: true`, ★
-`policies_consistent: true`.
+**Expected output:** ★ `disposition: CONFIRMED`, ★ `counts_agree: true`, ★
+`receipts_complete: true`, ★ `policies_consistent: true`, then a per-kind row
+showing `api`, `redis`, and `receipts` counts with a ✓ — `weighted 10/10/10`,
+`payload 4/4/4`, `override 2/2/2`.
 
-**What the learner should notice:** This is the disposition — the operator's
-single decision. It reads `CONFIRMED` only when two things hold: the three sources
-agree on the counts (`sources_agree`), and every receipt's policy name is
-consistent with its route reason (`policies_consistent`) — a weighted decision
-carries the weighted policy, an override carries the payload policy. If either
-check failed, the disposition would read `BLOCKED` and the operator would not sign
-off. Reset and run the batch again and you get the same `CONFIRMED` — the whole
-routing layer, validated end to end, repeatably.
+**What the learner should notice:** This is the disposition — the operator's single
+decision — and `CONFIRMED` has an explicit, machine-checkable contract. It reads
+`CONFIRMED` only when **all** of these hold:
+
+- **counts_agree** — the API summary, the Redis counters, and the PostgreSQL
+  receipt counts are equal for every routing kind;
+- **receipts_complete** — there is exactly one durable receipt per routed request,
+  none missing and none extra;
+- **policies_consistent** — every receipt's policy matches its route reason
+  (`weighted_distribution` → the `weighted` policy; `complexity_*` and `override_*`
+  → the `payload_smart` policy), so an override is never miscounted as a weighted
+  selection.
+
+If any check failed, the disposition would read `BLOCKED` and the ✗ would point at
+the routing kind to investigate. Reset and run the batch again and you get the same
+`CONFIRMED` — the whole routing layer, validated end to end, repeatably.
 
 ## Preflight check
 
@@ -232,7 +235,7 @@ bash module1/scripts/clip6_preflight_check.sh
 ```
 
 Runs every step above, asserts TO1 and EO1a–d, and writes a readable log to
-`module1/clip6_preflight_log.txt`. Expect `PASS: 6  FAIL: 0`.
+`module1/clip6_preflight_log.txt`. Expect `PASS: 5  FAIL: 0`.
 
 ## Cleanup
 

@@ -309,15 +309,15 @@ def route_mixed() -> dict:
     """Run one mixed batch — weighted + payload + override — persisting every
     receipt and tallying by routing kind in Redis. Clip 6 reconciles this summary
     against the Redis counters and the PostgreSQL receipts."""
-    samples: list[dict] = []
     by_kind = {"weighted": 0, "payload": 0, "override": 0}
+    grouped: dict[str, list] = {"weighted": [], "payload": [], "override": []}
 
     # 10 weighted requests — deterministic 5 / 3 / 2 across the tiers.
     for i in range(10):
         response, receipt = route_weighted(RouteRequest(prompt=REFERENCE_PROMPT), i)
         postgres.insert_receipt(receipt)
         redis_client.mixed_incr("weighted"); by_kind["weighted"] += 1
-        samples.append(_mixed_sample(response, "weighted"))
+        grouped["weighted"].append(_mixed_sample(response, "weighted"))
 
     # 4 payload + 2 override, from the canonical smart cases.
     for c in SMART_VALIDATION_CASES:
@@ -327,7 +327,16 @@ def route_mixed() -> dict:
         postgres.insert_receipt(receipt)
         kind = "override" if response.override_class else "payload"
         redis_client.mixed_incr(kind); by_kind[kind] += 1
-        samples.append(_mixed_sample(response, kind))
+        grouped[kind].append(_mixed_sample(response, kind))
+
+    # Interleave so a short sample shows all three kinds, not ten weighted rows.
+    samples: list[dict] = []
+    idx = 0
+    while any(idx < len(grouped[k]) for k in grouped):
+        for k in ("weighted", "payload", "override"):
+            if idx < len(grouped[k]):
+                samples.append(grouped[k][idx])
+        idx += 1
 
     summary = {
         "total": sum(by_kind.values()),
@@ -366,12 +375,19 @@ def routing_disposition() -> dict:
     for k in ("weighted", "payload", "override"):
         a, r, p = int(api.get(k, 0)), int(redis_counts.get(k, 0)), int(receipts.get(k, 0))
         kinds[k] = {"api": a, "redis": r, "receipts": p, "agree": a == r == p}
-    sources_agree = all(v["agree"] for v in kinds.values())
+    # The explicit, machine-checkable CONFIRMED contract:
+    #   counts_agree        — API summary == Redis counters == receipt counts, per kind
+    #   receipts_complete   — exactly one durable receipt per routed request (no missing/extra)
+    #   policies_consistent — every receipt's policy matches its route_reason kind
+    api_total = sum(int(v) for v in api.values())
+    counts_agree = all(v["agree"] for v in kinds.values())
+    receipts_complete = api_total > 0 and postgres.count_receipts() == api_total
     policies_consistent = postgres.inconsistent_receipts() == 0
-    confirmed = sources_agree and policies_consistent
+    confirmed = counts_agree and receipts_complete and policies_consistent
     return {
         "kinds": kinds,
-        "sources_agree": sources_agree,
+        "counts_agree": counts_agree,
+        "receipts_complete": receipts_complete,
         "policies_consistent": policies_consistent,
         "disposition": "CONFIRMED" if confirmed else "BLOCKED",
     }
