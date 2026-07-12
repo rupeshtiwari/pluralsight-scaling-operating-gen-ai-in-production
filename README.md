@@ -41,15 +41,15 @@ By the end of all three modules, you will be able to:
 
 ## Demos — Start Here
 
-Each module contains several hands-on demos. Follow the README inside each module
-folder — it has copy-paste commands, expected-output blocks, and an explanation
-for every step.
+Each module contains hands-on demos. Follow the README inside each module folder —
+it has copy-paste commands, expected-output tables, and an explanation for every
+step.
 
-| Module | Focus | Demos | README |
-|--------|-------|-------|--------|
-| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/demo/clip2.md) ✅ · [weighted routing](module1/demo/clip3.md) ✅ · [payload routing & overrides](module1/demo/clip5.md) ✅ · receipt validation | [Clip 2](module1/demo/clip2.md) · [Clip 3](module1/demo/clip3.md) · [Clip 5](module1/demo/clip5.md) |
-| 2 — Protecting and Observing GenAI Reliability | Resilience + observability (T2, T3) | Queues/rate limits · circuit breaker/fallback · traces/logs/metrics · incident diagnosis | _planned_ |
-| 3 — Operating LLMOps Change and Production Readiness | LLMOps + readiness (T4, T5) | Prompt versioning · model validation · canary · readiness audit | _planned_ |
+| Module | Demo | What You Prove | README |
+|--------|------|----------------|--------|
+| 1 | Multi-Model Routing | Put three model tiers behind one adapter contract → route by weight (prove the 10/6/4 spread straight from Redis) → route by declared complexity with deterministic overrides in both directions → back every decision with a PostgreSQL receipt | [module1/README.md](module1/README.md) |
+| 2 | Resilience & Observability | Absorb spikes with a queue → fail fast at capacity → trip a circuit breaker → retry with backoff → fail over to a healthy model → trace, log, and measure it end to end _(planned)_ | module2/README.md |
+| 3 | LLMOps & Readiness | Version prompts → validate a model update against a baseline → run a canary → manage deprecation → audit production readiness and finalize a runbook _(planned)_ | module3/README.md |
 
 **Start with Module 1.** Each module builds on the same service layer.
 
@@ -265,12 +265,13 @@ Endpoints available today (Module 1). More are added as later modules land.
 
 ## Key References
 
-| Framework / Tool | Where Used |
-|------------------|------------|
-| OpenTelemetry | Module 2 — distributed tracing |
-| Prometheus + Grafana | Module 2 — metrics and dashboards |
-| Grafana k6 | Module 2 — load and spike testing |
-| SLOs / error budgets | Module 2 — latency, availability, quality objectives |
-| Circuit breaker & retry patterns | Module 2 — resilience controls |
-| Canary release | Module 3 — controlled prompt/model rollout |
-| Cloud-native deployment patterns | Module 3 — serverless / containers / dedicated GPU trade-offs |
+| Framework / Tool | Version / Date | Where Used |
+|------------------|----------------|------------|
+| OpenTelemetry | 1.43.0 | Module 2 — distributed tracing |
+| Prometheus + Grafana | 3.11.2 / 11.1.4+ | Module 2 — metrics and dashboards |
+| Grafana k6 | 1.0+ | Module 2 — load and spike testing |
+| SLOs / error budgets | — | Module 2 — latency, availability, quality objectives |
+| Circuit breaker & retry patterns | — | Module 2 — resilience controls |
+| Canary release | — | Module 3 — controlled prompt/model rollout |
+| Cloud-native deployment patterns | — | Module 3 — serverless / containers / dedicated GPU trade-offs |
+| Twelve-Factor / config-driven ops | — | All modules — env-driven service, no code changes across environments |
