@@ -3,18 +3,14 @@
 **Terminal objective (TO1):** Implement load balancing and intelligent request
 routing for multi-model GenAI service architectures. · **30 minutes**
 
-## Clips
+## Demos
 
-| # | Title | Type | Length | Learning objectives | Runbook |
-|---|-------|------|--------|---------------------|---------|
-| 1 | AI service layer and routing contracts | Presentation | 3 min | TO1, EO1a | — |
-| 2 | Build the FastAPI provider adapter layer | **Demo** | 6 min | TO1, EO1a | [demo/clip2.md](demo/clip2.md) ✅ |
-| 3 | Prove weighted routing across model tiers | **Demo** | 6 min | EO1b | [demo/clip3.md](demo/clip3.md) ✅ |
-| 4 | Routing policy tradeoffs and operator decisions | Presentation | 3 min | EO1b, EO1c, EO1d | — |
-| 5 | Prove payload-based routing and deterministic overrides | **Demo** | 6 min | EO1c, EO1d | [demo/clip5.md](demo/clip5.md) ✅ |
-| 6 | Validate routing receipts, counters, and final disposition | **Demo** | 6 min | TO1, EO1a–d | [demo/clip6.md](demo/clip6.md) _(planned)_ |
-
-Clips 1 and 4 are presentation, not demos.
+| # | Title | Length | Learning objectives | Runbook |
+|---|-------|--------|---------------------|---------|
+| 2 | Build the FastAPI provider adapter layer | 6 min | TO1, EO1a | [demo/clip2.md](demo/clip2.md) ✅ |
+| 3 | Prove weighted routing across model tiers | 6 min | EO1b | [demo/clip3.md](demo/clip3.md) ✅ |
+| 5 | Prove payload-based routing and deterministic overrides | 6 min | EO1c, EO1d | [demo/clip5.md](demo/clip5.md) ✅ |
+| 6 | Validate routing receipts, counters, and final disposition | 6 min | TO1, EO1a–d | [demo/clip6.md](demo/clip6.md) _(planned)_ |
 
 ## Learning Objectives
 

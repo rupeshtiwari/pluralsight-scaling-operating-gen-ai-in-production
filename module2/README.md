@@ -8,18 +8,14 @@ through distributed tracing, structured logging, and output quality monitoring. 
 > **Status: planned.** This module is scaffolded from the course outline. The
 > demo runbooks are stubs until the module is built.
 
-## Clips
+## Demos
 
-| # | Title | Type | Length | Learning objectives | Runbook |
-|---|-------|------|--------|---------------------|---------|
-| 1 | Resilience controls for GenAI failure modes | Presentation | 3 min | TO2, EO2a–e | — |
-| 2 | Prove queues, rate limits, and fail-fast behavior | **Demo** | 6 min | TO2, EO2a, EO2b, EO2e | [demo/clip2.md](demo/clip2.md) _(planned)_ |
-| 3 | Prove circuit breaker fallback and retry backoff | **Demo** | 6 min | EO2c, EO2d, EO2e | [demo/clip3.md](demo/clip3.md) _(planned)_ |
-| 4 | Observability signals that change operator decisions | Presentation | 3 min | TO3, EO3a–e | — |
-| 5 | Prove traces, logs, metrics, and quality sampling | **Demo** | 6 min | EO3a–e | [demo/clip5.md](demo/clip5.md) _(planned)_ |
-| 6 | Diagnose latency, quota pressure, cost drift, and quality regression | **Demo** | 6 min | TO2, EO2e, TO3, EO3a–e | [demo/clip6.md](demo/clip6.md) _(planned)_ |
-
-Clips 1 and 4 are presentation, not demos.
+| # | Title | Length | Learning objectives | Runbook |
+|---|-------|--------|---------------------|---------|
+| 2 | Prove queues, rate limits, and fail-fast behavior | 6 min | TO2, EO2a, EO2b, EO2e | [demo/clip2.md](demo/clip2.md) _(planned)_ |
+| 3 | Prove circuit breaker fallback and retry backoff | 6 min | EO2c, EO2d, EO2e | [demo/clip3.md](demo/clip3.md) _(planned)_ |
+| 5 | Prove traces, logs, metrics, and quality sampling | 6 min | EO3a–e | [demo/clip5.md](demo/clip5.md) _(planned)_ |
+| 6 | Diagnose latency, quota pressure, cost drift, and quality regression | 6 min | TO2, EO2e, TO3, EO3a–e | [demo/clip6.md](demo/clip6.md) _(planned)_ |
 
 ## Learning Objectives
 
