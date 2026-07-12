@@ -43,12 +43,36 @@ PostgreSQL receipts, and proven repeatable.
 
 ## Prerequisites
 
-Start the stack (see [module1/README.md](../README.md) — `bash module1/scripts/demo_up.sh`
-runs the readiness check and brings up FastAPI, Redis, and PostgreSQL). Then, for
-a clean receipts table:
+**Start the stack first.** This runs the environment readiness check
+(`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
+installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits
+until healthy:
+
+```bash
+bash module1/scripts/demo_up.sh
+```
+
+Wait for `✔ stack healthy`. It then leaves you with a clean, reset stack.
+
+Confirm the layers are up (this demo needs all three):
+
+- Server running: `curl -s http://localhost:8000/health | python3 -m json.tool`
+- Redis reachable (live provider conditions)
+- PostgreSQL reachable (each smart decision persists a receipt for Step 5)
+
+For a clean receipts table before you start:
 
 ```bash
 ./scripts/module1-demo-reset.sh
+```
+
+**If a step shows `None` everywhere, or `curl` says connection refused:** the API
+isn't running the current code. Bring it up fresh — the container mounts the
+source and reloads, so this always serves the latest:
+
+```bash
+bash module1/scripts/demo_up.sh          # or, if you changed dependencies:
+docker compose up -d --build
 ```
 
 ## Demo steps
