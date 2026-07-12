@@ -1,53 +1,98 @@
-# Module 1 — Demo: Payload-Based Routing & Deterministic Overrides
+# Module 1 — Demo: Prove payload-based routing and deterministic overrides
 
-## What This Demo Proves
+## Why this matters
 
-You will route requests to model tiers using three **separate** signals — prompt
-**size** (evidence only), declared **complexity** (which selects the tier), and a
-**risk / override** class (which pins the tier deterministically). You will prove
-that length alone does not force premium and that complexity alone does — then
-fire two overrides in opposite directions (bulk → economy, legal → premium),
-tally the decisions in **Redis**, and read the per-request audit trail in
-**PostgreSQL**. Every result shows its token estimate, complexity, and cost.
+**The problem:** Weighted routing splits traffic by a fixed percentage, which is
+great for controlling aggregate cost — but it is blind to what any single request
+actually *needs*. A one-line "tag this ticket" and a dense multi-part analysis
+get treated the same. You want the opposite: route each request to the tier its
+**content** calls for — and do it on the right signal, because *length is not
+complexity*. A long summary can be simple; a short "find the concurrency bug" can
+be hard. And for the traffic you refuse to leave to a policy, you want to **force**
+a tier on purpose, regardless of what the payload looks like.
 
-## Learning Objectives Covered
+**What you will see:** Six moments that separate three signals and prove each one
+— the rule table across size, complexity, and risk; a short-simple and a
+long-simple request that both stay cheap (length alone does not force premium); a
+short-complex and a long-complex request that both go premium (complexity, not
+length, decides); two deterministic overrides in opposite directions; the Redis
+counters that break the decisions down and prove the weighted path was bypassed;
+and a validation that all six payload classes land where their rules dictate.
 
-| LO | What You Will Be Able To Do After This Demo |
-|----|---------------------------------------------|
-| EO1c | Implement payload-based routing that sends each request to the appropriate tier for its **complexity** — a declared signal, kept separate from prompt length |
-| EO1d | Contrast weighted, payload, and deterministic routing, and apply override rules that intentionally bypass the normal decision in both directions |
+**What you walk away with:** Payload-based routing you can reason about per
+request — driven by declared complexity, not prompt length — plus deterministic
+overrides for the traffic that must not be left to a policy. The
+weighted-versus-deterministic trade-off made explicit, measured in Redis, backed
+by PostgreSQL receipts, and proven repeatable.
 
-## Three Signals, Kept Separate
+## Learning objectives covered
 
-| Signal | Source | Role |
-|--------|--------|------|
-| **size** | token estimate of the prompt | Evidence and cost only — never selects the tier |
-| **complexity** | declared `task_class` → simple / moderate / complex | Selects the tier (EO1c) |
-| **risk / override** | declared `override_class` | Pins the tier, bypassing the decision (EO1d) |
+| LO | Description |
+|----|-------------|
+| EO1c | Apply payload-based routing to direct requests to appropriate model tiers based on input characteristics such as length or complexity |
+| EO1d | Evaluate the trade-offs between weighted distribution and deterministic routing strategies for different traffic patterns and cost profiles |
 
-> Length is not complexity. A long summary is simple; a short "find the
-> concurrency bug" is complex. The router selects on declared complexity, not
-> token count.
+## What this demo proves — and each step is unique
+
+| Step | Endpoint | What it teaches (nothing repeats) |
+|------|----------|-----------------------------------|
+| 1 | `/routing/rules` | Three separate signals — size (evidence), declared complexity (selects the tier), override (pins it) |
+| 2 | `/route/smart` (simple ×2) | Length alone does not force premium — short and long both stay cheap |
+| 3 | `/route/smart` (complex ×2) | Complexity, not length, changes the tier — a short complex ask goes premium |
+| 4 | `/route/smart` (override ×2) | Deterministic overrides pin a tier both ways — economy and risk |
+| 5 | `smart:counters` + `receipts` | Aggregate decision counts (weighted bypassed) plus the durable per-request audit |
+| 6 | `/routing/smart-validate` | All six payload classes match their expected tier, repeatably |
 
 ## Prerequisites
 
-Complete the one-time setup in the [root README](../../README.md). Then start
-the stack and reset to a clean state:
+### Software this clip needs — do you have it?
+
+This clip uses **Docker Desktop** (with Compose), **curl**, **jq**, **python3**,
+**psql**, and **tmux**. Two commands cover every case:
 
 ```bash
-bash module1/scripts/demo_up.sh    # readiness check (auto-starts Docker) → FastAPI, Redis, PostgreSQL, waits healthy
-./scripts/module1-demo-reset.sh    # clears receipts + all routing/smart counters
+bash scripts/ensure-ready.sh       # CHECK  — ✔ / ✗ for each tool, with a fix for anything missing
+bash environment-setup/setup.sh    # INSTALL — one step: installs everything the course uses, then the pinned deps
 ```
 
-To check the tools first without starting anything: `bash scripts/ensure-ready.sh`.
+- **First time on this Mac?** Run the install step once. It installs Homebrew,
+  Docker Desktop, Python 3.13, tmux, jq, curl, and psql — then builds the Python
+  environment. When it prints `READY`, you have everything this clip needs.
+- **Already set up?** The check confirms you're good in seconds. (`demo_up.sh`
+  below runs it for you anyway, so you can skip straight to starting the stack.)
 
-## Demo Steps
+### Start the stack
 
-### Step 1: Load the Routing Rules (EO1c, EO1d)
+**Start the stack first.** This runs the environment readiness check
+(`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
+installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits
+until healthy:
 
-**What we are doing:** Showing the rule table across all three signals — the size
-threshold (evidence), the task-class → complexity → tier map, and the override
-classes with their direction and risk.
+```bash
+bash module1/scripts/demo_up.sh
+```
+
+Wait for `✔ stack healthy`. It then leaves you with a clean, reset stack.
+
+Confirm the layers are up (this demo needs all three):
+
+- Server running: `curl -s http://localhost:8000/health | python3 -m json.tool`
+- Redis reachable (the smart-routing counters in Step 5 live here)
+- PostgreSQL reachable (each smart decision persists a receipt for Step 5)
+
+For a clean state before you start — clears receipts **and** all routing counters:
+
+```bash
+./scripts/module1-demo-reset.sh
+```
+
+## Demo steps
+
+### Step 1: Load the payload-based routing rules
+
+**Goal:** Show the rule table across all three signals — the size threshold
+(evidence), the task-class → complexity → tier map, and the override classes with
+their direction and risk.
 
 ```bash
 curl -s http://localhost:8000/routing/rules | python3 scripts/fmt.py --type rules \
@@ -55,23 +100,22 @@ curl -s http://localhost:8000/routing/rules | python3 scripts/fmt.py --type rule
   --why "Three separate signals — size is evidence, declared complexity picks the tier, overrides pin it"
 ```
 
-**Validate:**
+**Expected output:** ★ `policy_name: payload_smart`, a `size` note (`≤ 60 tokens =
+short, else long`), the task-class → complexity → tier map (`ticket_tag` /
+`doc_summary` → simple → `econo-mini`, `bug_triage` / `incident_analysis` →
+complex → `premium-max`), and the override classes (`bulk_batch → econo-mini`,
+economy; `legal_review → premium-max`, risk).
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| policy_name | `payload_smart` | The active content-based policy |
-| size | ≤ 60 tokens = short, else long | Size is labeled for cost, not used to pick the tier |
-| task class → complexity → tier | ticket_tag/doc_summary → simple → econo-mini · bug_triage/incident_analysis → complex → premium-max | Complexity is declared, not derived from length |
-| overrides | bulk_batch → econo-mini (economy) · legal_review → premium-max (risk) | Deterministic pins in both directions |
+**What the learner should notice:** The policy reads three separate signals, and
+the screen keeps them apart on purpose. **Complexity** — a *declared task class* —
+is what selects the tier; **size** is only evidence for cost; **overrides** pin a
+tier regardless of either. That separation is the whole point: length is not
+complexity, so the router must not decide on token count alone.
 
-**What you proved:** The policy reads three separate signals. Complexity — a
-declared task class — is what selects the tier; size is only evidence; overrides
-pin a tier on purpose.
+### Step 2: Prove length alone does not force premium
 
-### Step 2: Length Alone Does Not Force Premium (EO1c)
-
-**What we are doing:** Routing a **short-simple** request and a **long-simple**
-request through the same endpoint. Both should land on the cheap tier.
+**Goal:** Route a short-simple request and a long-simple request through the same
+endpoint and watch both land on the cheap tier.
 
 ```bash
 curl -s -X POST http://localhost:8000/route/smart \
@@ -85,24 +129,20 @@ curl -s -X POST http://localhost:8000/route/smart \
   --why "Large prompt, still a simple task — length does not force premium"
 ```
 
-**Validate:**
+**Expected output:** both results show ★ `selected_model: econo-mini`, ★
+`complexity: simple`, ★ `route_reason: complexity_simple`, and a visible ★
+`token_estimate` — `size: short` on the first, `size: long` on the second.
 
-| Field | Short-simple | Long-simple | What It Means |
-|-------|-------------|-------------|---------------|
-| size | `short` | `long` | The prompts differ in length |
-| token_estimate | small total | large total | Visible size evidence |
-| complexity | `simple` | `simple` | Same declared complexity |
-| selected_model | `econo-mini` | `econo-mini` | Both cheap — length did **not** escalate the tier |
-| route_reason | `complexity_simple` | `complexity_simple` | The tier came from complexity |
+**What the learner should notice:** Two prompts of very different length, same
+declared complexity, same cheap tier. The token estimate is right there on screen,
+so you can see the second request is genuinely large — and it still routes to
+`econo-mini`. Length did not escalate the tier. That is the first half of the
+"size is not complexity" proof.
 
-**What you proved:** A long prompt and a short prompt with the same declared
-complexity route to the same tier. Length alone does not force premium.
+### Step 3: Prove complexity, not length, changes the tier
 
-### Step 3: Complexity, Not Length, Changes the Tier (EO1c)
-
-**What we are doing:** Routing a **short-complex** request and a **long-complex**
-request. Both should land on premium — the short one proving complexity beats
-length.
+**Goal:** Route a short-complex request and a long-complex request, and watch both
+land on premium — the short one proving complexity beats length.
 
 ```bash
 curl -s -X POST http://localhost:8000/route/smart \
@@ -116,24 +156,21 @@ curl -s -X POST http://localhost:8000/route/smart \
   --why "Large prompt, complex task — also premium-max"
 ```
 
-**Validate:**
+**Expected output:** both results show ★ `selected_model: premium-max`, ★
+`complexity: complex`, ★ `route_reason: complexity_complex` — with ★ `size: short`
+on the first and a small ★ `token_estimate` proving it really is short.
 
-| Field | Short-complex | Long-complex | What It Means |
-|-------|--------------|--------------|---------------|
-| size | `short` | `long` | The short one is small |
-| complexity | `complex` | `complex` | Declared complex task |
-| selected_model | `premium-max` | `premium-max` | Both premium — even the short one |
-| route_reason | `complexity_complex` | `complexity_complex` | Tier came from complexity, not size |
+**What the learner should notice:** The short request — "identify the concurrency
+bug in this transaction protocol" — is tiny by token count, yet it routes to
+premium because its declared complexity is high. Compare it to Step 2's long-simple
+request that stayed cheap. This is the opposite outcome from the same endpoint:
+complexity, not length, drives the tier. That is complexity-aware routing, not
+payload-size routing.
 
-**What you proved:** A short but complex request ("identify the concurrency bug")
-routes to premium — the opposite of Step 2. Complexity, not length, changes the
-tier. That is complexity-aware routing, not payload-size routing.
+### Step 4: Force a tier with deterministic overrides — both directions
 
-### Step 4: Deterministic Overrides — Both Directions (EO1d)
-
-**What we are doing:** Firing two overrides that bypass the complexity decision —
-one that forces **cheaper** (bulk economy) and one that forces **stronger**
-(high-risk legal).
+**Goal:** Fire two overrides that bypass the complexity decision — one forcing
+*cheaper* (bulk economy), one forcing *stronger* (high-risk legal).
 
 ```bash
 curl -s -X POST http://localhost:8000/route/smart \
@@ -147,25 +184,23 @@ curl -s -X POST http://localhost:8000/route/smart \
   --why "A simple payload would pick econo-mini; the risk override forces premium-max"
 ```
 
-**Validate:**
+**Expected output:** the bulk result shows ★ `selected_model: econo-mini`, ★
+`route_reason: override_bulk_batch`, ★ `would_have_selected: premium-max`,
+`override_direction: economy`. The legal result shows ★ `selected_model:
+premium-max`, ★ `route_reason: override_legal_review`, ★ `would_have_selected:
+econo-mini`, ★ `risk: high`, `override_direction: risk`.
 
-| Field | Bulk override | Legal override | What It Means |
-|-------|--------------|----------------|---------------|
-| complexity | `complex` | `simple` | What the payload actually is |
-| would_have_selected | `premium-max` | `econo-mini` | What complexity routing *would* have picked |
-| selected_model | `econo-mini` | `premium-max` | What the override forced instead |
-| route_reason | `override_bulk_batch` | `override_legal_review` | The override fired, not complexity |
-| override_direction / risk | economy / low | risk / **high** | Opposite directions |
+**What the learner should notice:** `would_have_selected` is the proof the
+override did not happen by accident — it overrode a *known* decision. The bulk job
+was complex and would have gone premium, but the economy override forced it cheap.
+The legal request was simple and would have gone cheap, but the risk override
+forced it premium. Two overrides, opposite directions: deterministic overrides are
+policy *enforcement*, not just cost control.
 
-**What you proved:** `would_have_selected` shows the override did not happen by
-accident — it overrode a known decision. Bulk forces cheaper; high-risk legal
-forces stronger. Deterministic overrides are policy enforcement, not just cost
-control.
+### Step 5: Prove aggregate behavior in Redis and per-request audit in PostgreSQL
 
-### Step 5: Aggregate Proof (Redis) + Per-Request Audit (PostgreSQL) (EO1c, EO1d)
-
-**What we are doing:** Reading the Redis decision counters straight from the
-datastore, then the durable per-request receipts from PostgreSQL.
+**Goal:** Read the smart-routing counters straight from Redis, then the durable
+per-request receipts from PostgreSQL.
 
 ```bash
 docker compose exec -T redis redis-cli --json HGETALL smart:counters \
@@ -181,24 +216,24 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
   --why "Durable per request: id, tokens, complexity, tier, reason, cost"
 ```
 
-**Validate:**
+**Expected output:** the Redis counters show ★ `payload:simple 2`,
+★ `payload:complex 2`, ★ `override:bulk_batch 1`, ★ `override:legal_review 1`, and
+★ `weighted path (bypassed): 0`. The receipts show six ★ rows, each with
+`request_id`, `total_tokens`, `complexity`, `selected_model`, `route_reason`, and
+`cost`.
 
-| Source | Expected | What It Means |
-|--------|----------|---------------|
-| Redis `payload:simple` / `payload:complex` | 2 / 2 | Requests routed by complexity |
-| Redis `override:bulk_batch` / `override:legal_review` | 1 / 1 | Requests pinned by override |
-| Redis `weighted` | `0` | The weighted path was bypassed — cleanest proof |
-| PostgreSQL rows | one per request, with `request_id` + `total_tokens` + `complexity` + `route_reason` | Durable, per-request audit trail |
+**What the learner should notice:** Redis breaks the six decisions down by
+dimension — routed by complexity vs pinned by override — read straight from the
+datastore. The `weighted` field is `0`: smart routing never took the weighted path,
+which is the cleanest proof the override bypassed it. PostgreSQL is the durable
+side: every request keyed by id, with its token estimate, complexity, tier,
+reason, and cost — the audit trail you can query months later to answer not just
+*which* model served a request, but *why the router chose it*.
 
-**What you proved:** Redis gives the aggregate decision breakdown (and
-`weighted: 0` proves smart routing never took the weighted path); PostgreSQL
-gives the durable per-request record — token estimate, complexity, tier, reason,
-and cost, keyed by request id.
+### Step 6: Validate that every payload class lands where its rules dictate
 
-### Step 6: Validate Every Payload Class (EO1c, EO1d)
-
-**What we are doing:** Replaying all six canonical cases and confirming each
-routes to the expected tier and reason.
+**Goal:** Replay all six canonical cases and confirm each routes to the expected
+tier and reason.
 
 ```bash
 curl -s http://localhost:8000/routing/smart-validate | python3 scripts/fmt.py --type smart-validate \
@@ -206,18 +241,46 @@ curl -s http://localhost:8000/routing/smart-validate | python3 scripts/fmt.py --
   --why "Size, complexity, and overrides are deterministic and testable — same input, same tier, every run"
 ```
 
-**Validate:**
+**Expected output:** ★ `cases: 6`, ★ `all_match: true`, then a row per case with
+its `size` and `complexity` and a ✓ — `short_simple` / `long_simple` → econo-mini,
+`short_complex` / `long_complex` → premium-max, `high_risk_override` → premium-max,
+`bulk_override` → econo-mini.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| cases | `6` | short-simple, long-simple, short-complex, long-complex, high-risk override, bulk override |
-| all_match | `true` | Every payload landed on its expected tier |
-| per case | size + complexity shown, each ✓ | Size and complexity are independent and deterministic |
-
-**What you proved:** All six approved payload forms — including both override
-directions — match their expected tier. The classification and override logic is
+**What the learner should notice:** Six payload forms — short and long, simple and
+complex, plus both override directions — and every one matches its expected tier.
+Run it again and you get the same result: the classification and override logic is
 deterministic for a given policy version, so it is testable in CI and safe to
 change behind a guardrail.
+
+## Best-practice callout
+
+**Route by complexity, not length; override by exception, safely.** Select the
+tier on a declared complexity signal so a long-but-simple request does not burn
+premium and a short-but-hard one is not starved on the cheap tier. Reserve
+deterministic overrides for traffic that must not be left to a policy — and pin
+bulk work to the economy tier only for *evaluation-approved* task classes with a
+bounded output and a quality/escalation path, so the saving never becomes a silent
+quality regression.
+
+## Narration notes
+
+- **Size ≠ complexity ≠ risk.** Say it explicitly: "Weighted routing controls
+  aggregate distribution; payload routing selects a tier per request by declared
+  complexity; deterministic overrides enforce exceptions." Do not group them.
+- **Determinism scope.** The classification and override decision are
+  deterministic *for a given policy version* — not a claim that the full runtime
+  route ignores provider health, quota, or availability (those arrive later).
+- **Cost is synthetic.** `cost_estimate_usd` is a deterministic local estimate for
+  comparing routes, not a provider invoice.
+
+## Preflight check
+
+```bash
+bash module1/scripts/clip5_preflight_check.sh
+```
+
+Runs every step above, asserts EO1c and EO1d, and writes a readable log to
+`module1/clip5_preflight_log.txt`. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 
@@ -225,54 +288,16 @@ change behind a guardrail.
 ./scripts/module1-demo-reset.sh
 ```
 
-## Narration Notes
+## Key files
 
-- **Size ≠ complexity ≠ risk.** Say it explicitly: "Weighted routing controls
-  aggregate distribution; payload routing selects a tier per request by declared
-  complexity; deterministic overrides enforce exceptions." Do not group them.
-- **Determinism scope.** The classification and override decision are
-  deterministic *for a given policy version* — not a claim that the full runtime
-  route ignores provider health, quota, or availability (those arrive in later
-  modules).
-- **Cost is synthetic.** `cost_estimate_usd` is a deterministic local estimate
-  for comparing routes, not a provider invoice.
-- **Override safety.** Pinning bulk traffic to the economy tier is safe only for
-  evaluation-approved task classes with a bounded output and a quality/escalation
-  path — say so, so learners don't copy an unsafe generalization.
-
-## Preflight (Author Validation)
-
-```bash
-bash module1/scripts/clip5_preflight_check.sh
-```
-
-Runs every step, asserts EO1c and EO1d, and writes
-`module1/clip5_preflight_log.txt`. Expect `PASS: 6  FAIL: 0`.
-
-## Summary — What You Learned
-
-| Concept | What You Saw | Where |
-|---------|--------------|-------|
-| Three separate signals: size, complexity, risk | `/routing/rules` table | Step 1 |
-| Length alone does not force premium | long-simple → econo-mini | Step 2 |
-| Complexity, not length, changes the tier | short-complex → premium-max | Step 3 |
-| Overrides pin a tier in both directions | bulk → economy, legal → premium, with `would_have_selected` | Step 4 |
-| Aggregate + per-request proof | Redis counters (`weighted: 0`) + PostgreSQL receipts | Step 5 |
-| Deterministic across all six classes | `all_match: true` over 6 cases | Step 6 |
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `app/main.py` | `/routing/rules`, `/route/smart`, `/routing/smart-counters`, `/routing/smart-validate` |
-| `app/providers/registry.py` | `TASK_COMPLEXITY`, `COMPLEXITY_TIERS`, `OVERRIDE_RULES` (direction + risk), size threshold, 6 validation cases |
-| `app/routing/payload.py` | The pure `smart_decision` (size / complexity / override) and the smart route |
-| `app/db/redis_client.py` | The `smart:counters` hash (`HINCRBY` / `HGETALL`) |
-| `app/db/postgres.py` | Receipts with `complexity` and `override_class` columns |
-| `data/payloads/` | `smart_short_simple`, `smart_long_simple`, `smart_short_complex`, `smart_long_complex`, `smart_legal_override`, `smart_bulk_override` |
-| `scripts/fmt.py` | The `rules` / `smart` / `smart-counters` / `smart-receipts` / `smart-validate` views |
-
-## Next
-
-Validate routing receipts, counters, and disposition — tie the baseline,
-weighted, and payload policies together into one audit.
+- `app/main.py` — the `/routing/rules`, `/route/smart`, `/routing/smart-counters`,
+  `/routing/smart-validate` endpoints
+- `app/providers/registry.py` — `TASK_COMPLEXITY`, `COMPLEXITY_TIERS`,
+  `OVERRIDE_RULES` (direction + risk), the size threshold, and the six validation cases
+- `app/routing/payload.py` — the pure `smart_decision` (size / complexity / override)
+- `app/db/redis_client.py` — the `smart:counters` hash (`HINCRBY` / `HGETALL`)
+- `app/db/postgres.py` — receipts with `complexity` and `override_class` columns
+- `data/payloads/` — `smart_short_simple`, `smart_long_simple`, `smart_short_complex`,
+  `smart_long_complex`, `smart_legal_override`, `smart_bulk_override`
+- `scripts/fmt.py` — the `rules` / `smart` / `smart-counters` / `smart-receipts` /
+  `smart-validate` views

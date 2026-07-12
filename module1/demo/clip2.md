@@ -1,63 +1,95 @@
-# Module 1 — Demo: The FastAPI Provider Adapter Layer
+# Module 1 — Demo: Build the FastAPI provider adapter layer
 
-## What This Demo Proves
+## Why this matters
 
-You will stand up a dedicated AI service layer and prove it decouples
-application code from any model provider. Across six steps you will see the
-stack come up healthy, one uniform adapter contract spanning three model tiers,
-a deterministic local provider simulation with **zero external API calls**, the
-repeatable condition matrix, one baseline routing decision, and the normalized
-receipt persisted in PostgreSQL. By the end you can point to exactly where the
-decoupling lives — and the single decision + receipt that weighted and
-payload-based routing build on later.
+**The problem:** Your team wants to add a second and third model to a GenAI
+feature — cheaper for easy work, premium for hard work, a fallback when one is
+down. But the prototype calls a provider SDK **directly** from application code.
+The day you add a model, absorb an outage, or split traffic by cost, every
+caller has to change, and there is no single place to see *which* model served a
+request or *what* it cost. How do you put a whole fleet of models behind your
+application without coupling your code to any one of them?
 
-## Learning Objectives Covered
+**What you will see:** Six distinct moments in the AI service layer — the stack
+coming up healthy, the uniform adapter contract across three model tiers, a
+deterministic provider simulation with zero external calls, the repeatable
+condition matrix, one baseline routing decision, and the normalized receipt in
+PostgreSQL. Each step shows a different surface of the boundary, so by the end
+you can point to exactly where the decoupling lives.
 
-| LO | What You Will Be Able To Do After This Demo |
-|----|---------------------------------------------|
+**What you walk away with:** A dedicated AI service layer that decouples
+application logic from every model provider and can scale on its own (EO1a), and
+the routing foundation — one decision, one receipt — that intelligent routing is
+built on (TO1). This clip builds that foundation; weighted and payload-based
+routing are proven later on this same adapter boundary.
+
+## Learning objectives covered
+
+| LO | Description |
+|----|-------------|
 | TO1 | Implement load balancing and intelligent request routing for multi-model GenAI service architectures |
 | EO1a | Design a dedicated AI service layer that decouples application logic from model provider dependencies and enables independent scaling |
 
-## Architecture — The Adapter Boundary
+## What this demo proves — and each step is unique
 
-```
-Application code
-   │  (never imports a provider SDK)
-   ▼
-┌──────────────────────────────────────────────────────────┐
-│  FastAPI AI service layer                                  │
-│  ┌────────────────┐   ┌──────────────┐   ┌─────────────┐ │
-│  │ Uniform adapter │──▶│ Baseline      │──▶│ Normalized  │ │
-│  │ contract (×3)   │   │ routing       │   │ receipt     │ │
-│  └────────────────┘   └──────────────┘   └─────────────┘ │
-│    econo / balanced / premium      Redis          Postgres│
-│    (deterministic stubs)      (conditions)      (receipts) │
-└──────────────────────────────────────────────────────────┘
-```
-
-Application code reads the identical contract and one receipt shape regardless
-of which provider is behind it. That is the decoupling this demo proves.
+| Step | Endpoint | What it teaches (nothing repeats) | LO |
+|------|----------|-----------------------------------|-----|
+| 1 | `/health` | The dedicated service and every dependency are live before any request is routed | EO1a |
+| 2 | `/providers` | One uniform adapter contract spans three model tiers — identical fields, different economics | TO1, EO1a |
+| 3 | `/providers/{model}/probe` | Provider behavior is a deterministic local simulation — zero external API calls | EO1a |
+| 4 | `/providers/conditions` | Six named conditions make healthy/slow/error/quota/quality/deprecation repeatable | EO1a |
+| 5 | `/route` | One baseline decision returns selected model, token estimate, cost, and status | TO1 |
+| 6 | `receipts` (psql) | The decision persists in a normalized, provider-agnostic receipt | TO1, EO1a |
 
 ## Prerequisites
 
-Complete the one-time setup in the [root README](../../README.md). Then start
-the stack — this runs the readiness check (which **auto-starts Docker Desktop**
-if it's installed but not open), brings up FastAPI, Redis, and PostgreSQL, waits
-until healthy, and leaves you with a clean, reset stack:
+### Software this clip needs — do you have it?
+
+This clip uses **Docker Desktop** (with Compose), **curl**, **jq**, **python3**,
+**psql**, and **tmux**. Two commands cover every case:
+
+```bash
+bash scripts/ensure-ready.sh       # CHECK  — ✔ / ✗ for each tool, with a fix for anything missing
+bash environment-setup/setup.sh    # INSTALL — one step: installs everything the course uses, then the pinned deps
+```
+
+- **First time on this Mac?** Run the install step once. It installs Homebrew,
+  Docker Desktop, Python 3.13, tmux, jq, curl, and psql — then builds the Python
+  environment. When it prints `READY`, you have everything this clip needs.
+- **Already set up?** The check confirms you're good in seconds. (`demo_up.sh`
+  below runs it for you anyway, so you can skip straight to starting the stack.)
+
+### Start the stack
+
+**Start the stack first.** This runs the environment readiness check
+(`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
+installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits
+until healthy:
 
 ```bash
 bash module1/scripts/demo_up.sh
 ```
 
-To check the tools first: `bash scripts/ensure-ready.sh`. Reset any time with
-`./scripts/module1-demo-reset.sh`.
+Wait for `✔ stack healthy`. It then leaves you with a clean, reset stack.
 
-## Demo Steps
+Confirm the layers are up (Step 1 shows this on screen too):
 
-### Step 1: Prove Every Layer Is Healthy (EO1a)
+- Server running: `curl -s http://localhost:8000/health | python3 -m json.tool`
+- Redis reachable (live provider conditions)
+- PostgreSQL reachable (the `backend: postgres` receipt proof in Step 6)
 
-**What we are doing:** Confirming the dedicated service and each dependency it
-owns are live before a single request is routed.
+To return to a clean state at any time while the stack is up:
+
+```bash
+./scripts/module1-demo-reset.sh
+```
+
+## Demo steps
+
+### Step 1: Bring the stack up and prove every layer is healthy (LO EO1a)
+
+**Goal:** Make the service boundary concrete — the dedicated AI service and each
+dependency it owns are live before a single request is routed.
 
 ```bash
 curl -s http://localhost:8000/health | python3 scripts/fmt.py --type health \
@@ -65,21 +97,20 @@ curl -s http://localhost:8000/health | python3 scripts/fmt.py --type health \
   --why "Every layer of the dedicated AI service must be live before we route"
 ```
 
-**Validate:**
+**Expected output:** `status: healthy`, then four ★ components — `fastapi`,
+`redis`, `postgres`, `provider_stubs` — each `healthy`.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| status | `healthy` | The dedicated service layer is live |
-| fastapi / redis / postgres / provider_stubs | `healthy` | All four dependencies up before any routing |
+**What the learner should notice:** This is the dedicated service layer, not the
+application and not a provider SDK. It owns three dependencies: Redis for live
+provider conditions, PostgreSQL for durable receipts, and the in-process
+provider stubs. All four report healthy, so every guarantee the rest of the demo
+makes has a live foundation. Nothing here reaches out to a paid model — the
+whole boundary runs locally.
 
-**What you proved:** This is the service layer — not the app, not a provider SDK
-— and it owns Redis (live conditions), PostgreSQL (durable receipts), and the
-in-process stubs. All local, no paid model touched.
+### Step 2: Inspect the uniform adapter contract across three tiers (LO TO1, EO1a)
 
-### Step 2: Inspect the Uniform Adapter Contract (TO1, EO1a)
-
-**What we are doing:** Showing the decoupling boundary itself — one identical
-shape describing three different model tiers.
+**Goal:** Show the decoupling boundary itself — one identical shape describing
+three different model tiers.
 
 ```bash
 curl -s http://localhost:8000/providers | python3 scripts/fmt.py --type providers \
@@ -87,31 +118,35 @@ curl -s http://localhost:8000/providers | python3 scripts/fmt.py --type provider
   --why "The decoupling boundary: identical fields across every model"
 ```
 
+**Expected output:** a one-screen table — `default_model: balanced-std` above
+one ★ row per adapter (`econo-mini`, `balanced-std`, `premium-max`) with the
+columns `model`, `tier`, `latency`, `quota`, `cost/1k`, `quality`, `status`.
+Every column is identical across the rows; only the numbers differ.
+
 ```
   ★ default_model: balanced-std
 
     model         tier      latency  quota      cost/1k  quality  status
+
   ★ econo-mini    low_cost  400ms    shared     $0.05    0.82     healthy
+
   ★ balanced-std  balanced  700ms    dedicated  $0.30    0.90     healthy
+
   ★ premium-max   premium   1200ms   reserved   $1.20    0.97     healthy
 ```
 
-**Validate:**
+**What the learner should notice:** Every model exposes the **same fields** —
+`tier`, `latency_target_ms`, `quota_mode`, `cost_per_1k_usd`, `quality_score`,
+`status`. The tiers differ in their numbers (a low-cost tier versus a premium
+one), but application code reads the identical contract no matter which provider
+is behind it. That is the adapter boundary: adding a fourth model adds a row
+here and touches no caller. This uniform set of tiers is the foundation the
+later routing clips distribute traffic across.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| default_model | `balanced-std` | The baseline tier |
-| every column | identical across all three rows | One uniform contract — only the numbers differ |
-| economics | cost/latency/quality differ per tier | Low-cost vs premium trade-offs |
+### Step 3: Prove the adapter is a deterministic local simulation (LO EO1a)
 
-**What you proved:** Every model exposes the same fields; application code reads
-the identical contract no matter which provider is behind it. Adding a fourth
-model adds a row here and touches no caller.
-
-### Step 3: Prove the Adapter Is a Deterministic Local Simulation (EO1a)
-
-**What we are doing:** Probing a tier to prove the provider is simulated
-deterministically — same input, same result, no external call.
+**Goal:** Prove the provider is simulated deterministically — the same input
+always produces the same result, with no external API call.
 
 ```bash
 curl -s http://localhost:8000/providers/balanced-std/probe | python3 scripts/fmt.py --type probe \
@@ -119,21 +154,19 @@ curl -s http://localhost:8000/providers/balanced-std/probe | python3 scripts/fmt
   --why "Zero external calls — same input, same result, every run"
 ```
 
-**Validate:**
+**Expected output:** ★ `model`, `condition`, `status`, `simulated_latency_ms`,
+and the two proof fields ★ `external_api_calls: 0` and ★ `deterministic: true`.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| external_api_calls | `0` | No network, no API key, no cost, no rate limit |
-| deterministic | `true` | Same input → byte-for-byte identical result |
-| model / condition / status / simulated_latency_ms | balanced-std, healthy | A fixed, reproducible probe |
+**What the learner should notice:** Probing the balanced tier returns a fixed,
+reproducible result — and `external_api_calls` is zero. Run it again and the
+output is byte-for-byte identical. No network, no API key, no cost, no rate
+limit. That determinism is what lets this entire course run in CI and on your
+laptop while still exercising real routing, fallback, and readiness logic. The
+provider is a simulation, but the service layer around it is the real thing.
 
-**What you proved:** Provider behavior is a deterministic local simulation —
-which is what lets this whole course run in CI and on a laptop while exercising
-real routing, fallback, and readiness logic.
+### Step 4: Show the repeatable provider condition matrix (LO EO1a)
 
-### Step 4: Show the Repeatable Condition Matrix (EO1a)
-
-**What we are doing:** Showing every simulated condition so failure scenarios are
+**Goal:** Show every simulated condition on screen so failure scenarios are
 reproducible on demand rather than waiting for a real outage.
 
 ```bash
@@ -142,21 +175,22 @@ curl -s http://localhost:8000/providers/conditions | python3 scripts/fmt.py --ty
   --why "Six named conditions make every scenario repeatable"
 ```
 
-**Validate:**
+**Expected output:** an active condition per model (all ★ `healthy`), then the
+six ★ supported conditions — `healthy`, `slow`, `error`, `quota`, `quality`,
+`deprecation` — each with its meaning.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| active (per model) | `healthy` | Every model starts healthy |
-| supported | healthy, slow, error, quota, quality, deprecation | Six named, switchable scenarios |
+**What the learner should notice:** Every model starts `healthy`. Below that are
+the six conditions this system can simulate on command: a slow provider, a hard
+error, an exhausted quota, degraded output quality, a deprecated model. Because
+each one is named and switchable, the failure demos later in the course are
+**repeatable** — you reproduce a quota exhaustion the same way every time,
+instead of hoping a provider misbehaves on camera. This matrix is the control
+panel for the whole reliability story.
 
-**What you proved:** Because each condition is named and switchable, the failure
-demos later in the course are repeatable — you reproduce a quota exhaustion the
-same way every time instead of hoping a provider misbehaves on camera.
+### Step 5: Send a baseline request through the boundary (LO TO1)
 
-### Step 5: Send a Baseline Request Through the Boundary (TO1)
-
-**What we are doing:** Triggering one routing decision and reading the normalized
-response the caller receives.
+**Goal:** Trigger one routing decision and read the normalized response the
+caller receives.
 
 ```bash
 curl -s -X POST http://localhost:8000/route \
@@ -166,23 +200,23 @@ curl -s -X POST http://localhost:8000/route \
   --why "One normalized decision the caller can trust"
 ```
 
-**Validate:**
+**Expected output:** ★ `selected_model: balanced-std`, ★ `provider_tier`,
+★ `provider_status: healthy`, ★ `token_estimate: prompt=17 completion=10
+total=27`, ★ `cost_estimate_usd: $0.008100`, ★ `latency_target_ms`, ★
+`route_reason: baseline_default_tier`.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| selected_model | `balanced-std` | The baseline default tier |
-| token_estimate | prompt=17 completion=10 total=27 | The basis for every cost/capacity decision |
-| cost_estimate_usd | `$0.008100` | Estimated cost of this decision |
-| route_reason | `baseline_default_tier` | Why the request was routed here |
+**What the learner should notice:** One request goes through the boundary and
+comes back as a decision, not a raw model payload. The service selected the
+balanced tier, estimated the cost at just over eight-tenths of a cent, and broke
+the tokens out as **prompt, completion, and total** — the numbers every cost and
+capacity decision later depends on. The caller never sees a provider-specific
+response; it sees this normalized shape. This is the single decision that
+weighted and payload-based load balancing will build on.
 
-**What you proved:** One request comes back as a decision, not a raw model
-payload. The caller sees this normalized shape — the single decision that
-weighted and payload-based load balancing build on.
+### Step 6: Read the normalized receipt in PostgreSQL (LO TO1, EO1a)
 
-### Step 6: Read the Normalized Receipt in PostgreSQL (TO1, EO1a)
-
-**What we are doing:** Reading the persisted receipt itself — proof the decision
-is durable and provider-agnostic.
+**Goal:** Look at the persisted receipt itself — proof the decision is durable
+and provider-agnostic.
 
 ```bash
 docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(r) FROM (
@@ -195,22 +229,43 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
   --why "The decision persists in one shape regardless of provider"
 ```
 
-> Runs `psql` **inside the Postgres container**, so you don't need a host `psql`
-> and there's no socket/host to configure — it just works while the stack is up.
+> Runs `psql` **inside the Postgres container**, so you don't need a host
+> `psql` and there's no socket/host to configure — it just works while the
+> stack is up. If you prefer a host `psql`, pass the connection explicitly:
+> `PGHOST=localhost PGPORT=5432 PGDATABASE=genai PGUSER=genai psql -tA -c "…"`
+> (a bare `psql` fails because it defaults to a local Unix socket).
 
-**Validate:**
+**Expected output:** one ★ receipt row — `selected_model: balanced-std`,
+`provider_tier`, `provider_status`, `token_estimate` (prompt/completion/total),
+`cost_estimate_usd`, `quality_score`, `policy_name: baseline` — with the same `request_id` as
+Step 5.
 
-| Field | Expected | What It Means |
-|-------|----------|---------------|
-| selected_model / provider_tier / provider_status | balanced-std, balanced, healthy | The persisted decision |
-| token + cost + quality columns | present | Provider-agnostic receipt columns |
-| policy_name | `baseline` | The routing policy that made the decision |
-| request_id | same as Step 5 | The decision → record chain is complete |
+**What the learner should notice:** This is a real row in PostgreSQL, queried
+directly — the same `request_id` you just saw in Step 5, so the chain from
+decision to record is complete. Every column here is provider-agnostic: whether
+the request had gone to `econo-mini` or `premium-max`, it would land in these
+exact columns. That is the decoupling you set out to build — the application, and
+every dashboard downstream, reads one stable receipt shape and never depends on
+a vendor's response. Six months from now you can answer "which model served
+request X, and what did it cost" without re-running anything.
 
-**What you proved:** A real row in PostgreSQL, queried directly, with the same
-`request_id` from Step 5. Every column is provider-agnostic — the application and
-every dashboard downstream read one stable receipt shape and never depend on a
-vendor's response.
+## Best-practice callout
+
+**Put a dedicated service layer between your application and your models.**
+Application code should depend on a uniform adapter contract and a normalized
+receipt — never on a provider's SDK or response shape. That one boundary is what
+lets you add models, fail over, and scale the service independently.
+
+## Preflight check
+
+```bash
+bash module1/scripts/preflight_check.sh
+```
+
+Runs every step above, captures each command and its output, maps each step to
+its LO, and writes the log to
+[`module1/preflight_log.txt`](../preflight_log.txt) so you can confirm alignment
+with the outline. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 
@@ -218,40 +273,13 @@ vendor's response.
 ./scripts/module1-demo-reset.sh
 ```
 
-## Preflight (Author Validation)
+## Key files
 
-```bash
-bash module1/scripts/preflight_check.sh
-```
-
-Runs every step, maps each to its LO, and writes
-[`module1/preflight_log.txt`](../preflight_log.txt). Expect `PASS: 6  FAIL: 0`.
-
-## Summary — What You Learned
-
-| Concept | What You Saw | Where |
-|---------|--------------|-------|
-| The service layer owns its dependencies | `/health`: fastapi, redis, postgres, stubs all healthy | Step 1 |
-| One uniform contract spans every tier | `/providers`: identical fields, different economics | Step 2 |
-| Provider behavior is a deterministic local sim | `external_api_calls: 0`, `deterministic: true` | Step 3 |
-| Failure scenarios are named and repeatable | Six conditions in the matrix | Step 4 |
-| The boundary returns a normalized decision | `/route`: selected model, tokens, cost, reason | Step 5 |
-| The decision persists provider-agnostically | PostgreSQL receipt with matching `request_id` | Step 6 |
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `app/main.py` | The FastAPI AI service layer and all demo endpoints |
-| `app/providers/registry.py` | The three model tiers and six named conditions |
-| `app/providers/adapter.py` | Deterministic simulation, token and cost estimation |
-| `app/routing/router.py` | The baseline routing decision |
-| `app/db/postgres.py` | The normalized `receipts` schema and writes |
-| `app/db/redis_client.py` | Live provider conditions |
-| `scripts/fmt.py` | Compact colored formatter (`--title` / `--why`) |
-| `data/payloads/baseline_request.json` | The baseline request used in Step 5 |
-
-## Next
-
-Weighted routing across model tiers — split traffic 50/30/20 by cost and
-latency target, and prove the distribution from Redis and PostgreSQL.
+- `app/main.py` — the FastAPI AI service layer and all demo endpoints
+- `app/providers/registry.py` — the three model tiers and six named conditions
+- `app/providers/adapter.py` — deterministic simulation, token and cost estimation
+- `app/routing/router.py` — the baseline routing decision
+- `app/db/postgres.py` — the normalized `receipts` schema and writes
+- `app/db/redis_client.py` — live provider conditions
+- `scripts/fmt.py` — Pluralsight-branded output formatter (`--title` / `--why`)
+- `data/payloads/baseline_request.json` — the baseline request used in Step 5
