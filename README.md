@@ -61,10 +61,15 @@ Run once from the project root, on macOS, before any demo:
 bash environment-setup/setup.sh
 ```
 
-This single installer checks and installs every dependency (Docker Desktop,
-Python 3.13, tmux, jq, and the pinned Python packages), builds the virtual
-environment, and writes a verbose readiness log to
-`environment-setup/setup_log.txt`. When it finishes green, your Mac is ready.
+This single installer auto-installs every dependency the demos use — Homebrew,
+Docker Desktop (with Compose), Python 3.13, tmux, jq, curl, and psql — then
+builds the virtual environment with the pinned Python packages and writes a
+verbose readiness log to `environment-setup/setup_log.txt`. When it finishes
+green, your Mac is ready.
+
+To check what you already have without installing anything, run
+`bash scripts/ensure-ready.sh` — it prints ✔ / ✗ for each tool with a fix for
+anything missing.
 
 Prefer to do it by hand:
 

@@ -39,6 +39,24 @@ to each choice in PostgreSQL, and a proof that the split matches your weights.
 
 ## Prerequisites
 
+### Software this clip needs — do you have it?
+
+This clip uses **Docker Desktop** (with Compose), **curl**, **jq**, **python3**,
+**psql**, and **tmux**. Two commands cover every case:
+
+```bash
+bash scripts/ensure-ready.sh       # CHECK  — ✔ / ✗ for each tool, with a fix for anything missing
+bash environment-setup/setup.sh    # INSTALL — one step: installs everything the course uses, then the pinned deps
+```
+
+- **First time on this Mac?** Run the install step once. It installs Homebrew,
+  Docker Desktop, Python 3.13, tmux, jq, curl, and psql — then builds the Python
+  environment. When it prints `READY`, you have everything this clip needs.
+- **Already set up?** The check confirms you're good in seconds. (`demo_up.sh`
+  below runs it for you anyway, so you can skip straight to starting the stack.)
+
+### Start the stack
+
 **Start the stack first.** This runs the environment readiness check
 (`scripts/ensure-ready.sh`) — which **auto-starts Docker Desktop** if it's
 installed but not open — then brings up FastAPI, Redis, and PostgreSQL and waits

@@ -37,6 +37,14 @@ warn() { log "  ${BLUE}➜ INFO${R}  $1"; }
 bad()  { log "  ${PINK}✗ FAIL${R}  $1"; FAILED=1; }
 fix()  { log "         ${GRAY}fix:${R} $1"; }
 
+# --- What this installs --------------------------------------------------------
+# One command installs every piece of software the course demos use:
+#   Homebrew · Docker Desktop (+ Compose) · tmux · jq · curl · Python 3.13 ·
+#   psql (libpq) · the Python virtual environment with pinned dependencies.
+# On macOS everything is auto-installed via Homebrew. On other platforms the
+# script installs what it can and prints the exact command for anything it
+# can't.
+
 # --- Platform -----------------------------------------------------------------
 OS="$(uname -s)"
 hdr "Platform"
@@ -59,8 +67,19 @@ hdr "Homebrew (macOS package manager)"
 if command -v brew >/dev/null 2>&1; then
   ok "brew present — $(brew --version | head -1)"
 elif [ "$IS_MAC" = "1" ]; then
-  bad "Homebrew not found"
-  fix "run: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  warn "Homebrew not found — installing it now (you may be prompted for your Mac password) ..."
+  NONINTERACTIVE=1 /bin/bash -c \
+    "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >>"$LOG" 2>&1 || true
+  # Put brew on PATH for the rest of this run (Apple Silicon then Intel).
+  for b in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    [ -x "$b" ] && eval "$("$b" shellenv)" && break
+  done
+  if command -v brew >/dev/null 2>&1; then
+    ok "Homebrew installed — $(brew --version | head -1)"
+  else
+    bad "Homebrew install did not complete"
+    fix "run it manually, then re-run this script: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  fi
 else
   warn "not macOS — skipping Homebrew (install tools with your package manager)"
 fi
@@ -101,8 +120,31 @@ else
 fi
 [ -z "$PYBIN" ] && PYBIN="python3"
 
+# --- psql (PostgreSQL client) -------------------------------------------------
+# Used by the host-psql fallback and the readiness check. The demo's Step-5/6
+# receipt query runs psql inside the container, so this is belt-and-suspenders.
+hdr "PostgreSQL client (psql)"
+if command -v psql >/dev/null 2>&1; then
+  ok "psql present — $(psql --version)"
+elif [ "$IS_MAC" = "1" ] && command -v brew >/dev/null 2>&1; then
+  warn "installing psql (libpq) via Homebrew ..."
+  if brew install libpq >>"$LOG" 2>&1 && brew link --force libpq >>"$LOG" 2>&1; then
+    ok "psql installed (libpq)"
+  else
+    bad "psql install failed"
+    fix "brew install libpq && brew link --force libpq"
+  fi
+else
+  bad "psql not found"
+  fix "install the PostgreSQL client (libpq) with your package manager"
+fi
+
 # --- Docker Desktop -----------------------------------------------------------
 hdr "Docker Desktop + Compose"
+if ! command -v docker >/dev/null 2>&1 && [ "$IS_MAC" = "1" ] && command -v brew >/dev/null 2>&1; then
+  warn "Docker not found — installing Docker Desktop via Homebrew (large download, be patient) ..."
+  brew install --cask docker >>"$LOG" 2>&1 && ok "Docker Desktop installed" || bad "Docker Desktop install failed"
+fi
 if command -v docker >/dev/null 2>&1; then
   ok "docker present — $(docker --version)"
   if docker compose version >/dev/null 2>&1; then
@@ -113,9 +155,19 @@ if command -v docker >/dev/null 2>&1; then
   fi
   if docker ps >/dev/null 2>&1; then
     ok "docker daemon is running"
+  elif [ "$IS_MAC" = "1" ]; then
+    warn "docker daemon not running — starting Docker Desktop (this can take ~30s) ..."
+    open -a Docker >/dev/null 2>&1 || open -a "Docker Desktop" >/dev/null 2>&1 || true
+    for _ in $(seq 1 45); do docker info >/dev/null 2>&1 && break; printf "."; sleep 2; done; echo
+    if docker ps >/dev/null 2>&1; then
+      ok "Docker Desktop started and the daemon is up"
+    else
+      bad "Docker daemon did not become ready in time"
+      fix "open Docker Desktop, wait for the whale icon to settle, then re-run"
+    fi
   else
     bad "docker daemon not running"
-    fix "open Docker Desktop and wait for the whale icon to settle, then re-run"
+    fix "start the Docker daemon, then re-run"
   fi
 else
   bad "docker not found"
