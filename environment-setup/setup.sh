@@ -175,30 +175,55 @@ else
 fi
 
 # --- Python venv + pinned deps ------------------------------------------------
+# Self-healing: we never rely on a bare `pip` on PATH (a reused venv can be
+# missing it entirely). We call the venv's own python with `-m pip`, bootstrap
+# pip via ensurepip if absent, and rebuild the venv once if the install fails.
 hdr "Python virtual environment + pinned dependencies"
 VENV="$ROOT/.venv"
-if [ ! -d "$VENV" ]; then
+VENV_PY="$VENV/bin/python"
+
+make_venv() { "$PYBIN" -m venv "$VENV" >>"$LOG" 2>&1; }
+
+# Install pinned deps into the venv. Returns non-zero on failure.
+install_deps() {
+  # Bootstrap pip if the venv doesn't have it (the pip: command not found case).
+  if ! "$VENV_PY" -m pip --version >>"$LOG" 2>&1; then
+    warn "pip missing in venv — bootstrapping with ensurepip ..."
+    "$VENV_PY" -m ensurepip --upgrade >>"$LOG" 2>&1 || true
+  fi
+  "$VENV_PY" -m pip install --upgrade pip setuptools wheel >>"$LOG" 2>&1
+  "$VENV_PY" -m pip install -r "$ROOT/requirements.txt" >>"$LOG" 2>&1
+}
+
+if [ ! -x "$VENV_PY" ]; then
   warn "creating venv at .venv ..."
-  "$PYBIN" -m venv "$VENV" >>"$LOG" 2>&1 && ok "venv created" || bad "venv creation failed"
+  make_venv && ok "venv created" || bad "venv creation failed"
 else
   ok "venv already present at .venv"
 fi
-if [ -d "$VENV" ]; then
-  # shellcheck disable=SC1091
-  . "$VENV/bin/activate"
+
+if [ -x "$VENV_PY" ]; then
   warn "installing pinned requirements (this can take a minute) ..."
-  pip install --upgrade pip >>"$LOG" 2>&1
-  if pip install -r "$ROOT/requirements.txt" >>"$LOG" 2>&1; then
+  if install_deps; then
     ok "requirements installed"
-    plain "$(pip freeze)"
+  else
+    # A reused venv can be half-built or missing pip — rebuild once and retry.
+    warn "install failed in the existing venv — rebuilding .venv and retrying ..."
+    rm -rf "$VENV"
+    if make_venv && install_deps; then
+      ok "requirements installed (after venv rebuild)"
+    else
+      bad "requirements install failed — see $LOG"
+      fix "rm -rf .venv && bash environment-setup/setup.sh"
+    fi
+  fi
+  if "$VENV_PY" -m pip show fastapi >/dev/null 2>&1; then
+    plain "$("$VENV_PY" -m pip freeze)"
     warn "installed versions:"
     for pkg in fastapi uvicorn redis psycopg prometheus-client pytest; do
-      v="$(pip show "$pkg" 2>/dev/null | awk '/^Version:/{print $2}')"
+      v="$("$VENV_PY" -m pip show "$pkg" 2>/dev/null | awk '/^Version:/{print $2}')"
       [ -n "$v" ] && log "  ${BLUE}${pkg}:${R} ${LGRN}${v}${R}"
     done
-  else
-    bad "requirements install failed — see $LOG"
-    fix "activate .venv and run: pip install -r requirements.txt"
   fi
 fi
 
