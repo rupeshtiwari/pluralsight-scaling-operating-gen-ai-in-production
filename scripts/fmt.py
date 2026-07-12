@@ -262,7 +262,7 @@ def fmt_policy(d: dict) -> str:
     ref_n = d.get("reference_total_tokens")
     if ref_n is not None:
         out += ctx("cost basis",
-                   f"a fixed {ref_n}-token prompt — comparable, not per-request")
+                   f"a fixed {ref_n}-token reference prompt for like-for-like comparison")
     return "\n".join(out)
 
 

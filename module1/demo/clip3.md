@@ -112,11 +112,11 @@ latency target are the highest. The weight column and the cost/latency columns
 side by side are the decision logic: spend the volume on the cheap, fast tier,
 reserve the expensive one for the few requests that need it. The weights are a
 config value; changing them re-shapes the traffic without touching a single
-caller. (The cost estimate is a *comparable* figure, priced on one fixed 27-token
-reference prompt — the prompt the batch routes — so it lines up with the receipts
-in Step 5. It is not a universal per-request price: real cost scales with the
-tokens in each request, so read these as *relative* — premium is roughly 24× the
-low-cost tier — rather than a fixed charge.)
+caller. (The cost estimate is a *comparable* figure for like-for-like reading,
+priced on one fixed 27-token reference prompt — the prompt the batch routes — so
+it lines up with the receipts in Step 5. It is not a universal request price:
+real cost scales with the tokens in each request, so read these as *relative* —
+premium is roughly 24× the low-cost tier — rather than a fixed charge.)
 
 ### Step 2: Run a controlled traffic batch
 
