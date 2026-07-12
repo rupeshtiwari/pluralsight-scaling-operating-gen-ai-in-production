@@ -252,27 +252,6 @@ Run it again and you get the same result: the classification and override logic 
 deterministic for a given policy version, so it is testable in CI and safe to
 change behind a guardrail.
 
-## Best-practice callout
-
-**Route by complexity, not length; override by exception, safely.** Select the
-tier on a declared complexity signal so a long-but-simple request does not burn
-premium and a short-but-hard one is not starved on the cheap tier. Reserve
-deterministic overrides for traffic that must not be left to a policy — and pin
-bulk work to the economy tier only for *evaluation-approved* task classes with a
-bounded output and a quality/escalation path, so the saving never becomes a silent
-quality regression.
-
-## Narration notes
-
-- **Size ≠ complexity ≠ risk.** Say it explicitly: "Weighted routing controls
-  aggregate distribution; payload routing selects a tier per request by declared
-  complexity; deterministic overrides enforce exceptions." Do not group them.
-- **Determinism scope.** The classification and override decision are
-  deterministic *for a given policy version* — not a claim that the full runtime
-  route ignores provider health, quota, or availability (those arrive later).
-- **Cost is synthetic.** `cost_estimate_usd` is a deterministic local estimate for
-  comparing routes, not a provider invoice.
-
 ## Preflight check
 
 ```bash

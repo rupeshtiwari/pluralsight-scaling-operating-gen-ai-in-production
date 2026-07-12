@@ -249,13 +249,6 @@ every dashboard downstream, reads one stable receipt shape and never depends on
 a vendor's response. Six months from now you can answer "which model served
 request X, and what did it cost" without re-running anything.
 
-## Best-practice callout
-
-**Put a dedicated service layer between your application and your models.**
-Application code should depend on a uniform adapter contract and a normalized
-receipt — never on a provider's SDK or response shape. That one boundary is what
-lets you add models, fail over, and scale the service independently.
-
 ## Preflight check
 
 ```bash

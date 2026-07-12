@@ -244,33 +244,6 @@ claim that a probabilistic production router hits 10/6/4 on every 20 requests.
 The property you're proving is that the routing *honours the configured
 distribution* — provably, not just by assertion.
 
-## Best-practice callout
-
-**Make traffic distribution a declared policy, not an accident.** Weight your
-tiers explicitly against cost and latency targets, route every request through
-the policy, and keep two independent proofs — the counters in the Redis
-datastore (read directly) and the durable receipts in PostgreSQL. If the
-observed split doesn't match the configured weights, you have a routing bug, and
-now you can see it. In production the split is usually probabilistic and
-converges to the target over a large sample; here it is deterministic so it can
-be validated exactly in CI.
-
-## Narration notes
-
-- **Pronounce identifiers, don't spell them.** Say the `low_cost` tier as
-  **"low-cost"** (read the underscore as a hyphen), and read model ids naturally
-  — "econo-mini", "balanced-std", "premium-max". The underscore is fine on
-  screen; it should never be spoken as "low underscore cost."
-- **Frame cost as workload-dependent.** The dollar figures are a *comparable*
-  estimate for one fixed 27-token reference prompt, not a universal request
-  price. Narrate them as relative — "premium costs roughly twenty-four times the
-  low-cost tier for the same request" — so the learner hears that real cost
-  scales with the tokens in each request.
-- **Deterministic vs production.** When you reach the 10/6/4 split, say it is an
-  exact, repeatable result *by design* for validation; a production weighted
-  router converges to 50/30/20 over a large sample rather than hitting it on
-  every twenty requests.
-
 ## Preflight check
 
 ```bash
