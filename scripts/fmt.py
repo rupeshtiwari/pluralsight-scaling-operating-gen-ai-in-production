@@ -428,6 +428,41 @@ def fmt_smart(d: dict) -> str:
     return "\n".join(out)
 
 
+def fmt_smart_pair(d: Any) -> str:
+    # Two smart responses compared on one screen (Steps 2-4 route two requests
+    # each). Payload rows show cost; override rows show would_have_selected.
+    rows = [r for r in (d if isinstance(d, list) else [d]) if r]
+    is_override = any(r.get("override_class") for r in rows)
+    out = [header(
+        "Route two requests and compare",
+        "Same endpoint, two payloads side by side")]
+    if is_override:
+        out.append(f"    {BLUE}{'size':<6}{'tokens':<7}{'complexity':<11}"
+                   f"{'selected':<14}{'would→':<13}{'route_reason'}{RESET}")
+    else:
+        out.append(f"    {BLUE}{'size':<6}{'tokens':<7}{'complexity':<11}"
+                   f"{'selected':<14}{'cost':<11}{'route_reason'}{RESET}")
+    out.append("")
+    for r in rows:
+        tok = str(r.get("token_estimate", {}).get("total", ""))
+        size = str(r.get("size"))
+        cx = str(r.get("complexity"))
+        model = str(r.get("selected_model"))
+        reason = str(r.get("route_reason"))
+        if is_override:
+            would = str(r.get("would_have_selected") or "-")
+            out.append(
+                f"  {PINK}★{RESET} {LGRN}{size:<6}{tok:<7}{cx:<11}{model:<14}"
+                f"{would:<13}{reason}{RESET}")
+        else:
+            cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+            out.append(
+                f"  {PINK}★{RESET} {LGRN}{size:<6}{tok:<7}{cx:<11}{model:<14}"
+                f"{cost:<11}{reason}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
 def fmt_smart_receipts(d: Any) -> str:
     # Accept a JSON array, the /receipts wrapper, or psql -tA multi-row output
     # normalized to a list before we get here.
@@ -618,6 +653,7 @@ VIEWS = {
     "rules": fmt_rules,
     "smart": fmt_smart,
     "smart-validate": fmt_smart_validate,
+    "smart-pair": fmt_smart_pair,
     "smart-receipts": fmt_smart_receipts,
     "smart-counters": fmt_smart_counters,
     "redis-counters": fmt_redis_counters,

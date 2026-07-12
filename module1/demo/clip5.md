@@ -119,20 +119,17 @@ alone.
 endpoint and watch both land on the cheap tier.
 
 ```bash
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_short_simple.json \
-  | python3 scripts/fmt.py --type smart --title "Short + simple" \
-  --why "Small prompt, simple task — routes to econo-mini"
-
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_long_simple.json \
-  | python3 scripts/fmt.py --type smart --title "Long + simple" \
-  --why "Large prompt, still a simple task — length does not force premium"
+{ curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_short_simple.json
+  echo
+  curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_long_simple.json
+} | python3 scripts/fmt.py --type smart-pair \
+  --title "Size influences cost, not capability" \
+  --why "Two prompts, very different length, same simple task — both stay on econo-mini"
 ```
 
-**Expected output:** both results show ★ `selected_model: econo-mini`, ★
-`complexity: simple`, ★ `route_reason: complexity_simple`, and a visible ★
-`token_estimate` — `size: short` on the first, `size: long` on the second.
+**Expected output:** a two-row table — `short` (small `tokens`) and `long` (large
+`tokens`) — both showing `complexity: simple`, `selected: econo-mini`, and
+`route_reason: complexity_simple`. Only `tokens` and `cost` differ between the rows.
 
 **What the learner should notice:** Two prompts of very different length, same
 declared complexity, same cheap tier. The token estimate is right there on screen,
@@ -147,20 +144,18 @@ capability:** length did not escalate the tier. That is the first half of the
 land on premium — the short one proving complexity beats length.
 
 ```bash
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_short_complex.json \
-  | python3 scripts/fmt.py --type smart --title "Short + complex" \
-  --why "Small prompt, complex task — complexity routes it to premium-max"
-
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_long_complex.json \
-  | python3 scripts/fmt.py --type smart --title "Long + complex" \
-  --why "Large prompt, complex task — also premium-max"
+{ curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_short_complex.json
+  echo
+  curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_long_complex.json
+} | python3 scripts/fmt.py --type smart-pair \
+  --title "Complexity, not length, changes the tier" \
+  --why "A short complex task and a long complex task both route to premium-max"
 ```
 
-**Expected output:** both results show ★ `selected_model: premium-max`, ★
-`complexity: complex`, ★ `route_reason: complexity_complex` — with ★ `size: short`
-on the first and a small ★ `token_estimate` proving it really is short.
+**Expected output:** a two-row table — `short` (small `tokens`) and `long` (large
+`tokens`) — both showing `complexity: complex`, `selected: premium-max`, and
+`route_reason: complexity_complex`. The `short` row proves complexity, not length,
+drives the tier.
 
 **What the learner should notice:** The short request — "identify the concurrency
 bug in this transaction protocol" — is tiny by token count, yet it routes to
@@ -175,22 +170,19 @@ payload-size routing.
 *cheaper* (bulk economy), one forcing *stronger* (high-risk legal).
 
 ```bash
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_bulk_override.json \
-  | python3 scripts/fmt.py --type smart --title "Override: bulk batch → economy" \
-  --why "A complex payload would pick premium; the bulk override forces econo-mini"
-
-curl -s -X POST http://localhost:8000/route/smart \
-  -H "Content-Type: application/json" -d @data/payloads/smart_legal_override.json \
-  | python3 scripts/fmt.py --type smart --title "Override: legal review → premium (high risk)" \
-  --why "A simple payload would pick econo-mini; the risk override forces premium-max"
+{ curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_bulk_override.json
+  echo
+  curl -s -X POST http://localhost:8000/route/smart -H "Content-Type: application/json" -d @data/payloads/smart_legal_override.json
+} | python3 scripts/fmt.py --type smart-pair \
+  --title "Deterministic overrides — both directions" \
+  --why "would→ shows the tier complexity routing would have chosen before the override"
 ```
 
-**Expected output:** the bulk result shows ★ `selected_model: econo-mini`, ★
-`route_reason: override_bulk_batch`, ★ `would_have_selected: premium-max`,
-`override_direction: economy`. The legal result shows ★ `selected_model:
-premium-max`, ★ `route_reason: override_legal_review`, ★ `would_have_selected:
-econo-mini`, ★ `risk: high`, `override_direction: risk`.
+**Expected output:** a two-row table with a `would→` column. The **bulk** row —
+`complex`, `selected: econo-mini`, `would→ premium-max`, `route_reason:
+override_bulk_batch` (forced *cheaper*). The **legal** row — `simple`, `selected:
+premium-max`, `would→ econo-mini`, `route_reason: override_legal_review` (forced
+*stronger*).
 
 **What the learner should notice:** `would_have_selected` is the proof the
 override did not happen by accident — it overrode a *known* decision. The bulk job
@@ -280,5 +272,5 @@ Runs every step above, asserts EO1c and EO1d, and writes a readable log to
 - `app/db/postgres.py` — receipts with `complexity` and `override_class` columns
 - `data/payloads/` — `smart_short_simple`, `smart_long_simple`, `smart_short_complex`,
   `smart_long_complex`, `smart_legal_override`, `smart_bulk_override`
-- `scripts/fmt.py` — the `rules` / `smart` / `smart-counters` / `smart-receipts` /
-  `smart-validate` views
+- `scripts/fmt.py` — the `rules` / `smart-pair` / `smart-counters` /
+  `smart-receipts` / `smart-validate` views

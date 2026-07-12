@@ -90,9 +90,10 @@ fi
 step_head "2" "Length alone does not force premium" \
   "A long simple request must route the same as a short simple one." \
   "short-simple and long-simple both econo-mini, complexity simple, sizes short vs long."
-show_cmd "curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_short_simple.json | fmt --type smart   (then smart_long_simple.json)"
-R1="$(post data/payloads/smart_short_simple.json)"; emit "$(printf '%s' "$R1" | $FMT --type smart 2>&1)"
-R2="$(post data/payloads/smart_long_simple.json)";  emit "$(printf '%s' "$R2" | $FMT --type smart 2>&1)"
+show_cmd "{ curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_short_simple.json; echo; curl -s ... smart_long_simple.json; } | fmt --type smart-pair"
+R1="$(post data/payloads/smart_short_simple.json)"
+R2="$(post data/payloads/smart_long_simple.json)"
+emit "$(printf '%s\n%s' "$R1" "$R2" | $FMT --type smart-pair 2>&1)"
 if echo "$R1" | jq -e '.selected_model=="econo-mini" and .complexity=="simple" and .size=="short"' >/dev/null 2>&1 \
    && echo "$R2" | jq -e '.selected_model=="econo-mini" and .complexity=="simple" and .size=="long"' >/dev/null 2>&1; then
   verdict 0 "long-simple and short-simple both route to econo-mini" "" ""
@@ -107,9 +108,10 @@ fi
 step_head "3" "Complexity, not length, changes the tier" \
   "A short but complex request must route to premium." \
   "short-complex and long-complex both premium-max, complexity complex."
-show_cmd "curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_short_complex.json | fmt --type smart   (then smart_long_complex.json)"
-R1="$(post data/payloads/smart_short_complex.json)"; emit "$(printf '%s' "$R1" | $FMT --type smart 2>&1)"
-R2="$(post data/payloads/smart_long_complex.json)";  emit "$(printf '%s' "$R2" | $FMT --type smart 2>&1)"
+show_cmd "{ curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_short_complex.json; echo; curl -s ... smart_long_complex.json; } | fmt --type smart-pair"
+R1="$(post data/payloads/smart_short_complex.json)"
+R2="$(post data/payloads/smart_long_complex.json)"
+emit "$(printf '%s\n%s' "$R1" "$R2" | $FMT --type smart-pair 2>&1)"
 if echo "$R1" | jq -e '.selected_model=="premium-max" and .complexity=="complex" and .size=="short"' >/dev/null 2>&1 \
    && echo "$R2" | jq -e '.selected_model=="premium-max" and .complexity=="complex"' >/dev/null 2>&1; then
   verdict 0 "short-complex and long-complex both route to premium-max" "" ""
@@ -124,9 +126,10 @@ fi
 step_head "4" "Deterministic overrides — both directions" \
   "One override forces cheaper (bulk economy), one forces stronger (high-risk legal)." \
   "bulk → econo-mini (would_have=premium), legal → premium-max (would_have=econo, risk high)."
-show_cmd "curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_bulk_override.json | fmt --type smart   (then smart_legal_override.json)"
-RB="$(post data/payloads/smart_bulk_override.json)";  emit "$(printf '%s' "$RB" | $FMT --type smart 2>&1)"
-RL="$(post data/payloads/smart_legal_override.json)"; emit "$(printf '%s' "$RL" | $FMT --type smart 2>&1)"
+show_cmd "{ curl -s -X POST \$API_BASE/route/smart -d @data/payloads/smart_bulk_override.json; echo; curl -s ... smart_legal_override.json; } | fmt --type smart-pair"
+RB="$(post data/payloads/smart_bulk_override.json)"
+RL="$(post data/payloads/smart_legal_override.json)"
+emit "$(printf '%s\n%s' "$RB" "$RL" | $FMT --type smart-pair 2>&1)"
 if echo "$RB" | jq -e '.selected_model=="econo-mini" and .route_reason=="override_bulk_batch" and .would_have_selected=="premium-max" and .override_direction=="economy"' >/dev/null 2>&1 \
    && echo "$RL" | jq -e '.selected_model=="premium-max" and .route_reason=="override_legal_review" and .would_have_selected=="econo-mini" and .risk=="high"' >/dev/null 2>&1; then
   verdict 0 "overrides bypass the decision in both directions, with would_have_selected proof" "" ""
