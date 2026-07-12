@@ -36,7 +36,7 @@ by PostgreSQL receipts, and proven repeatable.
 
 | Step | Endpoint | What it teaches (nothing repeats) |
 |------|----------|-----------------------------------|
-| 1 | `/routing/rules` | Three separate signals — size (evidence), declared complexity (selects the tier), override (pins it) |
+| 1 | `/routing/rules` | Three separate signals — size (evidence), declared complexity (selects the default tier), override (replaces it) |
 | 2 | `/route/smart` (simple ×2) | Length alone does not force premium — short and long both stay cheap |
 | 3 | `/route/smart` (complex ×2) | Complexity, not length, changes the tier — a short complex ask goes premium |
 | 4 | `/route/smart` (override ×2) | Deterministic overrides pin a tier both ways — economy and risk |
@@ -108,11 +108,12 @@ economy; `legal_review → premium-max`, risk).
 
 **What the learner should notice:** The policy reads three separate signals, and
 the screen keeps them apart on purpose. **Complexity** — a *declared task class* —
-is what selects the tier; **size** is only evidence for cost; **overrides** pin a
-tier regardless of either. That separation is the whole point: length is not
-complexity, so the router must not decide on token count alone.
+selects the *default* tier; **size** is only evidence for cost; and an
+**override** can intentionally replace that default. That separation is the whole
+point: length is not complexity, so the router must not decide on token count
+alone.
 
-### Step 2: Prove length alone does not force premium
+### Step 2: Size influences cost, not capability
 
 **Goal:** Route a short-simple request and a long-simple request through the same
 endpoint and watch both land on the cheap tier.
@@ -135,8 +136,9 @@ curl -s -X POST http://localhost:8000/route/smart \
 
 **What the learner should notice:** Two prompts of very different length, same
 declared complexity, same cheap tier. The token estimate is right there on screen,
-so you can see the second request is genuinely large — and it still routes to
-`econo-mini`. Length did not escalate the tier. That is the first half of the
+so you can see the second request is genuinely large — a bigger prompt costs more
+tokens, but it does not need a more capable model. **Size influences cost, not
+capability:** length did not escalate the tier. That is the first half of the
 "size is not complexity" proof.
 
 ### Step 3: Prove complexity, not length, changes the tier
@@ -217,10 +219,10 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
 ```
 
 **Expected output:** the Redis counters show ★ `payload:simple 2`,
-★ `payload:complex 2`, ★ `override:bulk_batch 1`, ★ `override:legal_review 1`, and
-★ `weighted path (bypassed): 0`. The receipts show six ★ rows, each with
-`request_id`, `total_tokens`, `complexity`, `selected_model`, `route_reason`, and
-`cost`.
+★ `payload:complex 2`, ★ `override total: 2` (then ★ `override:bulk_batch 1`,
+★ `override:legal_review 1`), and ★ `weighted path (bypassed): 0`. The receipts
+show six ★ rows, each with `request_id`, `total_tokens`, `complexity`,
+`selected_model`, `route_reason`, and `cost`.
 
 **What the learner should notice:** Redis breaks the six decisions down by
 dimension — routed by complexity vs pinned by override — read straight from the
@@ -241,10 +243,10 @@ curl -s http://localhost:8000/routing/smart-validate | python3 scripts/fmt.py --
   --why "Size, complexity, and overrides are deterministic and testable — same input, same tier, every run"
 ```
 
-**Expected output:** ★ `cases: 6`, ★ `all_match: true`, then a row per case with
-its `size` and `complexity` and a ✓ — `short_simple` / `long_simple` → econo-mini,
-`short_complex` / `long_complex` → premium-max, `high_risk_override` → premium-max,
-`bulk_override` → econo-mini.
+**Expected output:** ★ `cases: 6`, ★ `all_match: true`, ★ `policy_name:
+payload_smart`, then a row per case with its `size` and `complexity` and a ✓ —
+`short_simple` / `long_simple` → econo-mini, `short_complex` / `long_complex` →
+premium-max, `high_risk_override` → premium-max, `bulk_override` → econo-mini.
 
 **What the learner should notice:** Six payload forms — short and long, simple and
 complex, plus both override directions — and every one matches its expected tier.

@@ -387,7 +387,7 @@ def fmt_rules(d: dict) -> str:
     out += ctx("size (evidence only)",
                f"≤ {thr} tokens = short, > {thr} = long — shown for cost, never selects the tier")
     tiers = d.get("complexity_tiers", {})
-    out += sect("declared task class → complexity → tier")
+    out += sect("complexity selects the tier (mapped from the declared task class)")
     out.append(f"    {BLUE}{'task class':<20}{'complexity':<12}{'tier'}{RESET}")
     for task, cx in d.get("task_complexity", {}).items():
         out.append(f"    {LGRN}{task:<20}{cx:<12}{tiers.get(cx, '')}{RESET}")
@@ -420,7 +420,9 @@ def fmt_smart(d: dict) -> str:
     if d.get("override_class"):
         out += star("would_have_selected", d.get("would_have_selected"), PINK)
         out += star("override_class", d.get("override_class"), PINK)
-        out += star("override_direction", d.get("override_direction"))
+        # economy = saving money (green) · risk = protecting quality (pink)
+        dirn = d.get("override_direction")
+        out += star("override_direction", dirn, PINK if dirn == "risk" else LIME)
     out += ctx("cost basis", "synthetic local estimate for comparing routes, not a provider invoice")
     out += ctx("request_id", d.get("request_id"))
     return "\n".join(out)
@@ -471,6 +473,7 @@ def fmt_smart_counters(d: dict) -> str:
     for k in sorted(payload):
         out += star(k, payload[k])
     out += sect("pinned by override")
+    out += star("override total", sum(override.values()))
     for k in sorted(override):
         out += star(k, override[k])
     out += star("weighted path (bypassed)", weighted, LIME if weighted == 0 else PINK)
@@ -485,6 +488,7 @@ def fmt_smart_validate(d: dict) -> str:
     out += star("cases", d.get("total"))
     allm = d.get("all_match")
     out += star("all_match", allm, LIME if allm else PINK)
+    out += star("policy_name", d.get("policy_name"))
     out.append(f"    {BLUE}{'case':<20}{'size':<7}{'complexity':<11}"
                f"{'selected':<18}{'match'}{RESET}")
     out.append("")
