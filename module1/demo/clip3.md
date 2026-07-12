@@ -1,4 +1,4 @@
-# Module 1 — Clip 3: Weighted Routing Across Model Tiers
+# Module 1 — Demo: Weighted Routing Across Model Tiers
 
 ## What This Demo Proves
 
@@ -256,5 +256,5 @@ Expect `PASS: 6  FAIL: 0`.
 
 ## Next
 
-Clip 5 — Payload-based routing & deterministic overrides: route each request by
-its own complexity, and pin specific classes to a tier on purpose.
+Payload-based routing & deterministic overrides — route each request by its own
+complexity, and pin specific classes to a tier on purpose.
