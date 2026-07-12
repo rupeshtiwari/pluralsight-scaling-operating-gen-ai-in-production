@@ -19,11 +19,13 @@ route reason; the aggregate spread in the Redis datastore; the durable per-reque
 receipts in PostgreSQL with the operator field set; and a reconciliation that
 lines the three views up and reads **CONFIRMED** only when they agree.
 
-**What you walk away with:** A repeatable way to validate the whole routing layer
-at once — three operational views (the API result, the Redis aggregate, and the
-durable PostgreSQL receipts) reconciled per routing kind, plus a single go/no-go
-disposition an operator can act on. Counts, receipts, and policies must all agree,
-or the disposition blocks.
+**What you walk away with:** A repeatable way to validate the routing evidence for
+a mixed batch at once — three operational views (the API result, the Redis
+aggregate, and the durable PostgreSQL receipts) reconciled per routing kind, plus
+a single **accept-or-investigate** disposition an operator can act on. Counts,
+receipts, and policies must all agree, or the disposition blocks. (This confirms
+internal consistency for the batch — not provider health under load, failure
+recovery, or long-run distribution accuracy, which later modules cover.)
 
 ## Learning objectives covered
 
@@ -135,9 +137,12 @@ step proves *semantic* correctness, not just counts. The `kind` column tells you
 which routing path handled the request; `policy` tells you which policy owns it
 (weighted requests carry the `weighted` policy, payload and override requests
 carry `payload_smart`); and `route_reason` says exactly why —
-`weighted_distribution`, `complexity_complex`, `override_bulk_batch`. Same service,
-one batch, three paths, each leaving a clear trail. That trail is what makes the
-reconciliation in Step 5 meaningful.
+`weighted_distribution`, `complexity_complex`, `override_bulk_batch`. The
+`override_bulk_batch` row lands on `econo-mini` on purpose: bulk work prioritizes
+cost and throughput, so the override sends it to the economy tier — not because a
+large payload always belongs on the cheapest model. Same service, one batch, three
+paths, each leaving a clear trail. That trail is what makes the reconciliation in
+Step 5 meaningful.
 
 ### Step 3: Verify the fast aggregate in Redis
 
@@ -168,13 +173,13 @@ the durable record an operator actually investigates.
 
 ```bash
 docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(r) FROM (
-    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'weighted' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2)
   UNION ALL
-    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'payload' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2)
   UNION ALL
-    (SELECT request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'override' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)
   ) r" \
   | python3 scripts/fmt.py --type mixed-receipts \
@@ -182,23 +187,26 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
   --why "Every routing kind has a durable receipt with the full operator field set"
 ```
 
-**Expected output:** six ★ rows deliberately spanning every kind — two `weighted`
-(policy `weighted`) and four `payload_smart` (payload + override) — each with
-`request_id`, `policy_name`, `provider_tier`, `latency target`, `tokens`, `cost`,
-and `quality`.
+**Expected output:** six ★ rows deliberately spanning every kind — the `kind`
+column shows `weighted`, `payload`, and `override` — each with `policy_name`
+(`weighted` or `payload_smart`), `provider_tier`, `latency target`, `tokens`,
+`cost`, and `quality`.
 
 **What the learner should notice:** This is the durable record behind the
-counters, and it carries everything an operator needs months later — keyed by
-request id. Both policies are present, so every routing path has a persisted
-receipt, not just the aggregate count. `latency target` is the tier's *configured*
-target (400 / 700 / 1200 ms), not a measured request latency. Cost and quality
-move with the tier: premium rows cost more and score higher. Nothing here is
-provider-specific; every policy lands in the same columns.
+counters. The `kind` column proves every routing path has a persisted receipt —
+weighted, payload, *and* override — not just the aggregate count. Note that
+override rows carry the `payload_smart` policy (an override is a deterministic
+exception *within* payload routing), so the `kind` column, not policy alone, is
+what proves the override path is durable. `latency target` is the tier's
+*configured* target (400 / 700 / 1200 ms), not a measured request latency.
+Likewise `quality` is the tier's *configured capability score* — provider
+metadata, not a live judgment of this individual response. Cost and quality move
+with the tier: premium rows cost more and carry a higher capability score.
 
 ### Step 5: Reconcile the evidence and confirm the disposition
 
-**Goal:** Line the three views up per routing kind and read the single go/no-go
-verdict an operator acts on.
+**Goal:** Line the three views up per routing kind and read the single
+accept-or-investigate verdict an operator acts on.
 
 ```bash
 curl -s http://localhost:8000/routing/disposition | python3 scripts/fmt.py --type disposition \
@@ -226,7 +234,8 @@ decision — and `CONFIRMED` has an explicit, machine-checkable contract. It rea
 
 If any check failed, the disposition would read `BLOCKED` and the ✗ would point at
 the routing kind to investigate. Reset and run the batch again and you get the same
-`CONFIRMED` — the whole routing layer, validated end to end, repeatably.
+`CONFIRMED` — the mixed routing run, validated end to end for this batch,
+repeatably.
 
 ## Preflight check
 

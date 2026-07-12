@@ -558,19 +558,18 @@ def fmt_mixed_receipts(d: Any) -> str:
         rows = [d]
     out = [header(
         "Durable routing receipts in PostgreSQL",
-        "The operator field set: id, policy, provider, latency target, tokens, cost, quality")]
-    out.append(f"    {BLUE}{'request':<13}{'policy':<14}{'tier':<9}"
-               f"{'latency target':<15}{'tokens':<7}{'cost':<10}{'qual'}{RESET}")
+        "Every routing kind: policy, provider, latency target, tokens, cost, quality")]
+    out.append(f"    {BLUE}{'kind':<9}{'policy':<14}{'tier':<9}"
+               f"{'latency target':<15}{'tokens':<7}{'cost':<10}{'quality'}{RESET}")
     out.append("")
     for r in rows:
         if not r:
             continue
-        rid = str(r.get("request_id", ""))[:12]
         lat = f"{r.get('latency_target_ms')}ms"
         cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
         qual = f"{float(r.get('quality_score', 0)):.2f}"
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{rid:<13}{str(r.get('policy_name')):<14}"
+            f"  {PINK}★{RESET} {LGRN}{str(r.get('kind')):<9}{str(r.get('policy_name')):<14}"
             f"{str(r.get('provider_tier')):<9}{lat:<15}{str(r.get('total_tokens')):<7}"
             f"{cost:<10}{qual}{RESET}")
         out.append("")

@@ -35,8 +35,8 @@ redis_query() {
   [ -z "$out" ] && out="$(redis-cli "$@" 2>/dev/null)"
   printf '%s' "$out"
 }
-FIELDS="request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score"
-SQL_RECEIPTS="SELECT row_to_json(r) FROM ((SELECT $FIELDS FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2) UNION ALL (SELECT $FIELDS FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2) UNION ALL (SELECT $FIELDS FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)) r"
+FIELDS="policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score"
+SQL_RECEIPTS="SELECT row_to_json(r) FROM ((SELECT 'weighted' AS kind,$FIELDS FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2) UNION ALL (SELECT 'payload' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2) UNION ALL (SELECT 'override' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)) r"
 
 PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
 LGRN=$'\033[38;2;64;255;191m'; BLUE=$'\033[38;2;42;236;250m'
@@ -118,18 +118,18 @@ fi
 
 # STEP 4 — durable receipts across kinds (both policies)
 step_head "4" "Verify the durable receipts in PostgreSQL" \
-  "Every routing kind must have a durable receipt with the full operator field set." \
-  "6 rows spanning weighted and payload_smart policies, each with policy, provider, latency target, tokens, cost, quality."
-show_cmd "docker compose exec -T postgres psql ... weighted UNION complexity UNION override ... | python3 scripts/fmt.py --type mixed-receipts"
+  "Every routing KIND must have a durable receipt with the full operator field set." \
+  "6 rows whose kind column spans weighted, payload, and override, each with policy, provider, latency target, tokens, cost, quality."
+show_cmd "docker compose exec -T postgres psql ... 'weighted'/'payload'/'override' AS kind ... | python3 scripts/fmt.py --type mixed-receipts"
 RAW="$(pg_query "$SQL_RECEIPTS")"
 emit "$(printf '%s' "$RAW" | $FMT --type mixed-receipts 2>&1)"
-if echo "$RAW" | jq -s -e 'length==6 and ([.[].policy_name]|unique|(index("weighted") and index("payload_smart"))) and (all(.[]; .quality_score!=null and .latency_target_ms!=null and .cost_estimate_usd!=null))' >/dev/null 2>&1; then
-  verdict 0 "durable receipts span both policies, each with the full operator field set" "" ""
-  LO+=("Step 4: durable receipts across every routing kind — policy, provider, latency target, tokens, cost, quality (TO1, EO1a)")
+if echo "$RAW" | jq -s -e 'length==6 and ([.[].kind]|unique|(index("weighted") and index("payload") and index("override"))) and ([.[].policy_name]|unique|(index("weighted") and index("payload_smart"))) and (all(.[]; .quality_score!=null and .latency_target_ms!=null and .cost_estimate_usd!=null))' >/dev/null 2>&1; then
+  verdict 0 "durable receipts visibly span all three kinds (weighted/payload/override) with the full field set" "" ""
+  LO+=("Step 4: durable receipts across every routing kind — kind, policy, provider, latency target, tokens, cost, quality (TO1, EO1a)")
 else
-  verdict 1 "receipts do not span both policies or are missing operator fields" \
-    "Ensure the mixed batch persisted weighted AND payload_smart receipts and the columns are non-null." \
-    "The receipts query must return 6 rows with both 'weighted' and 'payload_smart' policies, each with latency_target_ms, total_tokens, cost_estimate_usd, quality_score. Fix app/main.py and app/db/postgres.py."
+  verdict 1 "receipts do not visibly span all three kinds or are missing operator fields" \
+    "Ensure the query tags each row with its kind and the mixed batch persisted all kinds with non-null fields." \
+    "The receipts query must return 6 rows whose kind spans weighted, payload, and override, each with latency_target_ms, total_tokens, cost_estimate_usd, quality_score. Fix the query and app/main.py."
 fi
 
 # STEP 5 — reconcile + final disposition (merged)
@@ -141,7 +141,7 @@ RAW="$(curl -s "$API_BASE/routing/disposition")"
 emit "$(printf '%s' "$RAW" | $FMT --type disposition 2>&1)"
 if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .counts_agree==true and .receipts_complete==true and .policies_consistent==true and (.kinds|to_entries|all(.value.agree==true))' >/dev/null 2>&1; then
   verdict 0 "final disposition CONFIRMED — counts agree, receipts complete, policies consistent" "" ""
-  LO+=("Step 5: a single go/no-go disposition validates the whole routing layer (TO1, EO1a-d)")
+  LO+=("Step 5: a single accept-or-investigate disposition validates the routing evidence for this batch (TO1, EO1a-d)")
 else
   verdict 1 "final disposition is not CONFIRMED" \
     "Check /routing/disposition in app/main.py (counts_agree, receipts_complete, policies_consistent) and count_by_kind/inconsistent_receipts in app/db/postgres.py." \
@@ -150,7 +150,7 @@ fi
 
 # COVERAGE + SUMMARY
 banner "LEARNING OBJECTIVE COVERAGE"
-emit "${WHITE}TO1, EO1a-d — Validate the whole routing layer: mixed traffic reconciled${R}"
+emit "${WHITE}TO1, EO1a-d — Validate the routing evidence for a mixed batch: reconciled${R}"
 emit "${WHITE}       across the API, Redis, and PostgreSQL views into one disposition${R}"
 if [ "${#LO[@]}" -gt 0 ]; then for e in "${LO[@]}"; do emit "  ${LIME}✔${R} ${GRAY}${e}${R}"; done; else emit "  ${PINK}✗ no evidence captured${R}"; fi
 
