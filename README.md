@@ -233,14 +233,19 @@ Endpoints available today (Module 1). More are added as later modules land.
 ```
 .
 ├── module1/                     Module 1: Scaling GenAI Traffic (routing)
-│   ├── README.md                module index → links to each clip
+│   ├── README.md                module index → 6 clips (2 presentation, 4 demo)
 │   ├── demo/                     one runbook per demo clip
-│   │   ├── clip2.md              adapter layer
-│   │   ├── clip3.md              weighted routing
-│   │   └── clip5.md              payload routing & overrides
+│   │   ├── clip2.md              adapter layer ✅
+│   │   ├── clip3.md              weighted routing ✅
+│   │   ├── clip5.md              payload routing & overrides ✅
+│   │   └── clip6.md              receipts/counters disposition (planned)
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability (planned)
+│   ├── README.md                module index → 6 clips
+│   └── demo/                     clip2, clip3, clip5, clip6 (planned)
 ├── module3/                     Module 3: LLMOps + readiness (planned)
+│   ├── README.md                module index → 6 clips
+│   └── demo/                     clip2, clip3, clip5, clip6 (planned)
 │
 ├── app/                         FastAPI AI service layer
 │   ├── main.py                  endpoints
