@@ -34,6 +34,15 @@ services:
 
   api:
     build: .
+    # Mount the live source over the image's baked copy and run uvicorn with
+    # --reload. This is the student-proofing that matters most: after a
+    # `git pull`, the running API reflects the new code immediately — no image
+    # rebuild, no container restart, no stale endpoints returning 404. The
+    # image still bakes requirements.txt, so a rebuild is only needed when
+    # dependencies change.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./app:/srv/app
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379

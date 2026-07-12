@@ -90,6 +90,11 @@ tool and **auto-starts Docker Desktop** if it's installed but not open (waiting
 until the daemon is ready) — so you don't hit "Docker daemon not running" mid
 demo. You can also run that check on its own: `bash scripts/ensure-ready.sh`.
 
+The `api` container mounts the source (`./app`) and runs with `--reload`, so
+after a `git pull` the running service reflects the new code **immediately** —
+no rebuild or restart. Rebuild (`docker compose up -d --build`) is only needed
+when `requirements.txt` changes.
+
 Every demo command pipes JSON into `scripts/fmt.py`, which renders it in the
 Pluralsight brand palette so only what the narration reads is on screen:
 
