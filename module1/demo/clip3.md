@@ -30,10 +30,10 @@ to each choice in PostgreSQL, and a proof that the split matches your weights.
 
 | Step | Endpoint | What it teaches (nothing repeats) |
 |------|----------|-----------------------------------|
-| 1 | `/routing/policy` | Traffic is split by explicit per-tier weights (50 / 30 / 20) |
+| 1 | `/routing/policy` | Weights are set against per-tier cost and latency targets (50 / 30 / 20) |
 | 2 | `/route/batch` | One endpoint routes many requests under the weighted policy |
-| 3 | `/routing/last-batch` | The same endpoint picks different tiers request by request |
-| 4 | `/routing/counters` | Redis counters measure the actual spread across tiers |
+| 3 | `/routing/last-batch` | The same endpoint distributes requests across different tiers |
+| 4 | `redis-cli HGETALL` | The Redis datastore itself holds the spread — read directly |
 | 5 | `receipts` (psql) | Each model choice is tied to its cost and the routing policy |
 | 6 | `/routing/validate` | The observed distribution equals the configured weights |
 
@@ -85,24 +85,35 @@ clears receipts **and** the routing counters, so the batch starts from zero:
 
 ### Step 1: Load the weighted routing policy
 
-**Goal:** Show the policy itself — the per-tier weights that decide how traffic
-is split.
+**Goal:** Show the policy itself — the per-tier weights, and the cost and latency
+targets that justify them.
 
 ```bash
 curl -s http://localhost:8000/routing/policy | python3 scripts/fmt.py --type policy \
   --title "Load the weighted routing policy" \
-  --why "Traffic is split across tiers by weight — cheaper for volume, premium for the few requests that need it"
+  --why "Weights are set by cost and latency target — most traffic to the cheapest, fastest tier; least to the most expensive one"
 ```
 
-**Expected output:** ★ `policy_name: weighted`, then the weight per tier —
-`econo-mini 50%`, `balanced-std 30%`, `premium-max 20%`.
+**Expected output:** ★ `policy_name: weighted`, then a row per tier showing
+**weight**, **latency target**, and **cost estimate**:
 
-**What the learner should notice:** This is a policy, not a guess. Half of all
-traffic is declared for the low-cost tier, a third for balanced, a fifth for
-premium — a deliberate cost-and-latency trade-off you own. The weights are a
+```text
+tier          weight   latency target   cost estimate
+econo-mini    50%      400ms            $0.001350
+balanced-std  30%      700ms            $0.008100
+premium-max   20%      1200ms           $0.032400
+```
+
+**What the learner should notice:** This is a policy, not a guess — and the
+policy shows *why* each weight was chosen. Half the traffic goes to
+`econo-mini` because it is the cheapest and lowest-latency tier; thirty percent
+to `balanced-std`; and only twenty percent to `premium-max`, whose cost and
+latency target are the highest. The weight column and the cost/latency columns
+side by side are the decision logic: spend the volume on the cheap, fast tier,
+reserve the expensive one for the few requests that need it. The weights are a
 config value; changing them re-shapes the traffic without touching a single
-caller. Everything that follows proves the service actually honours these
-numbers.
+caller. (The cost estimate prices the reference prompt the batch routes — 27
+tokens — so it matches the receipts you'll see in Step 5.)
 
 ### Step 2: Run a controlled traffic batch
 
@@ -125,7 +136,14 @@ endpoint, each routed by the weighted policy — not the baseline default from t
 previous clip. The `route_reason` says `weighted_distribution`, so every receipt
 this batch wrote is stamped with *why* it was routed. We sent a controlled,
 repeatable number so the distribution is easy to reason about: 20 requests
-against 50/30/20 should land as 10, 6, and 4.
+against 50/30/20 land as 10, 6, and 4.
+
+> **Deterministic here, probabilistic in production.** This selector is
+> *deterministic* — a clean batch of 20 always splits exactly 10/6/4, which is
+> what makes it testable in CI and repeatable on camera. A production weighted
+> router is usually *probabilistic*: it converges toward the configured ratio
+> over a large sample rather than guaranteeing an exact split for every small
+> batch. Same target distribution, different guarantee.
 
 ### Step 3: Inspect the individual routed decisions
 
@@ -135,37 +153,45 @@ different tiers.
 ```bash
 curl -s "http://localhost:8000/routing/last-batch?limit=6" | python3 scripts/fmt.py --type samples \
   --title "Inspect the individual routed decisions" \
-  --why "The same endpoint selects different tiers, request by request"
+  --why "Requests entering the same endpoint are distributed across different model tiers"
 ```
 
 **Expected output:** a table of ★ rows — each with request id, `model`, `tier`,
-`latency`, and `cost` — showing `econo-mini`, `balanced-std`, and `premium-max`
-all appearing.
+`latency target`, and `cost` — showing `econo-mini`, `balanced-std`, and
+`premium-max` all appearing.
 
-**What the learner should notice:** Same endpoint, same prompt — different
-models. The first few requests already touch all three tiers, and the `cost`
-column moves with them: a tenth of a cent on the low-cost tier, more on premium.
-This is the weighted policy working per request. No caller asked for a specific
-model; the service distributed them.
+**What the learner should notice:** Requests entering the same endpoint are
+distributed across different model tiers. The first few already touch all three,
+and the `cost` column moves with them: a tenth of a cent on the low-cost tier,
+more on premium. The `latency target` column is the tier's *configured* target
+(400 / 700 / 1200 ms), not a measured request time — it's the profile the weight
+was chosen against. This is the weighted policy working per request: no caller
+asked for a specific model; the service distributed them.
 
-### Step 4: Prove distribution across tiers with Redis counters
+### Step 4: Read the routing counters straight from Redis
 
-**Goal:** Read the Redis counters to measure the actual spread across tiers.
+**Goal:** Read the counters directly from the Redis datastore — not through the
+application — to measure the actual spread across tiers.
 
 ```bash
-curl -s http://localhost:8000/routing/counters | python3 scripts/fmt.py --type counters \
-  --title "Prove distribution across tiers with Redis counters" \
-  --why "Redis tallies every pick — the spread is measured, not assumed"
+docker compose exec -T redis redis-cli --json HGETALL routing:counters \
+  | python3 scripts/fmt.py --type redis-counters \
+  --title "Read the routing counters straight from Redis" \
+  --why "The tally lives in the Redis datastore itself — read it directly, not through the application"
 ```
 
-**Expected output:** ★ `total requests: 20`, then the distribution —
-`econo-mini 10`, `balanced-std 6`, `premium-max 4`.
+**Expected output:** ★ `total requests: 20`, then the distribution read from the
+hash — `econo-mini 10`, `balanced-std 6`, `premium-max 4`.
 
-**What the learner should notice:** These counts come from Redis, incremented on
-every route decision — independent of the API response. Ten, six, four out of
-twenty is exactly 50/30/20. This is the aggregate proof: over the batch, traffic
-landed on each tier in the proportion the policy declared. Redis is the running
-scoreboard an operator can watch live in production.
+**What the learner should notice:** This is `HGETALL` against the Redis hash
+`routing:counters` — the datastore itself, queried directly, with the
+application out of the picture. The batch incremented these fields with
+`HINCRBY` on every route decision, and here they are: ten, six, four out of
+twenty, exactly 50/30/20. Because we read Redis directly (rather than an endpoint
+that *reports* Redis), this is independent proof of the spread — the same running
+scoreboard an operator can watch live in production. (The app also exposes this
+at `GET /routing/counters` as a convenience view, but the datastore is the source
+of truth.)
 
 ### Step 5: Connect each model choice to cost and policy
 
@@ -209,17 +235,22 @@ and `premium-max`.
 **What the learner should notice:** This is the disposition: for every tier, the
 observed count equals the expected count from its weight, and `all_match` is
 true. Policy, counters, and receipts agree. Reset and run the batch again and you
-get the exact same split — the weighting is deterministic, so it is testable in
-CI and repeatable on demand. That is weighted load balancing you can prove, not
-just claim.
+get the exact same split — that exact match is a **test-mode deterministic
+guarantee** (which is what makes it CI-testable and repeatable on demand), not a
+claim that a probabilistic production router hits 10/6/4 on every 20 requests.
+The property you're proving is that the routing *honours the configured
+distribution* — provably, not just by assertion.
 
 ## Best-practice callout
 
 **Make traffic distribution a declared policy, not an accident.** Weight your
-tiers by cost and latency, route every request through the policy, and keep two
-independent proofs — live counters (Redis) and durable receipts (PostgreSQL). If
-the observed split doesn't match the configured weights, you have a routing bug,
-and now you can see it.
+tiers explicitly against cost and latency targets, route every request through
+the policy, and keep two independent proofs — the counters in the Redis
+datastore (read directly) and the durable receipts in PostgreSQL. If the
+observed split doesn't match the configured weights, you have a routing bug, and
+now you can see it. In production the split is usually probabilistic and
+converges to the target over a large sample; here it is deterministic so it can
+be validated exactly in CI.
 
 ## Preflight check
 
@@ -244,7 +275,8 @@ EO1b, and writes a readable log to `module1/clip3_preflight_log.txt`. Expect
 - `app/providers/registry.py` — the weighted weights and the deterministic,
   evenly-spread pick sequence
 - `app/routing/weighted.py` — the weighted routing decision
-- `app/db/redis_client.py` — the routing sequence and per-tier counters
+- `app/db/redis_client.py` — the routing sequence and the per-tier counter hash
+  (`routing:counters`, incremented with `HINCRBY`, read in Step 4 via `HGETALL`)
 - `app/db/postgres.py` — the receipts the batch persists
-- `scripts/fmt.py` — the `policy` / `batch` / `samples` / `counters` /
+- `scripts/fmt.py` — the `policy` / `batch` / `samples` / `redis-counters` /
   `receipts` / `validate` views

@@ -23,7 +23,7 @@ from fastapi import FastAPI, HTTPException
 
 from app.config import settings
 from app.db import postgres, redis_client
-from app.providers.adapter import adapter_config, probe
+from app.providers.adapter import adapter_config, estimate_cost, estimate_tokens, probe
 from app.providers.registry import (
     BASE_ADAPTERS,
     COMPLEXITY_THRESHOLDS,
@@ -131,11 +131,33 @@ def admin_reset() -> dict:
 
 # --- Weighted routing (Clip 3) --------------------------------------------
 
+# The prompt the batch routes by default — also the reference used to price each
+# tier in the policy view, so the cost estimates match what the batch persists.
+REFERENCE_PROMPT = "Summarize this customer support ticket into one sentence for triage."
+
+
 @app.get("/routing/policy")
 def routing_policy() -> dict:
+    """The weighted policy AND the cost/latency targets that justify the weights:
+    most traffic to the cheapest, lowest-latency tier; the least to the most
+    expensive, highest-latency one."""
+    ref_tokens = estimate_tokens(REFERENCE_PROMPT).total
+    tiers = []
+    for model, pct in WEIGHTED_WEIGHTS.items():
+        base = BASE_ADAPTERS[model]
+        tiers.append({
+            "model": model,
+            "weight_pct": pct,
+            "latency_target_ms": base.latency_target_ms,
+            "cost_per_1k_usd": base.cost_per_1k_usd,
+            "cost_estimate_usd": estimate_cost(ref_tokens, base.cost_per_1k_usd),
+        })
     return {
         "policy_name": WEIGHTED_POLICY_NAME,
         "weights": WEIGHTED_WEIGHTS,
+        "reference_prompt": REFERENCE_PROMPT,
+        "reference_total_tokens": ref_tokens,
+        "tiers": tiers,
         "sequence": weighted_sequence(),
     }
 

@@ -184,7 +184,7 @@ All package and container versions are pinned in `requirements.txt` and
 | LO | Description | Module | Demo Proof Point |
 |----|-------------|--------|------------------|
 | EO1a | Dedicated AI service layer that decouples app logic from providers | 1 | Uniform adapter contract + provider-agnostic PostgreSQL receipt |
-| EO1b | Weighted load balancing across model tiers | 1 | ✅ Redis counters prove 50/30/20 distribution; validation confirms observed == configured weights |
+| EO1b | Weighted load balancing across model tiers | 1 | ✅ Policy shows weight + latency target + cost per tier; `redis-cli HGETALL` proves the 10/6/4 (50/30/20) spread directly; validation confirms observed == configured |
 | EO1c | Payload-based routing to appropriate tiers | 1 | ✅ Complexity buckets self-route each payload; route reason + complexity persisted per request |
 | EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Override rules deterministically bypass payload routing; `would_have_selected` shows the trade-off |
 | EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | k6 spike, HTTP 429 receipt, circuit states, backoff timing _(planned)_ |

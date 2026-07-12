@@ -245,12 +245,24 @@ def fmt_receipt(d: Any) -> str:
 def fmt_policy(d: dict) -> str:
     out = [header(
         "Load the weighted routing policy",
-        "Traffic is split across tiers by weight — cheaper for volume, premium "
-        "for the few requests that need it")]
+        "Weights are set by cost and latency target — most traffic to the "
+        "cheapest, fastest tier; least to the most expensive one")]
     out += star("policy_name", d.get("policy_name"))
-    out += sect("weight per tier")
-    for model, pct in d.get("weights", {}).items():
-        out += star(model, f"{pct}%")
+    out.append(f"    {BLUE}{'tier':<14}{'weight':<9}{'latency target':<16}"
+               f"{'cost estimate'}{RESET}")
+    out.append("")
+    for t in d.get("tiers", []):
+        wt = f"{t.get('weight_pct')}%"
+        lat = f"{t.get('latency_target_ms')}ms"
+        cost = f"${float(t.get('cost_estimate_usd', 0)):.6f}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{str(t.get('model')):<14}{wt:<9}{lat:<16}"
+            f"{cost}{RESET}")
+        out.append("")
+    ref_n = d.get("reference_total_tokens")
+    if ref_n is not None:
+        out += ctx("cost estimate priced for the reference prompt",
+                   f"{ref_n} tokens — the prompt the batch routes by default")
     return "\n".join(out)
 
 
@@ -267,10 +279,11 @@ def fmt_batch(d: dict) -> str:
 def fmt_samples(d: dict) -> str:
     out = [header(
         "Inspect the individual routed decisions",
-        "The same endpoint selects different tiers, request by request")]
+        "Requests entering the same endpoint are distributed across different "
+        "model tiers")]
     rows = d.get("samples", []) or []
     out.append(f"    {BLUE}{'request':<16}{'model':<14}{'tier':<10}"
-               f"{'latency':<9}{'cost'}{RESET}")
+               f"{'latency target':<16}{'cost'}{RESET}")
     out.append("")
     for r in rows:
         rid = str(r.get("request_id", ""))[:14]
@@ -278,8 +291,29 @@ def fmt_samples(d: dict) -> str:
         cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
         out.append(
             f"  {PINK}★{RESET} {LGRN}{rid:<16}{str(r.get('selected_model')):<14}"
-            f"{str(r.get('provider_tier')):<10}{lat:<9}{cost}{RESET}")
+            f"{str(r.get('provider_tier')):<10}{lat:<16}{cost}{RESET}")
         out.append("")
+    return "\n".join(out)
+
+
+# Canonical tier order for datastore views that return an unordered map.
+_TIER_ORDER = ["econo-mini", "balanced-std", "premium-max"]
+
+
+def fmt_redis_counters(d: dict) -> str:
+    # Input is `redis-cli --json HGETALL routing:counters` -> {model: "count"}.
+    out = [header(
+        "Read the routing counters straight from Redis",
+        "The tally lives in the Redis datastore itself — read it directly, not "
+        "through the application")]
+    counts = {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    total = sum(counts.values())
+    out += star("total requests", total)
+    out += sect("distribution across tiers (HGETALL routing:counters)")
+    ordered = [m for m in _TIER_ORDER if m in counts] + \
+              [m for m in counts if m not in _TIER_ORDER]
+    for model in ordered:
+        out += star(model, counts[model])
     return "\n".join(out)
 
 
@@ -419,6 +453,7 @@ VIEWS = {
     "rules": fmt_rules,
     "smart": fmt_smart,
     "smart-validate": fmt_smart_validate,
+    "redis-counters": fmt_redis_counters,
 }
 
 

@@ -29,6 +29,13 @@ pg_query() {
   [ -z "$out" ] && out="$(psql -tAc "$sql" 2>/dev/null)"
   printf '%s' "$out"
 }
+# Query Redis inside the container (host redis-cli fallback for native CI).
+redis_query() {
+  local out
+  out="$(docker compose exec -T redis redis-cli "$@" 2>/dev/null)"
+  [ -z "$out" ] && out="$(redis-cli "$@" 2>/dev/null)"
+  printf '%s' "$out"
+}
 SQL_RECEIPTS="SELECT row_to_json(r) FROM (SELECT DISTINCT ON (selected_model) selected_model,provider_tier,cost_estimate_usd,policy_name FROM receipts ORDER BY selected_model, created_at DESC) r"
 
 PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
@@ -63,18 +70,18 @@ curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 
 # STEP 1 — policy
 step_head "1" "Load the weighted routing policy" \
-  "Traffic is split by explicit per-tier weights, not by guesswork." \
-  "policy_name weighted, and weights econo-mini 50%, balanced-std 30%, premium-max 20%."
+  "Weights are chosen by cost and latency target — the design rationale is visible." \
+  "policy_name weighted, and per tier: weight, latency target, and cost estimate (50/30/20)."
 show_cmd "curl -s \$API_BASE/routing/policy | python3 scripts/fmt.py --type policy"
 RAW="$(curl -s "$API_BASE/routing/policy")"
 emit "$(printf '%s' "$RAW" | $FMT --type policy 2>&1)"
-if echo "$RAW" | jq -e '.policy_name=="weighted" and (.weights|to_entries|map(.value)|add==100) and (.weights|length==3)' >/dev/null 2>&1; then
-  verdict 0 "weighted policy exposes three tiers whose weights sum to 100" "" ""
-  LO_EO1b+=("Step 1: explicit per-tier weights (50/30/20) define the split")
+if echo "$RAW" | jq -e '.policy_name=="weighted" and (.weights|to_entries|map(.value)|add==100) and (.tiers|length==3) and (.tiers|all(has("latency_target_ms") and has("cost_estimate_usd")))' >/dev/null 2>&1; then
+  verdict 0 "weighted policy shows weight, latency target, and cost per tier (weights sum to 100)" "" ""
+  LO_EO1b+=("Step 1: per-tier weights are set against cost and latency targets (50/30/20)")
 else
-  verdict 1 "policy is missing or weights do not sum to 100" \
-    "Check WEIGHTED_WEIGHTS in app/providers/registry.py and GET /routing/policy in app/main.py." \
-    "GET /routing/policy must return policy_name=weighted and three weights summing to 100. Fix app/providers/registry.py."
+  verdict 1 "policy is missing weights, cost, or latency targets" \
+    "Check WEIGHTED_WEIGHTS in app/providers/registry.py and GET /routing/policy in app/main.py (each tier needs latency_target_ms and cost_estimate_usd)." \
+    "GET /routing/policy must return policy_name=weighted, weights summing to 100, and a tiers[] with latency_target_ms and cost_estimate_usd. Fix app/main.py routing_policy()."
 fi
 
 # STEP 2 — batch
@@ -109,20 +116,20 @@ else
     "GET /routing/last-batch must return samples spanning at least two tiers. Fix weighted_sequence() so the pick order interleaves tiers."
 fi
 
-# STEP 4 — counters
-step_head "4" "Prove distribution across tiers with Redis counters" \
-  "Redis measures the actual spread, independent of the API response." \
+# STEP 4 — Redis counters (direct datastore read)
+step_head "4" "Read the routing counters straight from Redis" \
+  "Proof from the datastore itself — a direct HGETALL, not the application view." \
   "total 20, and econo-mini 10, balanced-std 6, premium-max 4 (exactly 50/30/20)."
-show_cmd "curl -s \$API_BASE/routing/counters | python3 scripts/fmt.py --type counters"
-RAW="$(curl -s "$API_BASE/routing/counters")"
-emit "$(printf '%s' "$RAW" | $FMT --type counters 2>&1)"
-if echo "$RAW" | jq -e '.total==20 and .counters."econo-mini"==10 and .counters."balanced-std"==6 and .counters."premium-max"==4' >/dev/null 2>&1; then
-  verdict 0 "Redis counters show 10/6/4 across the three tiers" "" ""
-  LO_EO1b+=("Step 4: Redis counters measure the 50/30/20 spread across tiers")
+show_cmd "docker compose exec -T redis redis-cli --json HGETALL routing:counters | python3 scripts/fmt.py --type redis-counters"
+RAW="$(redis_query --json HGETALL routing:counters)"
+emit "$(printf '%s' "$RAW" | $FMT --type redis-counters 2>&1)"
+if echo "$RAW" | jq -e '(.["econo-mini"]|tonumber)==10 and (.["balanced-std"]|tonumber)==6 and (.["premium-max"]|tonumber)==4' >/dev/null 2>&1; then
+  verdict 0 "Redis HGETALL shows 10/6/4 across the three tiers" "" ""
+  LO_EO1b+=("Step 4: the Redis datastore itself holds the 50/30/20 spread (direct HGETALL)")
 else
-  verdict 1 "counters do not match the weighted distribution" \
-    "Check incr_count/routing_counts in app/db/redis_client.py and the batch loop." \
-    "GET /routing/counters after a 20-request batch must be econo-mini=10, balanced-std=6, premium-max=4. Fix app/db/redis_client.py."
+  verdict 1 "Redis counters do not match the weighted distribution" \
+    "Check hincrby routing:counters in app/db/redis_client.py and the batch loop." \
+    "redis-cli HGETALL routing:counters after a 20-request batch must be econo-mini=10, balanced-std=6, premium-max=4. Fix app/db/redis_client.py."
 fi
 
 # STEP 5 — receipts (psql)

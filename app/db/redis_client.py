@@ -46,16 +46,15 @@ def reset_conditions() -> None:
 
 # --- Weighted routing counters (Clip 3) -----------------------------------
 # routing:seq is a monotonically increasing index into the weighted sequence,
-# so the distribution is deterministic from a clean start. routing:count:<model>
-# is the running tally per tier that proves the spread. routing:last_batch holds
-# the samples from the most recent batch for inspection.
+# so the distribution is deterministic from a clean start. routing:counters is
+# a Redis HASH (one field per tier) that tallies the spread — stored as a hash
+# so the demo can read it straight from the datastore with a single
+# `redis-cli HGETALL routing:counters`. routing:last_batch holds the samples
+# from the most recent batch for inspection.
 
 _SEQ_KEY = "routing:seq"
+_COUNTERS_KEY = "routing:counters"
 _LAST_BATCH_KEY = "routing:last_batch"
-
-
-def _count_key(model: str) -> str:
-    return f"routing:count:{model}"
 
 
 def next_seq() -> int:
@@ -64,12 +63,12 @@ def next_seq() -> int:
 
 
 def incr_count(model: str) -> None:
-    client().incr(_count_key(model))
+    client().hincrby(_COUNTERS_KEY, model, 1)
 
 
 def routing_counts() -> dict[str, int]:
-    c = client()
-    return {m: int(c.get(_count_key(m)) or 0) for m in BASE_ADAPTERS}
+    raw = client().hgetall(_COUNTERS_KEY)
+    return {m: int(raw.get(m, 0)) for m in BASE_ADAPTERS}
 
 
 def set_last_batch(data: dict) -> None:
@@ -82,10 +81,7 @@ def get_last_batch() -> dict:
 
 
 def reset_routing() -> None:
-    c = client()
-    c.delete(_SEQ_KEY, _LAST_BATCH_KEY)
-    for m in BASE_ADAPTERS:
-        c.delete(_count_key(m))
+    client().delete(_SEQ_KEY, _COUNTERS_KEY, _LAST_BATCH_KEY)
 
 
 def ping() -> bool:
