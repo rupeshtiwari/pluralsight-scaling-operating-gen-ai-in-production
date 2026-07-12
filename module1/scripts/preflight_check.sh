@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Clip 2 — Build the FastAPI provider adapter layer
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/README.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip2.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO1, EO1a), and writes a readable log you can hand to a
 # reviewer to confirm LO coverage before you record.

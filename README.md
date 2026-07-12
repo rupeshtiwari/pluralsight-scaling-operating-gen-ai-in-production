@@ -47,7 +47,7 @@ for every step.
 
 | Module | Focus | Demos | README |
 |--------|-------|-------|--------|
-| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/README.md) ✅ · [weighted routing](module1/clip3.md) ✅ · payload routing · receipt validation | [Clip 2](module1/README.md) · [Clip 3](module1/clip3.md) |
+| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/demo/clip2.md) ✅ · [weighted routing](module1/demo/clip3.md) ✅ · payload routing · receipt validation | [Clip 2](module1/demo/clip2.md) · [Clip 3](module1/demo/clip3.md) |
 | 2 — Protecting and Observing GenAI Reliability | Resilience + observability (T2, T3) | Queues/rate limits · circuit breaker/fallback · traces/logs/metrics · incident diagnosis | _planned_ |
 | 3 — Operating LLMOps Change and Production Readiness | LLMOps + readiness (T4, T5) | Prompt versioning · model validation · canary · readiness audit | _planned_ |
 
@@ -81,7 +81,7 @@ Start a module's stack, then run its steps from the runbook:
 
 ```bash
 bash module1/scripts/demo_up.sh     # readiness check → starts FastAPI + Redis + PostgreSQL, waits healthy, opens tmux
-# ... run the Step 1–6 commands from module1/README.md ...
+# ... run the Step 1–6 commands from module1/demo/clip2.md ...
 bash module1/scripts/demo_down.sh   # tears the stack down
 ```
 
@@ -219,7 +219,10 @@ Endpoints available today (Module 1). More are added as later modules land.
 ```
 .
 ├── module1/                     Module 1: Scaling GenAI Traffic (routing)
-│   ├── README.md                step-by-step demo runbook
+│   ├── README.md                module index → links to each clip
+│   ├── demo/                     one runbook per demo clip
+│   │   ├── clip2.md              adapter layer
+│   │   └── clip3.md              weighted routing
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability (planned)
 ├── module3/                     Module 3: LLMOps + readiness (planned)

@@ -39,7 +39,7 @@ to each choice in PostgreSQL, and a proof that the split matches your weights.
 
 ## Prerequisites
 
-Start the stack (see [module1/README.md](README.md) — `bash module1/scripts/demo_up.sh`
+Start the stack (see [module1/README.md](../README.md) — `bash module1/scripts/demo_up.sh`
 runs the readiness check and brings up FastAPI, Redis, and PostgreSQL). Then, for
 a clean, repeatable distribution:
 

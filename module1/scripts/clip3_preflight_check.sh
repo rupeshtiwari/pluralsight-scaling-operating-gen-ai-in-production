@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Clip 3 — Prove weighted routing across model tiers
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/clip3.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip3.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO1b), and writes a readable log you can hand to a reviewer.
 #
