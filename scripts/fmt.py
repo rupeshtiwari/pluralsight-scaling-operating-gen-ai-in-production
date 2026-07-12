@@ -363,7 +363,9 @@ def fmt_validate(d: dict) -> str:
     out += star("total requests", d.get("total"))
     allm = d.get("all_match")
     out += star("all_match", allm, LIME if allm else PINK)
-    out += sect("weight  expected  observed  match   (per tier)")
+    out.append(f"    {BLUE}{'tier':<14}{'weight':<8}{'expected':<10}"
+               f"{'observed':<10}{'match'}{RESET}")
+    out.append("")
     for model, t in d.get("tiers", {}).items():
         mark = f"{LIME}✓{RESET}" if t.get("match") else f"{PINK}✗{RESET}"
         out.append(
@@ -423,7 +425,9 @@ def fmt_smart_validate(d: dict) -> str:
     out += star("cases", d.get("total"))
     allm = d.get("all_match")
     out += star("all_match", allm, LIME if allm else PINK)
-    out += sect("case  class  complexity  →  selected (expected)  match")
+    out.append(f"    {BLUE}{'case':<18}{'class':<15}{'complexity':<12}"
+               f"{'selected':<20}{'match'}{RESET}")
+    out.append("")
     for c in d.get("cases", []):
         mark = f"{LIME}✓{RESET}" if c.get("match") else f"{PINK}✗{RESET}"
         sel = str(c.get("selected_model"))
@@ -431,8 +435,8 @@ def fmt_smart_validate(d: dict) -> str:
         pair = sel if sel == exp else f"{sel} (want {exp})"
         out.append(
             f"  {PINK}★{RESET} {LGRN}{str(c.get('name')):<18}"
-            f"{str(c.get('request_class')):<15}{str(c.get('complexity')):<12}{RESET}"
-            f"{LGRN}{pair}{RESET}  {mark}")
+            f"{str(c.get('request_class')):<15}{str(c.get('complexity')):<12}"
+            f"{pair:<20}{RESET}{mark}")
         out.append("")
     return "\n".join(out)
 
