@@ -477,7 +477,6 @@ def fmt_smart_receipts(d: Any) -> str:
         "Durable per request: id, tokens, complexity, tier, reason, cost")]
     out.append(f"    {BLUE}{'request':<14}{'tokens':<7}{'complexity':<11}"
                f"{'model':<13}{'route_reason':<22}{'cost'}{RESET}")
-    out.append("")
     for r in rows:
         if not r:
             continue
@@ -490,28 +489,30 @@ def fmt_smart_receipts(d: Any) -> str:
         out.append(
             f"  {PINK}★{RESET} {LGRN}{rid:<14}{tok:<7}{cx:<11}{model:<13}"
             f"{reason:<22}{cost}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
 def fmt_smart_counters(d: dict) -> str:
+    # Compact (single-spaced): Step 5 shows this alongside the receipts table, so
+    # both must fit one screen.
     counts = {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
     out = [header(
         "Smart-routing counters in Redis",
-        "How each decision was made — routed by complexity vs pinned by "
-        "override — and proof the weighted path was bypassed")]
+        "How each decision was made — complexity vs override — and proof the "
+        "weighted path was bypassed")]
     weighted = counts.get("weighted", 0)
     payload = {k: v for k, v in counts.items() if k.startswith("payload:")}
     override = {k: v for k, v in counts.items() if k.startswith("override:")}
-    out += star("total routed", sum(payload.values()) + sum(override.values()))
-    out += sect("routed by complexity")
+    out.append(star("total routed", sum(payload.values()) + sum(override.values()))[0])
+    out.append(sect("routed by complexity")[0])
     for k in sorted(payload):
-        out += star(k, payload[k])
-    out += sect("pinned by override")
-    out += star("override total", sum(override.values()))
+        out.append(star(k, payload[k])[0])
+    out.append(sect("pinned by override")[0])
+    out.append(star("override total", sum(override.values()))[0])
     for k in sorted(override):
-        out += star(k, override[k])
-    out += star("weighted path (bypassed)", weighted, LIME if weighted == 0 else PINK)
+        out.append(star(k, override[k])[0])
+    out.append(star("weighted path (bypassed)", weighted,
+                    LIME if weighted == 0 else PINK)[0])
     return "\n".join(out)
 
 
@@ -520,13 +521,12 @@ def fmt_smart_validate(d: dict) -> str:
         "Confirm every payload lands on the tier its rules dictate",
         "Size, complexity, and overrides are deterministic and testable — same "
         "input, same tier, every run")]
-    out += star("cases", d.get("total"))
+    out.append(star("cases", d.get("total"))[0])
     allm = d.get("all_match")
-    out += star("all_match", allm, LIME if allm else PINK)
-    out += star("policy_name", d.get("policy_name"))
+    out.append(star("all_match", allm, LIME if allm else PINK)[0])
+    out.append(star("policy_name", d.get("policy_name"))[0])
     out.append(f"    {BLUE}{'case':<20}{'size':<7}{'complexity':<11}"
                f"{'selected':<18}{'match'}{RESET}")
-    out.append("")
     for c in d.get("cases", []):
         mark = f"{LIME}✓{RESET}" if c.get("match") else f"{PINK}✗{RESET}"
         sel = str(c.get("selected_model"))
@@ -536,7 +536,6 @@ def fmt_smart_validate(d: dict) -> str:
             f"  {PINK}★{RESET} {LGRN}{str(c.get('name')):<20}"
             f"{str(c.get('size')):<7}{str(c.get('complexity')):<11}"
             f"{pair:<18}{RESET}{mark}")
-        out.append("")
     return "\n".join(out)
 
 
