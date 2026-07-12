@@ -112,8 +112,11 @@ latency target are the highest. The weight column and the cost/latency columns
 side by side are the decision logic: spend the volume on the cheap, fast tier,
 reserve the expensive one for the few requests that need it. The weights are a
 config value; changing them re-shapes the traffic without touching a single
-caller. (The cost estimate prices the reference prompt the batch routes — 27
-tokens — so it matches the receipts you'll see in Step 5.)
+caller. (The cost estimate is a *comparable* figure, priced on one fixed 27-token
+reference prompt — the prompt the batch routes — so it lines up with the receipts
+in Step 5. It is not a universal per-request price: real cost scales with the
+tokens in each request, so read these as *relative* — premium is roughly 24× the
+low-cost tier — rather than a fixed charge.)
 
 ### Step 2: Run a controlled traffic batch
 
@@ -251,6 +254,22 @@ observed split doesn't match the configured weights, you have a routing bug, and
 now you can see it. In production the split is usually probabilistic and
 converges to the target over a large sample; here it is deterministic so it can
 be validated exactly in CI.
+
+## Narration notes
+
+- **Pronounce identifiers, don't spell them.** Say the `low_cost` tier as
+  **"low-cost"** (read the underscore as a hyphen), and read model ids naturally
+  — "econo-mini", "balanced-std", "premium-max". The underscore is fine on
+  screen; it should never be spoken as "low underscore cost."
+- **Frame cost as workload-dependent.** The dollar figures are a *comparable*
+  estimate for one fixed 27-token reference prompt, not a universal request
+  price. Narrate them as relative — "premium costs roughly twenty-four times the
+  low-cost tier for the same request" — so the learner hears that real cost
+  scales with the tokens in each request.
+- **Deterministic vs production.** When you reach the 10/6/4 split, say it is an
+  exact, repeatable result *by design* for validation; a production weighted
+  router converges to 50/30/20 over a large sample rather than hitting it on
+  every twenty requests.
 
 ## Preflight check
 

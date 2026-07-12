@@ -261,8 +261,8 @@ def fmt_policy(d: dict) -> str:
         out.append("")
     ref_n = d.get("reference_total_tokens")
     if ref_n is not None:
-        out += ctx("cost estimate priced for the reference prompt",
-                   f"{ref_n} tokens — the prompt the batch routes by default")
+        out += ctx("cost basis",
+                   f"a fixed {ref_n}-token prompt — comparable, not per-request")
     return "\n".join(out)
 
 
