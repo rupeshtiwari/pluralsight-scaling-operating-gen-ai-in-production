@@ -81,15 +81,6 @@ clears receipts **and** the routing counters, so the batch starts from zero:
 ./scripts/module1-demo-reset.sh
 ```
 
-**If a step shows `None` everywhere, or `curl` says connection refused:** the API
-isn't running the current code. Bring it up fresh — the container mounts the
-source and reloads, so this always serves the latest:
-
-```bash
-bash module1/scripts/demo_up.sh          # or, if you changed dependencies:
-docker compose up -d --build
-```
-
 ## Demo steps
 
 ### Step 1: Load the weighted routing policy
