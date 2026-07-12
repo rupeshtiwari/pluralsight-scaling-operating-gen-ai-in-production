@@ -1,0 +1,4 @@
+{
+  "prompt": "Summarize the following customer support thread into one short paragraph for the weekly digest. The thread covers a password reset request, a follow-up about two-factor authentication, a question about the mobile app, and a closing thank-you from the customer. Keep it factual and neutral, no more than four sentences, suitable for an internal newsletter.",
+  "task_class": "doc_summary"
+}

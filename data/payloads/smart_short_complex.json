@@ -1,0 +1,4 @@
+{
+  "prompt": "Identify the concurrency bug in this transaction protocol.",
+  "task_class": "bug_triage"
+}

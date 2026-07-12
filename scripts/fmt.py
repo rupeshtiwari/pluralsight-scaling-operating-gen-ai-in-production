@@ -380,53 +380,113 @@ def fmt_validate(d: dict) -> str:
 def fmt_rules(d: dict) -> str:
     out = [header(
         "Load the payload-based routing rules",
-        "Content decides the tier — simple prompts go cheap, complex ones go "
-        "premium, and override classes are pinned on purpose")]
+        "Three separate signals — size is evidence, declared complexity picks "
+        "the tier, overrides pin it")]
     out += star("policy_name", d.get("policy_name"))
-    th = d.get("thresholds", {})
-    out += sect("complexity buckets (by total tokens)")
+    thr = d.get("size_threshold_tokens")
+    out += ctx("size (evidence only)",
+               f"≤ {thr} tokens = short, > {thr} = long — shown for cost, never selects the tier")
     tiers = d.get("complexity_tiers", {})
-    low_max = th.get("low_max")
-    med_max = th.get("medium_max")
-    out += star("low", f"≤ {low_max} tokens  →  {tiers.get('low')}")
-    out += star("medium", f"{(low_max or 0) + 1}–{med_max} tokens  →  {tiers.get('medium')}")
-    out += star("high", f"> {med_max} tokens  →  {tiers.get('high')}")
-    out += sect("deterministic overrides (bypass payload routing)")
-    for cls, model in d.get("overrides", {}).items():
-        out += star(cls, f"→  {model}")
+    out += sect("declared task class → complexity → tier")
+    out.append(f"    {BLUE}{'task class':<20}{'complexity':<12}{'tier'}{RESET}")
+    for task, cx in d.get("task_complexity", {}).items():
+        out.append(f"    {LGRN}{task:<20}{cx:<12}{tiers.get(cx, '')}{RESET}")
+    out.append("")
+    out += sect("deterministic overrides (bypass the decision)")
+    out.append(f"    {BLUE}{'override class':<16}{'tier':<13}{'direction':<11}{'risk'}{RESET}")
+    for cls, rule in d.get("overrides", {}).items():
+        out.append(f"    {LGRN}{cls:<16}{str(rule.get('model')):<13}"
+                   f"{str(rule.get('direction')):<11}{rule.get('risk')}{RESET}")
+    out.append("")
     return "\n".join(out)
 
 
 def fmt_smart(d: dict) -> str:
     out = [header(
-        "Route a request by its payload",
-        "The same endpoint picks the tier the content calls for")]
+        "Route a request by declared complexity",
+        "Size, complexity, and risk are separate — complexity selects the tier")]
     out += star("selected_model", d.get("selected_model"))
     out += star("provider_tier", d.get("provider_tier"))
+    out += star("size", d.get("size"))
     out += star("complexity", d.get("complexity"))
+    out += star("risk", d.get("risk"), PINK if d.get("risk") == "high" else LGRN)
     est = d.get("token_estimate", {})
     out.append(tokens_line(est))
     out.append("")
     out += star("cost_estimate_usd", f"${d.get('cost_estimate_usd'):.6f}")
     out += star("route_reason", d.get("route_reason"))
-    # Only present when a deterministic override fired (EO1d) — show the tier
-    # payload routing would have chosen, in pink, to make the override visible.
-    if d.get("would_have_selected"):
+    # Present only when a deterministic override fired (EO1d): the tier
+    # complexity routing would have chosen, plus the override direction.
+    if d.get("override_class"):
         out += star("would_have_selected", d.get("would_have_selected"), PINK)
+        out += star("override_class", d.get("override_class"), PINK)
+        out += star("override_direction", d.get("override_direction"))
+    out += ctx("cost basis", "synthetic local estimate for comparing routes, not a provider invoice")
     out += ctx("request_id", d.get("request_id"))
+    return "\n".join(out)
+
+
+def fmt_smart_receipts(d: Any) -> str:
+    # Accept a JSON array, the /receipts wrapper, or psql -tA multi-row output
+    # normalized to a list before we get here.
+    if isinstance(d, dict) and "receipts" in d:
+        rows = d["receipts"]
+    elif isinstance(d, list):
+        rows = d
+    else:
+        rows = [d]
+    out = [header(
+        "Per-request audit receipts in PostgreSQL",
+        "Durable per request: id, tokens, complexity, tier, reason, cost")]
+    out.append(f"    {BLUE}{'request':<14}{'tokens':<7}{'complexity':<11}"
+               f"{'model':<13}{'route_reason':<22}{'cost'}{RESET}")
+    out.append("")
+    for r in rows:
+        if not r:
+            continue
+        rid = str(r.get("request_id", ""))[:12]
+        tok = str(r.get("total_tokens", ""))
+        cx = str(r.get("complexity") or "-")
+        model = str(r.get("selected_model"))
+        reason = str(r.get("route_reason"))
+        cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{rid:<14}{tok:<7}{cx:<11}{model:<13}"
+            f"{reason:<22}{cost}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_smart_counters(d: dict) -> str:
+    counts = {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    out = [header(
+        "Smart-routing counters in Redis",
+        "How each decision was made — routed by complexity vs pinned by "
+        "override — and proof the weighted path was bypassed")]
+    weighted = counts.get("weighted", 0)
+    payload = {k: v for k, v in counts.items() if k.startswith("payload:")}
+    override = {k: v for k, v in counts.items() if k.startswith("override:")}
+    out += star("total routed", sum(payload.values()) + sum(override.values()))
+    out += sect("routed by complexity")
+    for k in sorted(payload):
+        out += star(k, payload[k])
+    out += sect("pinned by override")
+    for k in sorted(override):
+        out += star(k, override[k])
+    out += star("weighted path (bypassed)", weighted, LIME if weighted == 0 else PINK)
     return "\n".join(out)
 
 
 def fmt_smart_validate(d: dict) -> str:
     out = [header(
         "Confirm every payload lands on the tier its rules dictate",
-        "Same input, same tier, every run — payload routing and overrides are "
-        "deterministic and testable")]
+        "Size, complexity, and overrides are deterministic and testable — same "
+        "input, same tier, every run")]
     out += star("cases", d.get("total"))
     allm = d.get("all_match")
     out += star("all_match", allm, LIME if allm else PINK)
-    out.append(f"    {BLUE}{'case':<18}{'class':<15}{'complexity':<12}"
-               f"{'selected':<20}{'match'}{RESET}")
+    out.append(f"    {BLUE}{'case':<20}{'size':<7}{'complexity':<11}"
+               f"{'selected':<18}{'match'}{RESET}")
     out.append("")
     for c in d.get("cases", []):
         mark = f"{LIME}✓{RESET}" if c.get("match") else f"{PINK}✗{RESET}"
@@ -434,9 +494,9 @@ def fmt_smart_validate(d: dict) -> str:
         exp = str(c.get("expected_model"))
         pair = sel if sel == exp else f"{sel} (want {exp})"
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{str(c.get('name')):<18}"
-            f"{str(c.get('request_class')):<15}{str(c.get('complexity')):<12}"
-            f"{pair:<20}{RESET}{mark}")
+            f"  {PINK}★{RESET} {LGRN}{str(c.get('name')):<20}"
+            f"{str(c.get('size')):<7}{str(c.get('complexity')):<11}"
+            f"{pair:<18}{RESET}{mark}")
         out.append("")
     return "\n".join(out)
 
@@ -457,6 +517,8 @@ VIEWS = {
     "rules": fmt_rules,
     "smart": fmt_smart,
     "smart-validate": fmt_smart_validate,
+    "smart-receipts": fmt_smart_receipts,
+    "smart-counters": fmt_smart_counters,
     "redis-counters": fmt_redis_counters,
 }
 

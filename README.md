@@ -185,8 +185,8 @@ All package and container versions are pinned in `requirements.txt` and
 |----|-------------|--------|------------------|
 | EO1a | Dedicated AI service layer that decouples app logic from providers | 1 | Uniform adapter contract + provider-agnostic PostgreSQL receipt |
 | EO1b | Weighted load balancing across model tiers | 1 | ✅ Policy shows weight + latency target + cost per tier; `redis-cli HGETALL` proves the 10/6/4 (50/30/20) spread directly; validation confirms observed == configured |
-| EO1c | Payload-based routing to appropriate tiers | 1 | ✅ Complexity buckets self-route each payload; route reason + complexity persisted per request |
-| EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Override rules deterministically bypass payload routing; `would_have_selected` shows the trade-off |
+| EO1c | Payload-based routing to appropriate tiers | 1 | ✅ Declared complexity (separate from prompt size) selects the tier; token estimate + complexity + cost shown and persisted per request |
+| EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Overrides bypass the decision in both directions (bulk→economy, legal→premium); `would_have_selected` + Redis `weighted: 0` prove the bypass |
 | EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | k6 spike, HTTP 429 receipt, circuit states, backoff timing _(planned)_ |
 | EO3a–e | Tracing, logging schema, quality sampling, SLOs, incident diagnosis | 2 | Trace spans, structured logs, Grafana, SLO alerts _(planned)_ |
 | EO4a–d | Prompt versioning, model validation, canary, deprecation | 3 | Version rollback, baseline gate, canary promotion _(planned)_ |
@@ -224,7 +224,8 @@ Endpoints available today (Module 1). More are added as later modules land.
 | `/routing/counters` | GET | Per-tier distribution counters (Redis) |
 | `/routing/validate` | GET | Observed distribution vs configured weights |
 | `/routing/rules` | GET | Payload-based routing rules — complexity buckets + override classes |
-| `/route/smart` | POST | Route a request by its payload, honouring deterministic overrides |
+| `/route/smart` | POST | Route a request by declared complexity, honouring deterministic overrides |
+| `/routing/smart-counters` | GET | Decision-dimension counters (complexity vs override; weighted bypassed) |
 | `/routing/smart-validate` | GET | Confirm every canonical payload lands on its expected tier |
 
 ## Project Structure

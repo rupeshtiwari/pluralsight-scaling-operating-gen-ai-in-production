@@ -1,0 +1,4 @@
+{
+  "prompt": "Tag this support ticket by topic.",
+  "task_class": "ticket_tag"
+}

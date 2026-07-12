@@ -84,5 +84,31 @@ def reset_routing() -> None:
     client().delete(_SEQ_KEY, _COUNTERS_KEY, _LAST_BATCH_KEY)
 
 
+# --- Smart routing counters (Clip 5) --------------------------------------
+# smart:counters is a Redis HASH tallying decisions by dimension:
+#   payload:<complexity>   — requests routed by declared complexity
+#   override:<class>       — requests pinned by a deterministic override
+#   weighted               — kept at 0; smart routing never takes the weighted
+#                            path, so this is the cleanest proof it was bypassed.
+
+_SMART_COUNTERS_KEY = "smart:counters"
+
+
+def smart_incr(dimension: str) -> None:
+    client().hincrby(_SMART_COUNTERS_KEY, dimension, 1)
+
+
+def smart_counters() -> dict[str, int]:
+    raw = client().hgetall(_SMART_COUNTERS_KEY)
+    return {k: int(v) for k, v in raw.items()}
+
+
+def reset_smart() -> None:
+    c = client()
+    c.delete(_SMART_COUNTERS_KEY)
+    # Seed the weighted-path marker at 0 so HGETALL always shows it was bypassed.
+    c.hset(_SMART_COUNTERS_KEY, "weighted", 0)
+
+
 def ping() -> bool:
     return bool(client().ping())

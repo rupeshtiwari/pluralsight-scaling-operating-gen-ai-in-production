@@ -88,87 +88,125 @@ def weighted_sequence() -> list[str]:
     return seq
 
 # --- Payload-based smart routing (Clip 5) ---------------------------------
-# Two ideas share one endpoint.
+# The route decision reads THREE independent signals, kept deliberately separate
+# (size is not complexity, complexity is not risk):
 #
-# EO1c — route by the payload itself. A request's complexity is derived
-# deterministically from its token estimate and mapped to the tier that fits:
-# simple prompts to the low-cost model, involved ones to premium. The caller
-# never names a model; the content decides.
+#   size        — the token estimate of the prompt. Shown for cost/evidence; it
+#                 does NOT by itself pick the tier (a long summary is still simple).
+#   complexity  — a DECLARED task_class maps to a semantic complexity. This is
+#                 what selects the tier, independent of length.
+#   risk /      — a declared override_class deterministically pins the tier,
+#   override      bypassing complexity routing on purpose (EO1d). Overrides run
+#                 in two directions: economy (force cheaper) and risk (force
+#                 stronger).
 #
-# EO1d — deterministic overrides. Some request classes must land on a specific
-# tier regardless of what the payload (or a weighted split) would choose. An
-# override rule pins them, bypassing payload routing on purpose — the
-# weighted-vs-deterministic trade-off made explicit and provable.
+# EO1c — route each request to the tier its complexity calls for.
+# EO1d — deterministic overrides that intentionally bypass the normal decision.
 SMART_POLICY_NAME = "payload_smart"
 
-# Complexity is bucketed from the total token estimate. Thresholds are pinned
-# so the same prompt always lands in the same bucket, every run.
-COMPLEXITY_THRESHOLDS: dict[str, int] = {"low_max": 25, "medium_max": 70}
+# Declared task_class -> semantic complexity. Complexity is NOT derived from
+# prompt length: a long doc summary is simple; a short bug-triage ask is complex.
+TASK_COMPLEXITY: dict[str, str] = {
+    "ticket_tag": "simple",
+    "doc_summary": "simple",        # can be long, still simple
+    "data_extract": "moderate",
+    "bug_triage": "complex",        # can be short, still complex
+    "incident_analysis": "complex",
+}
+DEFAULT_COMPLEXITY = "simple"
 
-# Each complexity bucket maps to exactly one tier.
+# Each complexity level maps to exactly one tier.
 COMPLEXITY_TIERS: dict[str, str] = {
-    "low": "econo-mini",
-    "medium": "balanced-std",
-    "high": "premium-max",
+    "simple": "econo-mini",
+    "moderate": "balanced-std",
+    "complex": "premium-max",
 }
 
-# Deterministic override rules: a caller-declared request_class pins the tier,
-# bypassing payload-complexity routing entirely.
-OVERRIDE_RULES: dict[str, str] = {
-    "bulk_batch": "econo-mini",
-    "code_generation": "premium-max",
-    "legal_review": "premium-max",
+# Size is a SEPARATE signal from complexity. This threshold only labels a prompt
+# short/long for evidence and cost — it never selects the tier on its own.
+SIZE_THRESHOLD_TOKENS = 60
+
+# Deterministic override rules keyed by a declared override_class. Each pins a
+# tier and carries its direction (economy = force cheaper, risk = force stronger)
+# and the risk level it represents.
+OVERRIDE_RULES: dict[str, dict] = {
+    "bulk_batch": {"model": "econo-mini", "direction": "economy", "risk": "low"},
+    "legal_review": {"model": "premium-max", "direction": "risk", "risk": "high"},
+    "code_generation": {"model": "premium-max", "direction": "risk", "risk": "high"},
 }
 
 
-def classify_complexity(total_tokens: int) -> str:
-    """Bucket a request into low / medium / high from its total token estimate."""
-    if total_tokens <= COMPLEXITY_THRESHOLDS["low_max"]:
-        return "low"
-    if total_tokens <= COMPLEXITY_THRESHOLDS["medium_max"]:
-        return "medium"
-    return "high"
+def task_complexity(task_class: str | None) -> str:
+    """Map a declared task_class to its semantic complexity (never from length)."""
+    return TASK_COMPLEXITY.get(task_class or "", DEFAULT_COMPLEXITY)
 
 
-# Canonical cases the smart-routing validation replays. Each asserts that a
-# payload (and optional override class) lands on the expected tier and reason,
-# so the decision logic is provable and repeatable in CI.
+def size_label(total_tokens: int) -> str:
+    """Label a prompt short/long by token estimate — evidence only, not the tier."""
+    return "long" if total_tokens > SIZE_THRESHOLD_TOKENS else "short"
+
+
+# Canonical cases the smart-routing validation replays — the five approved
+# payload forms plus the two override directions. Each asserts the tier and
+# reason, so the decision logic is provable and repeatable in CI.
 SMART_VALIDATION_CASES: list[dict] = [
     {
-        "name": "simple_payload",
-        "prompt": "Tag this ticket.",
-        "request_class": "standard",
+        "name": "short_simple",
+        "prompt": "Tag this support ticket by topic.",
+        "task_class": "ticket_tag",
+        "override_class": None,
         "expect_model": "econo-mini",
-        "expect_reason": "payload_complexity_low",
+        "expect_reason": "complexity_simple",
     },
     {
-        "name": "standard_payload",
-        "prompt": "Summarize this customer support ticket into one sentence for triage.",
-        "request_class": "standard",
-        "expect_model": "balanced-std",
-        "expect_reason": "payload_complexity_medium",
-    },
-    {
-        "name": "complex_payload",
+        "name": "long_simple",
         "prompt": (
-            "Analyze the attached quarterly incident report, correlate each "
-            "outage with its root cause, summarize the customer impact per "
-            "region, and recommend three concrete reliability improvements with "
-            "estimated effort and expected risk reduction for the platform team."
+            "Summarize the following support thread into one paragraph. " * 8
         ),
-        "request_class": "standard",
+        "task_class": "doc_summary",
+        "override_class": None,
+        "expect_model": "econo-mini",
+        "expect_reason": "complexity_simple",
+    },
+    {
+        "name": "short_complex",
+        "prompt": "Identify the concurrency bug in this transaction protocol.",
+        "task_class": "bug_triage",
+        "override_class": None,
         "expect_model": "premium-max",
-        "expect_reason": "payload_complexity_high",
+        "expect_reason": "complexity_complex",
     },
     {
-        "name": "override_bulk",
+        "name": "long_complex",
         "prompt": (
             "Analyze the attached quarterly incident report, correlate each "
             "outage with its root cause, summarize the customer impact per "
             "region, and recommend three concrete reliability improvements with "
             "estimated effort and expected risk reduction for the platform team."
         ),
-        "request_class": "bulk_batch",
+        "task_class": "incident_analysis",
+        "override_class": None,
+        "expect_model": "premium-max",
+        "expect_reason": "complexity_complex",
+    },
+    {
+        "name": "high_risk_override",
+        "prompt": "Confirm the retention clause wording in this contract.",
+        "task_class": "ticket_tag",
+        "override_class": "legal_review",
+        "expect_model": "premium-max",
+        "expect_reason": "override_legal_review",
+    },
+    {
+        "name": "bulk_override",
+        "prompt": (
+            "Analyze the attached quarterly incident report, correlate each "
+            "outage with its root cause, summarize the customer impact per "
+            "region, and recommend three concrete reliability improvements with "
+            "estimated effort and expected risk reduction for the platform team."
+        ),
+        "task_class": "incident_analysis",
+        "override_class": "bulk_batch",
         "expect_model": "econo-mini",
         "expect_reason": "override_bulk_batch",
     },

@@ -1,4 +1,4 @@
 {
   "prompt": "Analyze the attached quarterly incident report, correlate each outage with its root cause, summarize the customer impact per region, and recommend three concrete reliability improvements with estimated effort and expected risk reduction for the platform team.",
-  "request_class": "standard"
+  "task_class": "incident_analysis"
 }

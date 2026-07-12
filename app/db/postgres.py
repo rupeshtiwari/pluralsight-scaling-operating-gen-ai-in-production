@@ -25,8 +25,14 @@ CREATE TABLE IF NOT EXISTS receipts (
     total_tokens      INTEGER NOT NULL,
     cost_estimate_usd NUMERIC(12,6) NOT NULL,
     quality_score     NUMERIC(4,2) NOT NULL,
-    policy_name       TEXT NOT NULL
+    policy_name       TEXT NOT NULL,
+    complexity        TEXT,
+    override_class    TEXT
 );
+-- Additive columns for smart routing (Clip 5); nullable so baseline/weighted
+-- receipts are unaffected. Guarded for tables created before these existed.
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS complexity TEXT;
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS override_class TEXT;
 """
 
 
@@ -40,6 +46,9 @@ def init_schema() -> None:
 
 
 def insert_receipt(receipt: dict) -> None:
+    # complexity / override_class are set only by smart routing (Clip 5); default
+    # them so baseline and weighted receipts insert unchanged.
+    receipt = {"complexity": None, "override_class": None, **receipt}
     with connect() as conn:
         conn.execute(
             """
@@ -47,12 +56,13 @@ def insert_receipt(receipt: dict) -> None:
                 request_id, selected_model, provider_tier, provider_status,
                 route_reason, latency_target_ms, prompt_tokens,
                 completion_tokens, total_tokens, cost_estimate_usd,
-                quality_score, policy_name
+                quality_score, policy_name, complexity, override_class
             ) VALUES (
                 %(request_id)s, %(selected_model)s, %(provider_tier)s,
                 %(provider_status)s, %(route_reason)s, %(latency_target_ms)s,
                 %(prompt_tokens)s, %(completion_tokens)s, %(total_tokens)s,
-                %(cost_estimate_usd)s, %(quality_score)s, %(policy_name)s
+                %(cost_estimate_usd)s, %(quality_score)s, %(policy_name)s,
+                %(complexity)s, %(override_class)s
             )
             ON CONFLICT (request_id) DO NOTHING
             """,

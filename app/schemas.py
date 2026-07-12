@@ -31,7 +31,11 @@ class AdapterConfig(BaseModel):
 
 class RouteRequest(BaseModel):
     prompt: str = Field(..., description="Caller input text")
-    request_class: str = Field("standard", description="Caller-declared class")
+    request_class: str = Field("standard", description="Caller-declared class (baseline/weighted)")
+    # Smart routing (Clip 5): complexity is declared via task_class, kept separate
+    # from prompt size; override_class deterministically pins a tier.
+    task_class: str | None = Field(None, description="Declared task class → complexity")
+    override_class: str | None = Field(None, description="Declared override class → pinned tier")
 
 
 class BatchRequest(BaseModel):
@@ -55,9 +59,16 @@ class RouteResponse(BaseModel):
     policy_name: str
     # Set only by payload-based smart routing (Clip 5). Left None by the
     # baseline and weighted policies so their responses are unchanged.
+    size: str | None = Field(None, description="short | long — prompt size (evidence only)")
     complexity: str | None = Field(
-        None, description="low | medium | high — payload complexity bucket"
+        None, description="simple | moderate | complex — declared task complexity"
+    )
+    risk: str | None = Field(None, description="low | high — declared risk level")
+    task_class: str | None = Field(None, description="Declared task class")
+    override_class: str | None = Field(None, description="Override class that fired, if any")
+    override_direction: str | None = Field(
+        None, description="economy (force cheaper) | risk (force stronger)"
     )
     would_have_selected: str | None = Field(
-        None, description="Tier payload routing would have picked before an override"
+        None, description="Tier complexity routing would have picked before an override"
     )

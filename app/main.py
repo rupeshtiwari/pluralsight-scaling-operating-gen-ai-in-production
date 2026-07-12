@@ -26,13 +26,14 @@ from app.db import postgres, redis_client
 from app.providers.adapter import adapter_config, estimate_cost, estimate_tokens, probe
 from app.providers.registry import (
     BASE_ADAPTERS,
-    COMPLEXITY_THRESHOLDS,
     COMPLEXITY_TIERS,
     CONDITIONS,
     DEFAULT_MODEL,
     OVERRIDE_RULES,
+    SIZE_THRESHOLD_TOKENS,
     SMART_POLICY_NAME,
     SMART_VALIDATION_CASES,
+    TASK_COMPLEXITY,
     WEIGHTED_POLICY_NAME,
     WEIGHTED_WEIGHTS,
     weighted_sequence,
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI):
     postgres.init_schema()
     try:
         redis_client.reset_conditions()
+        redis_client.reset_smart()
     except Exception:
         pass
     yield
@@ -125,6 +127,7 @@ def admin_reset() -> dict:
     postgres.clear_receipts()
     redis_client.reset_conditions()
     redis_client.reset_routing()
+    redis_client.reset_smart()
     return {"status": "reset", "receipts": postgres.count_receipts(),
             "conditions": redis_client.all_conditions()}
 
@@ -224,11 +227,13 @@ def routing_validate() -> dict:
 
 @app.get("/routing/rules")
 def routing_rules() -> dict:
-    """The smart-routing rule table: complexity thresholds, the complexity→tier
-    map, and the deterministic override rules that bypass payload routing."""
+    """The smart-routing rule table across three separate signals: prompt size
+    (evidence only), declared task complexity (selects the tier), and the
+    deterministic override classes that pin a tier and bypass the decision."""
     return {
         "policy_name": SMART_POLICY_NAME,
-        "thresholds": COMPLEXITY_THRESHOLDS,
+        "size_threshold_tokens": SIZE_THRESHOLD_TOKENS,
+        "task_complexity": TASK_COMPLEXITY,
         "complexity_tiers": COMPLEXITY_TIERS,
         "overrides": OVERRIDE_RULES,
     }
@@ -236,11 +241,25 @@ def routing_rules() -> dict:
 
 @app.post("/route/smart")
 def route_smart_request(request: RouteRequest) -> dict:
-    """Route one request by its payload (with deterministic overrides) and
-    persist a normalized receipt."""
+    """Route one request by declared complexity (with deterministic overrides),
+    persist a receipt, and tally the decision dimension in Redis."""
     response, receipt = route_smart(request)
     postgres.insert_receipt(receipt)
+    if response.override_class:
+        redis_client.smart_incr(f"override:{response.override_class}")
+    else:
+        redis_client.smart_incr(f"payload:{response.complexity}")
     return response.model_dump()
+
+
+@app.get("/routing/smart-counters")
+def routing_smart_counters() -> dict:
+    """Decision-dimension counters from Redis: how many requests were routed by
+    complexity vs pinned by an override, and proof the weighted path was
+    bypassed (weighted == 0)."""
+    counts = redis_client.smart_counters()
+    total = sum(v for k, v in counts.items() if k != "weighted")
+    return {"policy_name": SMART_POLICY_NAME, "counters": counts, "total": total}
 
 
 @app.get("/routing/smart-validate")
@@ -249,13 +268,14 @@ def routing_smart_validate() -> dict:
     lands on the expected tier and reason — no side effects, fully repeatable."""
     cases = []
     for c in SMART_VALIDATION_CASES:
-        d = smart_decision(c["prompt"], c["request_class"])
+        d = smart_decision(c["prompt"], c.get("task_class"), c.get("override_class"))
         model_ok = d["selected_model"] == c["expect_model"]
         reason_ok = d["route_reason"] == c["expect_reason"]
         cases.append({
             "name": c["name"],
-            "request_class": c["request_class"],
+            "size": d["size"],
             "complexity": d["complexity"],
+            "override_class": d["override_class"],
             "expected_model": c["expect_model"],
             "selected_model": d["selected_model"],
             "route_reason": d["route_reason"],
