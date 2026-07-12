@@ -189,15 +189,15 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
 
 **Expected output:** six ★ rows deliberately spanning every kind — the `kind`
 column shows `weighted`, `payload`, and `override` — each with `policy_name`
-(`weighted` or `payload_smart`), `provider_tier`, `latency target`, `tokens`,
-`cost`, and `quality`.
+(`weighted` or `payload_smart`), `provider_tier`, `latency` (the configured
+target), `tokens`, `cost`, and `quality`.
 
 **What the learner should notice:** This is the durable record behind the
 counters. The `kind` column proves every routing path has a persisted receipt —
 weighted, payload, *and* override — not just the aggregate count. Note that
 override rows carry the `payload_smart` policy (an override is a deterministic
 exception *within* payload routing), so the `kind` column, not policy alone, is
-what proves the override path is durable. `latency target` is the tier's
+what proves the override path is durable. The `latency` column is the tier's
 *configured* target (400 / 700 / 1200 ms), not a measured request latency.
 Likewise `quality` is the tier's *configured capability score* — provider
 metadata, not a live judgment of this individual response. Cost and quality move
