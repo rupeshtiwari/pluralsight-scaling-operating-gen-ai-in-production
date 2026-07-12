@@ -53,3 +53,11 @@ class RouteResponse(BaseModel):
     cost_estimate_usd: float
     quality_score: float
     policy_name: str
+    # Set only by payload-based smart routing (Clip 5). Left None by the
+    # baseline and weighted policies so their responses are unchanged.
+    complexity: str | None = Field(
+        None, description="low | medium | high — payload complexity bucket"
+    )
+    would_have_selected: str | None = Field(
+        None, description="Tier payload routing would have picked before an override"
+    )

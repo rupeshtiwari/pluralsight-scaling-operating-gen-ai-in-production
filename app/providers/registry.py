@@ -87,6 +87,93 @@ def weighted_sequence() -> list[str]:
         picked[best] += 1
     return seq
 
+# --- Payload-based smart routing (Clip 5) ---------------------------------
+# Two ideas share one endpoint.
+#
+# EO1c — route by the payload itself. A request's complexity is derived
+# deterministically from its token estimate and mapped to the tier that fits:
+# simple prompts to the low-cost model, involved ones to premium. The caller
+# never names a model; the content decides.
+#
+# EO1d — deterministic overrides. Some request classes must land on a specific
+# tier regardless of what the payload (or a weighted split) would choose. An
+# override rule pins them, bypassing payload routing on purpose — the
+# weighted-vs-deterministic trade-off made explicit and provable.
+SMART_POLICY_NAME = "payload_smart"
+
+# Complexity is bucketed from the total token estimate. Thresholds are pinned
+# so the same prompt always lands in the same bucket, every run.
+COMPLEXITY_THRESHOLDS: dict[str, int] = {"low_max": 25, "medium_max": 70}
+
+# Each complexity bucket maps to exactly one tier.
+COMPLEXITY_TIERS: dict[str, str] = {
+    "low": "econo-mini",
+    "medium": "balanced-std",
+    "high": "premium-max",
+}
+
+# Deterministic override rules: a caller-declared request_class pins the tier,
+# bypassing payload-complexity routing entirely.
+OVERRIDE_RULES: dict[str, str] = {
+    "bulk_batch": "econo-mini",
+    "code_generation": "premium-max",
+    "legal_review": "premium-max",
+}
+
+
+def classify_complexity(total_tokens: int) -> str:
+    """Bucket a request into low / medium / high from its total token estimate."""
+    if total_tokens <= COMPLEXITY_THRESHOLDS["low_max"]:
+        return "low"
+    if total_tokens <= COMPLEXITY_THRESHOLDS["medium_max"]:
+        return "medium"
+    return "high"
+
+
+# Canonical cases the smart-routing validation replays. Each asserts that a
+# payload (and optional override class) lands on the expected tier and reason,
+# so the decision logic is provable and repeatable in CI.
+SMART_VALIDATION_CASES: list[dict] = [
+    {
+        "name": "simple_payload",
+        "prompt": "Tag this ticket.",
+        "request_class": "standard",
+        "expect_model": "econo-mini",
+        "expect_reason": "payload_complexity_low",
+    },
+    {
+        "name": "standard_payload",
+        "prompt": "Summarize this customer support ticket into one sentence for triage.",
+        "request_class": "standard",
+        "expect_model": "balanced-std",
+        "expect_reason": "payload_complexity_medium",
+    },
+    {
+        "name": "complex_payload",
+        "prompt": (
+            "Analyze the attached quarterly incident report, correlate each "
+            "outage with its root cause, summarize the customer impact per "
+            "region, and recommend three concrete reliability improvements with "
+            "estimated effort and expected risk reduction for the platform team."
+        ),
+        "request_class": "standard",
+        "expect_model": "premium-max",
+        "expect_reason": "payload_complexity_high",
+    },
+    {
+        "name": "override_bulk",
+        "prompt": (
+            "Analyze the attached quarterly incident report, correlate each "
+            "outage with its root cause, summarize the customer impact per "
+            "region, and recommend three concrete reliability improvements with "
+            "estimated effort and expected risk reduction for the platform team."
+        ),
+        "request_class": "bulk_batch",
+        "expect_model": "econo-mini",
+        "expect_reason": "override_bulk_batch",
+    },
+]
+
 # --- Supported deterministic conditions -----------------------------------
 # Each condition maps to the status string shown on screen plus the way it
 # bends the effective latency and quality so the simulation is repeatable.

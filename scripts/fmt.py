@@ -339,6 +339,70 @@ def fmt_validate(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- Clip 5 views (payload-based smart routing + overrides) ---------------
+
+def fmt_rules(d: dict) -> str:
+    out = [header(
+        "Load the payload-based routing rules",
+        "Content decides the tier — simple prompts go cheap, complex ones go "
+        "premium, and override classes are pinned on purpose")]
+    out += star("policy_name", d.get("policy_name"))
+    th = d.get("thresholds", {})
+    out += sect("complexity buckets (by total tokens)")
+    tiers = d.get("complexity_tiers", {})
+    low_max = th.get("low_max")
+    med_max = th.get("medium_max")
+    out += star("low", f"≤ {low_max} tokens  →  {tiers.get('low')}")
+    out += star("medium", f"{(low_max or 0) + 1}–{med_max} tokens  →  {tiers.get('medium')}")
+    out += star("high", f"> {med_max} tokens  →  {tiers.get('high')}")
+    out += sect("deterministic overrides (bypass payload routing)")
+    for cls, model in d.get("overrides", {}).items():
+        out += star(cls, f"→  {model}")
+    return "\n".join(out)
+
+
+def fmt_smart(d: dict) -> str:
+    out = [header(
+        "Route a request by its payload",
+        "The same endpoint picks the tier the content calls for")]
+    out += star("selected_model", d.get("selected_model"))
+    out += star("provider_tier", d.get("provider_tier"))
+    out += star("complexity", d.get("complexity"))
+    est = d.get("token_estimate", {})
+    out.append(tokens_line(est))
+    out.append("")
+    out += star("cost_estimate_usd", f"${d.get('cost_estimate_usd'):.6f}")
+    out += star("route_reason", d.get("route_reason"))
+    # Only present when a deterministic override fired (EO1d) — show the tier
+    # payload routing would have chosen, in pink, to make the override visible.
+    if d.get("would_have_selected"):
+        out += star("would_have_selected", d.get("would_have_selected"), PINK)
+    out += ctx("request_id", d.get("request_id"))
+    return "\n".join(out)
+
+
+def fmt_smart_validate(d: dict) -> str:
+    out = [header(
+        "Confirm every payload lands on the tier its rules dictate",
+        "Same input, same tier, every run — payload routing and overrides are "
+        "deterministic and testable")]
+    out += star("cases", d.get("total"))
+    allm = d.get("all_match")
+    out += star("all_match", allm, LIME if allm else PINK)
+    out += sect("case  class  complexity  →  selected (expected)  match")
+    for c in d.get("cases", []):
+        mark = f"{LIME}✓{RESET}" if c.get("match") else f"{PINK}✗{RESET}"
+        sel = str(c.get("selected_model"))
+        exp = str(c.get("expected_model"))
+        pair = sel if sel == exp else f"{sel} (want {exp})"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{str(c.get('name')):<18}"
+            f"{str(c.get('request_class')):<15}{str(c.get('complexity')):<12}{RESET}"
+            f"{LGRN}{pair}{RESET}  {mark}")
+        out.append("")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -352,6 +416,9 @@ VIEWS = {
     "counters": fmt_counters,
     "receipts": fmt_receipts,
     "validate": fmt_validate,
+    "rules": fmt_rules,
+    "smart": fmt_smart,
+    "smart-validate": fmt_smart_validate,
 }
 
 

@@ -9,6 +9,11 @@ Endpoints used by the Module 1 / Clip 2 demo:
     GET  /providers/conditions    active + supported condition matrix
     POST /route                   baseline decision, writes a normalized receipt
     GET  /receipts                normalized receipts (also queried via psql)
+
+Later clips add weighted routing (Clip 3: /routing/policy, /route/batch,
+/routing/counters, /routing/validate) and payload-based smart routing with
+deterministic overrides (Clip 5: /routing/rules, /route/smart,
+/routing/smart-validate).
 """
 from __future__ import annotations
 
@@ -21,12 +26,18 @@ from app.db import postgres, redis_client
 from app.providers.adapter import adapter_config, probe
 from app.providers.registry import (
     BASE_ADAPTERS,
+    COMPLEXITY_THRESHOLDS,
+    COMPLEXITY_TIERS,
     CONDITIONS,
     DEFAULT_MODEL,
+    OVERRIDE_RULES,
+    SMART_POLICY_NAME,
+    SMART_VALIDATION_CASES,
     WEIGHTED_POLICY_NAME,
     WEIGHTED_WEIGHTS,
     weighted_sequence,
 )
+from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
 from app.routing.weighted import ROUTE_REASON as WEIGHTED_ROUTE_REASON
 from app.routing.weighted import route_weighted
@@ -185,6 +196,55 @@ def routing_validate() -> dict:
                         "observed": observed, "match": observed == expected}
     return {"policy_name": WEIGHTED_POLICY_NAME, "total": total,
             "all_match": all(t["match"] for t in tiers.values()), "tiers": tiers}
+
+
+# --- Payload-based smart routing (Clip 5) ---------------------------------
+
+@app.get("/routing/rules")
+def routing_rules() -> dict:
+    """The smart-routing rule table: complexity thresholds, the complexity→tier
+    map, and the deterministic override rules that bypass payload routing."""
+    return {
+        "policy_name": SMART_POLICY_NAME,
+        "thresholds": COMPLEXITY_THRESHOLDS,
+        "complexity_tiers": COMPLEXITY_TIERS,
+        "overrides": OVERRIDE_RULES,
+    }
+
+
+@app.post("/route/smart")
+def route_smart_request(request: RouteRequest) -> dict:
+    """Route one request by its payload (with deterministic overrides) and
+    persist a normalized receipt."""
+    response, receipt = route_smart(request)
+    postgres.insert_receipt(receipt)
+    return response.model_dump()
+
+
+@app.get("/routing/smart-validate")
+def routing_smart_validate() -> dict:
+    """Replay the canonical cases through the pure decision logic and assert each
+    lands on the expected tier and reason — no side effects, fully repeatable."""
+    cases = []
+    for c in SMART_VALIDATION_CASES:
+        d = smart_decision(c["prompt"], c["request_class"])
+        model_ok = d["selected_model"] == c["expect_model"]
+        reason_ok = d["route_reason"] == c["expect_reason"]
+        cases.append({
+            "name": c["name"],
+            "request_class": c["request_class"],
+            "complexity": d["complexity"],
+            "expected_model": c["expect_model"],
+            "selected_model": d["selected_model"],
+            "route_reason": d["route_reason"],
+            "match": model_ok and reason_ok,
+        })
+    return {
+        "policy_name": SMART_POLICY_NAME,
+        "total": len(cases),
+        "all_match": all(c["match"] for c in cases),
+        "cases": cases,
+    }
 
 
 @app.get("/receipts")

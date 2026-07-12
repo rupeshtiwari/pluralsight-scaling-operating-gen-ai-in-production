@@ -47,7 +47,7 @@ for every step.
 
 | Module | Focus | Demos | README |
 |--------|-------|-------|--------|
-| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/demo/clip2.md) ✅ · [weighted routing](module1/demo/clip3.md) ✅ · payload routing · receipt validation | [Clip 2](module1/demo/clip2.md) · [Clip 3](module1/demo/clip3.md) |
+| 1 — Scaling GenAI Traffic with FastAPI Routing Controls | Multi-model routing (T1) | [Adapter layer](module1/demo/clip2.md) ✅ · [weighted routing](module1/demo/clip3.md) ✅ · [payload routing & overrides](module1/demo/clip5.md) ✅ · receipt validation | [Clip 2](module1/demo/clip2.md) · [Clip 3](module1/demo/clip3.md) · [Clip 5](module1/demo/clip5.md) |
 | 2 — Protecting and Observing GenAI Reliability | Resilience + observability (T2, T3) | Queues/rate limits · circuit breaker/fallback · traces/logs/metrics · incident diagnosis | _planned_ |
 | 3 — Operating LLMOps Change and Production Readiness | LLMOps + readiness (T4, T5) | Prompt versioning · model validation · canary · readiness audit | _planned_ |
 
@@ -175,8 +175,8 @@ All package and container versions are pinned in `requirements.txt` and
 |----|-------------|--------|------------------|
 | EO1a | Dedicated AI service layer that decouples app logic from providers | 1 | Uniform adapter contract + provider-agnostic PostgreSQL receipt |
 | EO1b | Weighted load balancing across model tiers | 1 | ✅ Redis counters prove 50/30/20 distribution; validation confirms observed == configured weights |
-| EO1c | Payload-based routing to appropriate tiers | 1 | Route reason + complexity flag per request _(planned)_ |
-| EO1d | Weighted vs deterministic trade-offs | 1 | Override rules bypass weighted routing intentionally _(planned)_ |
+| EO1c | Payload-based routing to appropriate tiers | 1 | ✅ Complexity buckets self-route each payload; route reason + complexity persisted per request |
+| EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Override rules deterministically bypass payload routing; `would_have_selected` shows the trade-off |
 | EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | k6 spike, HTTP 429 receipt, circuit states, backoff timing _(planned)_ |
 | EO3a–e | Tracing, logging schema, quality sampling, SLOs, incident diagnosis | 2 | Trace spans, structured logs, Grafana, SLO alerts _(planned)_ |
 | EO4a–d | Prompt versioning, model validation, canary, deprecation | 3 | Version rollback, baseline gate, canary promotion _(planned)_ |
@@ -213,6 +213,9 @@ Endpoints available today (Module 1). More are added as later modules land.
 | `/routing/last-batch` | GET | Individual decisions from the last batch |
 | `/routing/counters` | GET | Per-tier distribution counters (Redis) |
 | `/routing/validate` | GET | Observed distribution vs configured weights |
+| `/routing/rules` | GET | Payload-based routing rules — complexity buckets + override classes |
+| `/route/smart` | POST | Route a request by its payload, honouring deterministic overrides |
+| `/routing/smart-validate` | GET | Confirm every canonical payload lands on its expected tier |
 
 ## Project Structure
 
@@ -222,7 +225,8 @@ Endpoints available today (Module 1). More are added as later modules land.
 │   ├── README.md                module index → links to each clip
 │   ├── demo/                     one runbook per demo clip
 │   │   ├── clip2.md              adapter layer
-│   │   └── clip3.md              weighted routing
+│   │   ├── clip3.md              weighted routing
+│   │   └── clip5.md              payload routing & overrides
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability (planned)
 ├── module3/                     Module 3: LLMOps + readiness (planned)
