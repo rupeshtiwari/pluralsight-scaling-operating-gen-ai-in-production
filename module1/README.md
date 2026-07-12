@@ -10,7 +10,7 @@ routing for multi-model GenAI service architectures. · **30 minutes**
 | 2 | Build the FastAPI provider adapter layer | 6 min | TO1, EO1a | [demo/clip2.md](demo/clip2.md) ✅ |
 | 3 | Prove weighted routing across model tiers | 6 min | EO1b | [demo/clip3.md](demo/clip3.md) ✅ |
 | 5 | Prove payload-based routing and deterministic overrides | 6 min | EO1c, EO1d | [demo/clip5.md](demo/clip5.md) ✅ |
-| 6 | Validate routing receipts, counters, and final disposition | 6 min | TO1, EO1a–d | [demo/clip6.md](demo/clip6.md) _(planned)_ |
+| 6 | Validate routing receipts, counters, and final disposition | 6 min | TO1, EO1a–d | [demo/clip6.md](demo/clip6.md) ✅ |
 
 ## Learning Objectives
 
@@ -39,5 +39,6 @@ Reset to a clean state at any time while the stack is up:
 
 `module1/scripts/` — `demo_up.sh`, `demo_down.sh`, `capture_demo_output.sh`, and a
 preflight per demo clip (`preflight_check.sh` for Clip 2, `clip3_preflight_check.sh`
-for Clip 3, `clip5_preflight_check.sh` for Clip 5) that runs every step, asserts
-each learning objective, and writes a readable log.
+for Clip 3, `clip5_preflight_check.sh` for Clip 5, `clip6_preflight_check.sh` for
+Clip 6) that runs every step, asserts each learning objective, and writes a
+readable log.

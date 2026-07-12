@@ -53,6 +53,7 @@ async def lifespan(app: FastAPI):
     try:
         redis_client.reset_conditions()
         redis_client.reset_smart()
+        redis_client.reset_mixed()
     except Exception:
         pass
     yield
@@ -128,6 +129,7 @@ def admin_reset() -> dict:
     redis_client.reset_conditions()
     redis_client.reset_routing()
     redis_client.reset_smart()
+    redis_client.reset_mixed()
     return {"status": "reset", "receipts": postgres.count_receipts(),
             "conditions": redis_client.all_conditions()}
 
@@ -286,6 +288,92 @@ def routing_smart_validate() -> dict:
         "total": len(cases),
         "all_match": all(c["match"] for c in cases),
         "cases": cases,
+    }
+
+
+# --- Mixed batch + final disposition (Clip 6) -----------------------------
+
+def _mixed_sample(response, kind: str) -> dict:
+    return {
+        "request_id": response.request_id,
+        "kind": kind,
+        "policy_name": response.policy_name,
+        "selected_model": response.selected_model,
+        "provider_tier": response.provider_tier,
+        "route_reason": response.route_reason,
+    }
+
+
+@app.post("/route/mixed")
+def route_mixed() -> dict:
+    """Run one mixed batch — weighted + payload + override — persisting every
+    receipt and tallying by routing kind in Redis. Clip 6 reconciles this summary
+    against the Redis counters and the PostgreSQL receipts."""
+    samples: list[dict] = []
+    by_kind = {"weighted": 0, "payload": 0, "override": 0}
+
+    # 10 weighted requests — deterministic 5 / 3 / 2 across the tiers.
+    for i in range(10):
+        response, receipt = route_weighted(RouteRequest(prompt=REFERENCE_PROMPT), i)
+        postgres.insert_receipt(receipt)
+        redis_client.mixed_incr("weighted"); by_kind["weighted"] += 1
+        samples.append(_mixed_sample(response, "weighted"))
+
+    # 4 payload + 2 override, from the canonical smart cases.
+    for c in SMART_VALIDATION_CASES:
+        req = RouteRequest(prompt=c["prompt"], task_class=c.get("task_class"),
+                           override_class=c.get("override_class"))
+        response, receipt = route_smart(req)
+        postgres.insert_receipt(receipt)
+        kind = "override" if response.override_class else "payload"
+        redis_client.mixed_incr(kind); by_kind[kind] += 1
+        samples.append(_mixed_sample(response, kind))
+
+    summary = {
+        "total": sum(by_kind.values()),
+        "by_kind": by_kind,
+        "policies": sorted({s["policy_name"] for s in samples}),
+        "samples": samples,
+    }
+    redis_client.set_mixed_batch(summary)
+    return {"total": summary["total"], "by_kind": by_kind, "policies": summary["policies"]}
+
+
+@app.get("/routing/mixed-batch")
+def routing_mixed_batch(limit: int = 6) -> dict:
+    data = redis_client.get_mixed_batch()
+    if data.get("samples"):
+        data = {**data, "samples": data["samples"][:limit]}
+    return data
+
+
+@app.get("/routing/mixed-counters")
+def routing_mixed_counters() -> dict:
+    counts = redis_client.mixed_counters()
+    return {"counters": counts, "total": sum(counts.values())}
+
+
+@app.get("/routing/disposition")
+def routing_disposition() -> dict:
+    """Reconcile the three sources of truth — the API summary, the Redis counters,
+    and the PostgreSQL receipts — per routing kind, and confirm the operator
+    decision only when all three agree and every receipt's policy is consistent
+    with its route reason."""
+    api = redis_client.get_mixed_batch().get("by_kind", {})
+    redis_counts = redis_client.mixed_counters()
+    receipts = postgres.count_by_kind()
+    kinds = {}
+    for k in ("weighted", "payload", "override"):
+        a, r, p = int(api.get(k, 0)), int(redis_counts.get(k, 0)), int(receipts.get(k, 0))
+        kinds[k] = {"api": a, "redis": r, "receipts": p, "agree": a == r == p}
+    sources_agree = all(v["agree"] for v in kinds.values())
+    policies_consistent = postgres.inconsistent_receipts() == 0
+    confirmed = sources_agree and policies_consistent
+    return {
+        "kinds": kinds,
+        "sources_agree": sources_agree,
+        "policies_consistent": policies_consistent,
+        "disposition": "CONFIRMED" if confirmed else "BLOCKED",
     }
 
 

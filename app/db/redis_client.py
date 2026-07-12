@@ -110,5 +110,36 @@ def reset_smart() -> None:
     c.hset(_SMART_COUNTERS_KEY, "weighted", 0)
 
 
+# --- Mixed-batch counters (Clip 6) ----------------------------------------
+# mixed:counters tallies a mixed batch by ROUTING KIND (weighted / payload /
+# override) so the aggregate can be reconciled against the API summary and the
+# PostgreSQL receipts. mixed:last_batch holds the API summary + samples.
+
+_MIXED_COUNTERS_KEY = "mixed:counters"
+_MIXED_BATCH_KEY = "mixed:last_batch"
+
+
+def mixed_incr(kind: str) -> None:
+    client().hincrby(_MIXED_COUNTERS_KEY, kind, 1)
+
+
+def mixed_counters() -> dict[str, int]:
+    raw = client().hgetall(_MIXED_COUNTERS_KEY)
+    return {k: int(v) for k, v in raw.items()}
+
+
+def set_mixed_batch(data: dict) -> None:
+    client().set(_MIXED_BATCH_KEY, json.dumps(data))
+
+
+def get_mixed_batch() -> dict:
+    raw = client().get(_MIXED_BATCH_KEY)
+    return json.loads(raw) if raw else {}
+
+
+def reset_mixed() -> None:
+    client().delete(_MIXED_COUNTERS_KEY, _MIXED_BATCH_KEY)
+
+
 def ping() -> bool:
     return bool(client().ping())

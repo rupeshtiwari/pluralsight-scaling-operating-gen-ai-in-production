@@ -89,6 +89,37 @@ def clear_receipts() -> None:
         conn.execute("TRUNCATE receipts")
 
 
+def count_by_kind() -> dict[str, int]:
+    """Count receipts grouped by routing kind, derived from route_reason:
+    weighted_distribution → weighted, complexity_* → payload, override_* →
+    override. Used by the Clip 6 disposition to reconcile against Redis + API."""
+    sql = """
+        SELECT CASE
+                 WHEN route_reason = 'weighted_distribution' THEN 'weighted'
+                 WHEN route_reason LIKE 'override_%'          THEN 'override'
+                 WHEN route_reason LIKE 'complexity_%'        THEN 'payload'
+                 ELSE 'other'
+               END AS kind, count(*)
+        FROM receipts GROUP BY 1
+    """
+    with connect() as conn:
+        return {k: int(v) for k, v in conn.execute(sql).fetchall()}
+
+
+def inconsistent_receipts() -> int:
+    """Count receipts whose policy_name disagrees with their route_reason kind
+    (weighted_distribution must be policy 'weighted'; complexity_/override_ must
+    be policy 'payload_smart'). Zero means policy and model behavior agree."""
+    sql = """
+        SELECT count(*) FROM receipts WHERE
+          (route_reason = 'weighted_distribution' AND policy_name <> 'weighted')
+          OR ((route_reason LIKE 'complexity_%' OR route_reason LIKE 'override_%')
+              AND policy_name <> 'payload_smart')
+    """
+    with connect() as conn:
+        return int(conn.execute(sql).fetchone()[0])
+
+
 def ping() -> bool:
     with connect() as conn:
         return conn.execute("SELECT 1").fetchone()[0] == 1

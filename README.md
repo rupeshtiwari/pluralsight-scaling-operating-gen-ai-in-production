@@ -47,7 +47,7 @@ step.
 
 | Module | Demo | What You Prove | README |
 |--------|------|----------------|--------|
-| 1 | Multi-Model Routing | Put three model tiers behind one adapter contract → route by weight (prove the 10/6/4 spread straight from Redis) → route by declared complexity with deterministic overrides in both directions → back every decision with a PostgreSQL receipt | [module1/README.md](module1/README.md) |
+| 1 ✅ | Multi-Model Routing | Put three model tiers behind one adapter contract → route by weight (prove the 10/6/4 spread straight from Redis) → route by declared complexity with deterministic overrides in both directions → back every decision with a PostgreSQL receipt → reconcile a mixed batch across API, Redis, and receipts into one operator disposition | [module1/README.md](module1/README.md) |
 | 2 | Resilience & Observability | Absorb spikes with a queue → fail fast at capacity → trip a circuit breaker → retry with backoff → fail over to a healthy model → trace, log, and measure it end to end _(planned)_ | module2/README.md |
 | 3 | LLMOps & Readiness | Version prompts → validate a model update against a baseline → run a canary → manage deprecation → audit production readiness and finalize a runbook _(planned)_ | module3/README.md |
 
@@ -227,6 +227,10 @@ Endpoints available today (Module 1). More are added as later modules land.
 | `/route/smart` | POST | Route a request by declared complexity, honouring deterministic overrides |
 | `/routing/smart-counters` | GET | Decision-dimension counters (complexity vs override; weighted bypassed) |
 | `/routing/smart-validate` | GET | Confirm every canonical payload lands on its expected tier |
+| `/route/mixed` | POST | Run one mixed batch — weighted + payload + override — and tally by kind |
+| `/routing/mixed-batch` | GET | Individual decisions from the mixed batch, tagged by kind |
+| `/routing/mixed-counters` | GET | Per-kind mixed-batch counters (Redis) |
+| `/routing/disposition` | GET | Reconcile API + Redis + receipts → CONFIRMED / BLOCKED |
 
 ## Project Structure
 
@@ -238,7 +242,7 @@ Endpoints available today (Module 1). More are added as later modules land.
 │   │   ├── clip2.md              adapter layer ✅
 │   │   ├── clip3.md              weighted routing ✅
 │   │   ├── clip5.md              payload routing & overrides ✅
-│   │   └── clip6.md              receipts/counters disposition (planned)
+│   │   └── clip6.md              receipts/counters disposition ✅
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability (planned)
 │   ├── README.md                module index → 6 clips

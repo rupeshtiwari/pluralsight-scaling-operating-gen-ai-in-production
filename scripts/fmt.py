@@ -505,6 +505,101 @@ def fmt_smart_validate(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- Clip 6 views (mixed batch + final disposition) -----------------------
+
+def fmt_mixed(d: dict) -> str:
+    out = [header(
+        "Run a mixed routing batch",
+        "Weighted, payload, and override requests through one service")]
+    out += star("total requests", d.get("total"))
+    out += sect("by routing kind")
+    bk = d.get("by_kind", {})
+    for k in ("weighted", "payload", "override"):
+        out += star(k, bk.get(k))
+    out += star("policies", ", ".join(d.get("policies", [])))
+    return "\n".join(out)
+
+
+def fmt_mixed_samples(d: dict) -> str:
+    out = [header(
+        "Inspect the individual mixed decisions",
+        "Each request tagged with its kind, policy, model, and route reason")]
+    out.append(f"    {BLUE}{'request':<14}{'kind':<10}{'model':<13}"
+               f"{'tier':<10}{'route_reason'}{RESET}")
+    out.append("")
+    for r in d.get("samples", []) or []:
+        rid = str(r.get("request_id", ""))[:12]
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{rid:<14}{str(r.get('kind')):<10}"
+            f"{str(r.get('selected_model')):<13}{str(r.get('provider_tier')):<10}"
+            f"{r.get('route_reason')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_mixed_counters(d: dict) -> str:
+    counts = {k: int(v) for k, v in d.items()} if isinstance(d, dict) else {}
+    out = [header(
+        "Aggregate routing kinds in Redis",
+        "The datastore's per-kind tally — reconciles against the batch summary")]
+    out += star("total", sum(counts.values()))
+    out += sect("by routing kind")
+    for k in ("weighted", "payload", "override"):
+        if k in counts:
+            out += star(k, counts[k])
+    return "\n".join(out)
+
+
+def fmt_mixed_receipts(d: Any) -> str:
+    if isinstance(d, dict) and "receipts" in d:
+        rows = d["receipts"]
+    elif isinstance(d, list):
+        rows = d
+    else:
+        rows = [d]
+    out = [header(
+        "Full per-request receipts in PostgreSQL",
+        "The operator field set: id, policy, provider, latency, tokens, cost, quality")]
+    out.append(f"    {BLUE}{'request':<14}{'policy':<15}{'tier':<10}{'latency':<8}"
+               f"{'tokens':<7}{'cost':<11}{'quality'}{RESET}")
+    out.append("")
+    for r in rows:
+        if not r:
+            continue
+        rid = str(r.get("request_id", ""))[:12]
+        lat = f"{r.get('latency_target_ms')}ms"
+        cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+        qual = f"{float(r.get('quality_score', 0)):.2f}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{rid:<14}{str(r.get('policy_name')):<15}"
+            f"{str(r.get('provider_tier')):<10}{lat:<8}{str(r.get('total_tokens')):<7}"
+            f"{cost:<11}{qual}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_disposition(d: dict) -> str:
+    out = [header(
+        "Confirm the final operator disposition",
+        "CONFIRMED only when API, Redis, and receipts agree and every policy is "
+        "consistent with its route reason")]
+    disp = d.get("disposition")
+    out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)
+    out += star("sources_agree", d.get("sources_agree"),
+                LIME if d.get("sources_agree") else PINK)
+    out += star("policies_consistent", d.get("policies_consistent"),
+                LIME if d.get("policies_consistent") else PINK)
+    out += sect("api  redis  receipts  agree   (per kind)")
+    for k in ("weighted", "payload", "override"):
+        t = d.get("kinds", {}).get(k, {})
+        mark = f"{LIME}✓{RESET}" if t.get("agree") else f"{PINK}✗{RESET}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{k:<12}{str(t.get('api')):<7}"
+            f"{str(t.get('redis')):<8}{str(t.get('receipts')):<10}{RESET}{mark}")
+        out.append("")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -524,6 +619,11 @@ VIEWS = {
     "smart-receipts": fmt_smart_receipts,
     "smart-counters": fmt_smart_counters,
     "redis-counters": fmt_redis_counters,
+    "mixed": fmt_mixed,
+    "mixed-samples": fmt_mixed_samples,
+    "mixed-counters": fmt_mixed_counters,
+    "mixed-receipts": fmt_mixed_receipts,
+    "disposition": fmt_disposition,
 }
 
 
