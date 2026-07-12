@@ -35,7 +35,7 @@ redis_query() {
   [ -z "$out" ] && out="$(redis-cli "$@" 2>/dev/null)"
   printf '%s' "$out"
 }
-FIELDS="policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score"
+FIELDS="request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score"
 SQL_RECEIPTS="SELECT row_to_json(r) FROM ((SELECT 'weighted' AS kind,$FIELDS FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2) UNION ALL (SELECT 'payload' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2) UNION ALL (SELECT 'override' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)) r"
 
 PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
@@ -119,17 +119,17 @@ fi
 # STEP 4 — durable receipts across kinds (both policies)
 step_head "4" "Verify the durable receipts in PostgreSQL" \
   "Every routing KIND must have a durable receipt with the full operator field set." \
-  "6 rows whose kind column spans weighted, payload, and override, each with policy, provider, latency target, tokens, cost, quality."
-show_cmd "docker compose exec -T postgres psql ... 'weighted'/'payload'/'override' AS kind ... | python3 scripts/fmt.py --type mixed-receipts"
+  "6 rows spanning weighted, payload, and override, each with request ID, policy, provider, latency target, tokens, cost, quality."
+show_cmd "docker compose exec -T postgres psql ... request_id, policy, provider, latency, tokens, cost, quality ... | python3 scripts/fmt.py --type mixed-receipts"
 RAW="$(pg_query "$SQL_RECEIPTS")"
 emit "$(printf '%s' "$RAW" | $FMT --type mixed-receipts 2>&1)"
-if echo "$RAW" | jq -s -e 'length==6 and ([.[].kind]|unique|(index("weighted") and index("payload") and index("override"))) and ([.[].policy_name]|unique|(index("weighted") and index("payload_smart"))) and (all(.[]; .quality_score!=null and .latency_target_ms!=null and .cost_estimate_usd!=null))' >/dev/null 2>&1; then
-  verdict 0 "durable receipts visibly span all three kinds (weighted/payload/override) with the full field set" "" ""
-  LO+=("Step 4: durable receipts across every routing kind — kind, policy, provider, latency target, tokens, cost, quality (TO1, EO1a)")
+if echo "$RAW" | jq -s -e 'length==6 and ([.[].kind]|unique|(index("weighted") and index("payload") and index("override"))) and (all(.[]; (.request_id|startswith("req-")) and .policy_name!=null and .quality_score!=null and .latency_target_ms!=null and .cost_estimate_usd!=null))' >/dev/null 2>&1; then
+  verdict 0 "durable receipts span all three kinds, each with request ID, policy, provider, latency target, tokens, cost, quality" "" ""
+  LO+=("Step 4: durable receipts across every routing kind — request ID, policy, provider, latency target, tokens, cost, quality (TO1, EO1a)")
 else
   verdict 1 "receipts do not visibly span all three kinds or are missing operator fields" \
-    "Ensure the query tags each row with its kind and the mixed batch persisted all kinds with non-null fields." \
-    "The receipts query must return 6 rows whose kind spans weighted, payload, and override, each with latency_target_ms, total_tokens, cost_estimate_usd, quality_score. Fix the query and app/main.py."
+    "Ensure the query returns request_id and the mixed batch persisted all kinds with non-null fields." \
+    "The receipts query must return 6 rows spanning weighted, payload, and override, each with request_id, policy_name, latency_target_ms, total_tokens, cost_estimate_usd, quality_score. Fix the query and app/main.py."
 fi
 
 # STEP 5 — reconcile + final disposition (merged)

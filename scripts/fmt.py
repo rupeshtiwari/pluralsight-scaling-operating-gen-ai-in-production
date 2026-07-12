@@ -47,14 +47,13 @@ TITLE: str | None = None
 WHY: str | None = None
 
 
-def header(default_title: str, default_why: str) -> str:
+def header(default_title: str, default_why: str, width: int = 74) -> str:
     """View header, overridable per step with --title / --why."""
-    return panel(TITLE or default_title, WHY or default_why)
+    return panel(TITLE or default_title, WHY or default_why, width)
 
 
-def panel(title: str, why: str) -> str:
+def panel(title: str, why: str, width: int = 74) -> str:
     """Boxed header: WHAT we show (white) + WHY we show it (blue). No truncation."""
-    width = 74
     inner = width - 4
     top = "┌" + "─" * (width - 2) + "┐"
     bot = "└" + "─" * (width - 2) + "┘"
@@ -592,9 +591,10 @@ def fmt_mixed_receipts(d: Any) -> str:
         rows = [d]
     out = [header(
         "Durable routing receipts in PostgreSQL",
-        "Every routing kind: policy, provider, latency target, tokens, cost, quality")]
-    out.append(f"    {BLUE}{'kind':<10}{'policy':<16}{'tier':<11}"
-               f"{'latency':<8}{'tokens':<7}{'cost':<11}{'quality'}{RESET}")
+        "Every routing kind: request ID, policy, provider, latency target, "
+        "tokens, cost, quality", width=88)]
+    out.append(f"    {BLUE}{'request':<18}{'policy':<16}{'tier':<14}"
+               f"{'latency':<9}{'tokens':<8}{'cost':<11}{'quality'}{RESET}")
     out.append("")
     for r in rows:
         if not r:
@@ -603,8 +603,8 @@ def fmt_mixed_receipts(d: Any) -> str:
         cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
         qual = f"{float(r.get('quality_score', 0)):.2f}"
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{str(r.get('kind')):<10}{str(r.get('policy_name')):<16}"
-            f"{str(r.get('provider_tier')):<11}{lat:<8}{str(r.get('total_tokens')):<7}"
+            f"  {PINK}★{RESET} {LGRN}{str(r.get('request_id')):<18}{str(r.get('policy_name')):<16}"
+            f"{str(r.get('provider_tier')):<14}{lat:<9}{str(r.get('total_tokens')):<8}"
             f"{cost:<11}{qual}{RESET}")
         out.append("")
     return "\n".join(out)

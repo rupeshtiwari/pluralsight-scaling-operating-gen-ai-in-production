@@ -169,17 +169,18 @@ the durable record belongs in PostgreSQL, which is the next step.
 ### Step 4: Verify the durable receipts in PostgreSQL
 
 **Goal:** Query the receipts across every routing kind for the operator field set —
-the durable record an operator actually investigates.
+request ID, policy, provider, latency target, tokens, cost, and quality — the
+durable record an operator actually investigates.
 
 ```bash
 docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(r) FROM (
-    (SELECT 'weighted' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'weighted' AS kind, request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2)
   UNION ALL
-    (SELECT 'payload' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'payload' AS kind, request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2)
   UNION ALL
-    (SELECT 'override' AS kind, policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
+    (SELECT 'override' AS kind, request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score
        FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)
   ) r" \
   | python3 scripts/fmt.py --type mixed-receipts \
@@ -187,21 +188,28 @@ docker compose exec -T postgres psql -U genai -d genai -tAc "SELECT row_to_json(
   --why "Every routing kind has a durable receipt with the full operator field set"
 ```
 
-**Expected output:** six ★ rows deliberately spanning every kind — the `kind`
-column shows `weighted`, `payload`, and `override` — each with `policy_name`
-(`weighted` or `payload_smart`), `provider_tier`, `latency` (the configured
-target), `tokens`, `cost`, and `quality`.
+The query still groups rows by routing kind (weighted / payload / override) so
+you see two receipts from each path, but the display shows the seven operator
+fields the outline calls for: `request_id`, `policy_name`, `provider_tier`,
+`latency` (target), `tokens`, `cost`, and `quality`.
+
+**Expected output:** six ★ rows deliberately spanning every routing path — two
+weighted, two payload, two override — each led by its unique `request_id`
+(`req-…`), then `policy_name` (`weighted` or `payload_smart`), `provider_tier`,
+`latency` (the configured target), `tokens`, `cost`, and `quality`.
 
 **What the learner should notice:** This is the durable record behind the
-counters. The `kind` column proves every routing path has a persisted receipt —
-weighted, payload, *and* override — not just the aggregate count. Note that
-override rows carry the `payload_smart` policy (an override is a deterministic
-exception *within* payload routing), so the `kind` column, not policy alone, is
-what proves the override path is durable. The `latency` column is the tier's
-*configured* target (400 / 700 / 1200 ms), not a measured request latency.
-Likewise `quality` is the tier's *configured capability score* — provider
-metadata, not a live judgment of this individual response. Cost and quality move
-with the tier: premium rows cost more and carry a higher capability score.
+counters. Each row is keyed by a unique `request_id` — the primary key an
+operator uses to pull up a single call and trace it end to end — proving every
+routing path persisted a real, individually addressable receipt, not just an
+aggregate count. Override rows carry the `payload_smart` policy (an override is a
+deterministic exception *within* payload routing); the query draws two receipts
+from each path so all three are present regardless of policy. The `latency`
+column is the tier's *configured* target (400 / 700 / 1200 ms), not a measured
+request latency. Likewise `quality` is the tier's *configured capability score* —
+provider metadata, not a live judgment of this individual response. Cost and
+quality move with the tier: premium rows cost more and carry a higher capability
+score.
 
 ### Step 5: Reconcile the evidence and confirm the disposition
 
