@@ -25,11 +25,13 @@ from app.config import settings
 from app.db import postgres, redis_client
 from app.providers.adapter import adapter_config, estimate_cost, estimate_tokens, probe
 from app.providers.registry import (
+    ADMISSION_POLICY_NAME,
     BASE_ADAPTERS,
     COMPLEXITY_TIERS,
     CONDITIONS,
     DEFAULT_MODEL,
     OVERRIDE_RULES,
+    RATE_LIMITS,
     SIZE_THRESHOLD_TOKENS,
     SMART_POLICY_NAME,
     SMART_VALIDATION_CASES,
@@ -38,11 +40,12 @@ from app.providers.registry import (
     WEIGHTED_WEIGHTS,
     weighted_sequence,
 )
+from app.resilience import admission
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
 from app.routing.weighted import ROUTE_REASON as WEIGHTED_ROUTE_REASON
 from app.routing.weighted import route_weighted
-from app.schemas import BatchRequest, RouteRequest
+from app.schemas import BatchRequest, RouteRequest, SpikeRequest, SubmitRequest
 
 
 @asynccontextmanager
@@ -54,6 +57,7 @@ async def lifespan(app: FastAPI):
         redis_client.reset_conditions()
         redis_client.reset_smart()
         redis_client.reset_mixed()
+        redis_client.reset_resilience()
     except Exception:
         pass
     yield
@@ -130,6 +134,7 @@ def admin_reset() -> dict:
     redis_client.reset_routing()
     redis_client.reset_smart()
     redis_client.reset_mixed()
+    redis_client.reset_resilience()
     return {"status": "reset", "receipts": postgres.count_receipts(),
             "conditions": redis_client.all_conditions()}
 
@@ -390,6 +395,117 @@ def routing_disposition() -> dict:
         "receipts_complete": receipts_complete,
         "policies_consistent": policies_consistent,
         "disposition": "CONFIRMED" if confirmed else "BLOCKED",
+    }
+
+
+# --- Admission control: queues, rate limits, fail-fast (Module 2, Clip 2) --
+
+@app.get("/resilience/limits")
+def resilience_limits() -> dict:
+    """The admission-control configuration: per tier, the provider quota mode,
+    the request class it serves, the rate limit (immediate admits), the queue
+    capacity (waiting slots), and the total burst it can absorb before shedding."""
+    rows = []
+    for model, cfg in RATE_LIMITS.items():
+        base = BASE_ADAPTERS[model]
+        rows.append({
+            "model": model,
+            "tier": base.tier,
+            "quota_mode": base.quota_mode,
+            "request_class": cfg["request_class"],
+            "rate_limit": cfg["rate_limit"],
+            "queue_capacity": cfg["queue_capacity"],
+            "burst_capacity": cfg["rate_limit"] + cfg["queue_capacity"],
+        })
+    return {"policy_name": ADMISSION_POLICY_NAME, "limits": rows}
+
+
+@app.post("/load/spike")
+def load_spike(body: SpikeRequest) -> dict:
+    """Run one controlled, deterministic traffic burst against a tier: absorb
+    what fits the rate limit, queue what fits the backlog, shed the rest."""
+    if body.model not in RATE_LIMITS:
+        raise HTTPException(status_code=404, detail=f"unknown model: {body.model}")
+    return admission.run_spike(body.model, body.count, body.request_class)
+
+
+@app.get("/resilience/queue")
+def resilience_queue(model: str = "balanced-std") -> dict:
+    """Live queue backlog for a tier, read from Redis — depth, peak, capacity."""
+    q = redis_client.get_queue(model)
+    return {"model": model, **q, "full": q["depth"] >= q["capacity"] > 0}
+
+
+@app.get("/resilience/rate-limit")
+def resilience_rate_limit(model: str = "balanced-std") -> dict:
+    """Live rate-limit window for a tier, read from Redis — admitted vs limit."""
+    rl = redis_client.get_ratelimit(model)
+    return {"model": model, **rl, "at_limit": rl["admitted"] >= rl["limit"] > 0}
+
+
+@app.get("/resilience/matrix")
+def resilience_matrix(count: int = 20) -> dict:
+    """The rate-limit decision matrix: the SAME burst size against every tier,
+    projected through each tier's own configured limit — three providers, three
+    request classes, three different accepted / delayed / rejected outcomes."""
+    rows = []
+    for model, cfg in RATE_LIMITS.items():
+        base = BASE_ADAPTERS[model]
+        rate, capacity = cfg["rate_limit"], cfg["queue_capacity"]
+        accepted = min(count, rate)
+        delayed = max(0, min(count - accepted, capacity))
+        rejected = max(0, count - accepted - delayed)
+        rows.append({
+            "model": model,
+            "tier": base.tier,
+            "quota_mode": base.quota_mode,
+            "request_class": cfg["request_class"],
+            "rate_limit": rate,
+            "queue_capacity": capacity,
+            "accepted": accepted,
+            "delayed": delayed,
+            "rejected": rejected,
+        })
+    return {"policy_name": ADMISSION_POLICY_NAME, "burst_size": count, "tiers": rows}
+
+
+@app.post("/load/submit")
+def load_submit(body: SubmitRequest) -> dict:
+    """Submit ONE request against the current queue. Returns 200 when admitted or
+    delayed; fails fast with HTTP 429 'Queue capacity exceeded' when the queue is
+    full — and persists a rejected receipt either way so the shed is auditable."""
+    if body.model not in RATE_LIMITS:
+        raise HTTPException(status_code=404, detail=f"unknown model: {body.model}")
+    disposition, receipt, state = admission.submit_one(body.model, body.request_class)
+    payload = {
+        "admitted": disposition != "rejected",
+        "disposition": disposition,
+        "reason": "Queue capacity exceeded" if disposition == "rejected"
+                  else f"admitted ({disposition})",
+        "request_id": receipt["request_id"],
+        "model": body.model,
+        "request_class": receipt["request_class"],
+        "queue_depth": state["queue_depth"],
+        "queue_capacity": state["queue_capacity"],
+        "receipt_persisted": True,
+    }
+    if disposition == "rejected":
+        raise HTTPException(status_code=429, detail=payload)
+    return payload
+
+
+@app.get("/resilience/dispositions")
+def resilience_dispositions() -> dict:
+    """Every request's fate straight from the PostgreSQL receipts, grouped by
+    disposition — accepted, delayed, rejected — with a few sample rows each."""
+    counts = postgres.count_by_disposition()
+    for k in ("accepted", "delayed", "rejected"):
+        counts.setdefault(k, 0)
+    return {
+        "policy_name": ADMISSION_POLICY_NAME,
+        "total": sum(counts.values()),
+        "dispositions": counts,
+        "samples": postgres.dispositions_detail(limit_each=2),
     }
 
 

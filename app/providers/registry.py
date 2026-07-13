@@ -212,6 +212,37 @@ SMART_VALIDATION_CASES: list[dict] = [
     },
 ]
 
+# --- Admission control: rate limits + queue capacity (Module 2, Clip 2) ---
+# Each model tier carries its own configured rate limit (immediate admits per
+# window) and queue capacity (waiting slots), reflecting the provider quota mode
+# it sits behind: a shared tier gets a generous limit, a reserved tier a tight
+# one — so a burst can never exhaust a provider's quota (EO2a). A declared
+# request_class labels the traffic class the limit applies to. These are the
+# operator's knobs: raise them to absorb more, lower them to shed sooner.
+ADMISSION_POLICY_NAME = "admission_control"
+
+RATE_LIMITS: dict[str, dict] = {
+    "econo-mini":   {"request_class": "bulk",        "rate_limit": 10, "queue_capacity": 20},
+    "balanced-std": {"request_class": "interactive", "rate_limit": 6,  "queue_capacity": 10},
+    "premium-max":  {"request_class": "critical",    "rate_limit": 3,  "queue_capacity": 4},
+}
+DEFAULT_SPIKE_MODEL = "balanced-std"
+
+
+def classify_arrival(index: int, rate_limit: int, queue_capacity: int) -> str:
+    """Map a 0-based arrival index to its admission disposition, deterministically.
+
+    accepted — within the rate limit, served immediately
+    delayed  — over the rate limit but within queue capacity, waits in the queue
+    rejected — over queue capacity, fail fast with HTTP 429, nothing served
+    """
+    if index < rate_limit:
+        return "accepted"
+    if index < rate_limit + queue_capacity:
+        return "delayed"
+    return "rejected"
+
+
 # --- Supported deterministic conditions -----------------------------------
 # Each condition maps to the status string shown on screen plus the way it
 # bends the effective latency and quality so the simulation is repeatable.

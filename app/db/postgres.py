@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS receipts (
 -- receipts are unaffected. Guarded for tables created before these existed.
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS complexity TEXT;
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS override_class TEXT;
+-- Additive columns for admission control (Module 2, Clip 2); nullable so every
+-- earlier receipt is unaffected. disposition is accepted/delayed/rejected;
+-- request_class is the caller-declared traffic class.
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS disposition TEXT;
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS request_class TEXT;
 """
 
 
@@ -46,9 +51,11 @@ def init_schema() -> None:
 
 
 def insert_receipt(receipt: dict) -> None:
-    # complexity / override_class are set only by smart routing (Clip 5); default
-    # them so baseline and weighted receipts insert unchanged.
-    receipt = {"complexity": None, "override_class": None, **receipt}
+    # complexity / override_class (Clip 5) and disposition / request_class
+    # (Module 2 Clip 2) are set only by their own policies; default them so
+    # baseline and weighted receipts insert unchanged.
+    receipt = {"complexity": None, "override_class": None,
+               "disposition": None, "request_class": None, **receipt}
     with connect() as conn:
         conn.execute(
             """
@@ -56,13 +63,15 @@ def insert_receipt(receipt: dict) -> None:
                 request_id, selected_model, provider_tier, provider_status,
                 route_reason, latency_target_ms, prompt_tokens,
                 completion_tokens, total_tokens, cost_estimate_usd,
-                quality_score, policy_name, complexity, override_class
+                quality_score, policy_name, complexity, override_class,
+                disposition, request_class
             ) VALUES (
                 %(request_id)s, %(selected_model)s, %(provider_tier)s,
                 %(provider_status)s, %(route_reason)s, %(latency_target_ms)s,
                 %(prompt_tokens)s, %(completion_tokens)s, %(total_tokens)s,
                 %(cost_estimate_usd)s, %(quality_score)s, %(policy_name)s,
-                %(complexity)s, %(override_class)s
+                %(complexity)s, %(override_class)s,
+                %(disposition)s, %(request_class)s
             )
             ON CONFLICT (request_id) DO NOTHING
             """,
@@ -104,6 +113,40 @@ def count_by_kind() -> dict[str, int]:
     """
     with connect() as conn:
         return {k: int(v) for k, v in conn.execute(sql).fetchall()}
+
+
+def count_by_disposition() -> dict[str, int]:
+    """Count admission-control receipts grouped by disposition (accepted /
+    delayed / rejected). Used by the Clip 2 demo to distinguish every request's
+    fate straight from the durable record."""
+    sql = ("SELECT disposition, count(*) FROM receipts "
+           "WHERE disposition IS NOT NULL GROUP BY 1")
+    with connect() as conn:
+        return {k: int(v) for k, v in conn.execute(sql).fetchall()}
+
+
+def dispositions_detail(limit_each: int = 2) -> list[dict]:
+    """A few durable receipts per disposition, tagged so the demo can show
+    accepted, delayed, and rejected requests side by side from PostgreSQL."""
+    sql = """
+        SELECT disposition, request_id, request_class, selected_model,
+               provider_tier, total_tokens, cost_estimate_usd, provider_status
+        FROM (
+            SELECT *, row_number() OVER (PARTITION BY disposition
+                                         ORDER BY created_at) AS rn
+            FROM receipts WHERE disposition IS NOT NULL
+        ) s WHERE rn <= %s
+        ORDER BY CASE disposition
+                   WHEN 'accepted' THEN 1 WHEN 'delayed' THEN 2 ELSE 3 END,
+                 request_id
+    """
+    with connect() as conn:
+        cur = conn.execute(sql, (limit_each,))
+        cols = [d.name for d in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    for r in rows:
+        r["cost_estimate_usd"] = float(r["cost_estimate_usd"])
+    return rows
 
 
 def inconsistent_receipts() -> int:

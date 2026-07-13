@@ -141,5 +141,66 @@ def reset_mixed() -> None:
     client().delete(_MIXED_COUNTERS_KEY, _MIXED_BATCH_KEY)
 
 
+# --- Admission control state (Module 2, Clip 2) ---------------------------
+# Three hashes hold the live resilience state an operator watches during a
+# spike, each keyed so a single `redis-cli HGETALL` reads it straight from the
+# datastore:
+#   resilience:queue        — <model>:depth / :peak / :capacity  (backlog)
+#   resilience:ratelimit    — <model>:admitted / :limit          (window count)
+#   resilience:dispositions — accepted / delayed / rejected      (running tally)
+
+_RES_QUEUE_KEY = "resilience:queue"
+_RES_RL_KEY = "resilience:ratelimit"
+_RES_DISP_KEY = "resilience:dispositions"
+
+
+def set_queue(model: str, depth: int, peak: int, capacity: int) -> None:
+    client().hset(_RES_QUEUE_KEY, mapping={
+        f"{model}:depth": depth, f"{model}:peak": peak,
+        f"{model}:capacity": capacity})
+
+
+def get_queue(model: str) -> dict[str, int]:
+    raw = client().hgetall(_RES_QUEUE_KEY)
+    return {
+        "depth": int(raw.get(f"{model}:depth", 0)),
+        "peak": int(raw.get(f"{model}:peak", 0)),
+        "capacity": int(raw.get(f"{model}:capacity", 0)),
+    }
+
+
+def queue_hash() -> dict[str, str]:
+    return client().hgetall(_RES_QUEUE_KEY)
+
+
+def set_ratelimit(model: str, admitted: int, limit: int) -> None:
+    client().hset(_RES_RL_KEY, mapping={
+        f"{model}:admitted": admitted, f"{model}:limit": limit})
+
+
+def get_ratelimit(model: str) -> dict[str, int]:
+    raw = client().hgetall(_RES_RL_KEY)
+    return {
+        "admitted": int(raw.get(f"{model}:admitted", 0)),
+        "limit": int(raw.get(f"{model}:limit", 0)),
+    }
+
+
+def ratelimit_hash() -> dict[str, str]:
+    return client().hgetall(_RES_RL_KEY)
+
+
+def disposition_incr(disposition: str) -> None:
+    client().hincrby(_RES_DISP_KEY, disposition, 1)
+
+
+def disposition_hash() -> dict[str, str]:
+    return client().hgetall(_RES_DISP_KEY)
+
+
+def reset_resilience() -> None:
+    client().delete(_RES_QUEUE_KEY, _RES_RL_KEY, _RES_DISP_KEY)
+
+
 def ping() -> bool:
     return bool(client().ping())

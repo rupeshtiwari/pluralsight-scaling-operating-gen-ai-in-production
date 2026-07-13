@@ -207,7 +207,8 @@ All package and container versions are pinned in `requirements.txt` and
 
 ## API Reference
 
-Endpoints available today (Module 1). More are added as later modules land.
+Endpoints available today (Module 1 complete; Module 2 Clip 2 landed). More are
+added as later modules land.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -231,6 +232,13 @@ Endpoints available today (Module 1). More are added as later modules land.
 | `/routing/mixed-batch` | GET | Individual decisions from the mixed batch, tagged by kind |
 | `/routing/mixed-counters` | GET | Per-kind mixed-batch counters (Redis) |
 | `/routing/disposition` | GET | Reconcile API + Redis + receipts → CONFIRMED / BLOCKED |
+| `/resilience/limits` | GET | Admission-control config — per-tier rate limit, queue capacity, request class |
+| `/load/spike` | POST | Run one deterministic traffic burst — accepted / delayed / rejected |
+| `/resilience/queue` | GET | Live queue backlog for a tier — depth, peak, capacity (Redis) |
+| `/resilience/rate-limit` | GET | Live rate-limit window for a tier — admitted vs limit (Redis) |
+| `/resilience/matrix` | GET | Same burst across every tier — each sheds at its own limit |
+| `/load/submit` | POST | Submit one request; fails fast with HTTP 429 when the queue is full |
+| `/resilience/dispositions` | GET | Receipts grouped by disposition — accepted / delayed / rejected |
 
 ## Project Structure
 
@@ -244,9 +252,10 @@ Endpoints available today (Module 1). More are added as later modules land.
 │   │   ├── clip5.md              payload routing & overrides ✅
 │   │   └── clip6.md              receipts/counters disposition ✅
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
-├── module2/                     Module 2: Reliability + observability (planned)
+├── module2/                     Module 2: Reliability + observability
 │   ├── README.md                module index → 6 clips
-│   └── demo/                     clip2, clip3, clip5, clip6 (planned)
+│   ├── demo/                     clip2 ✅ · clip3, clip5, clip6 (planned)
+│   └── scripts/                 demo_up.sh, demo_down.sh, clip2 preflight
 ├── module3/                     Module 3: LLMOps + readiness (planned)
 │   ├── README.md                module index → 6 clips
 │   └── demo/                     clip2, clip3, clip5, clip6 (planned)

@@ -46,6 +46,21 @@ class BatchRequest(BaseModel):
     )
 
 
+class SpikeRequest(BaseModel):
+    """A controlled, deterministic traffic burst (Module 2, Clip 2)."""
+
+    model: str = Field("balanced-std", description="Target model tier for the burst")
+    count: int = Field(20, ge=1, le=200, description="How many requests arrive in the burst")
+    request_class: str | None = Field(None, description="Caller-declared traffic class")
+
+
+class SubmitRequest(BaseModel):
+    """A single request submitted against the current queue state (Clip 2)."""
+
+    model: str = Field("balanced-std", description="Target model tier")
+    request_class: str | None = Field(None, description="Caller-declared traffic class")
+
+
 class RouteResponse(BaseModel):
     request_id: str
     selected_model: str

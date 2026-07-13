@@ -636,6 +636,170 @@ def fmt_disposition(d: dict) -> str:
     return "\n".join(out)
 
 
+def _noted(label: str, value: Any, note: str, color: str = LGRN) -> list[str]:
+    """A ★ line with a trailing dim note — e.g. accepted: 6  (served now)."""
+    if isinstance(value, bool):
+        value = str(value).lower()
+    return [f"  {PINK}★{RESET} {BLUE}{label}:{RESET} {color}{value}{RESET}"
+            f"   {GRAY}{note}{RESET}", ""]
+
+
+# --- Admission control views (Module 2, Clip 2) ---------------------------
+
+def fmt_spike(d: dict) -> str:
+    out = [header(
+        "Run a controlled traffic spike",
+        "A burst hits one tier: absorb what fits the rate limit, queue what "
+        "fits the backlog, shed the rest")]
+    out += star("submitted requests", d.get("submitted"))
+    out += _noted("target", f"{d.get('model')}",
+                  f"tier {d.get('tier')}, class {d.get('request_class')}")
+    out += sect("outcomes")
+    out += _noted("accepted", d.get("accepted"),
+                  "within the rate limit — served now", LIME)
+    out += _noted("delayed", d.get("delayed"),
+                  "over the rate limit — waiting in the queue", BLUE)
+    out += _noted("rejected", d.get("rejected"),
+                  "over queue capacity — shed (fail fast)", PINK)
+    out += sect("live state")
+    full = "FULL" if d.get("queue_full") else "has room"
+    out += _noted("queue peak", f"{d.get('queue_peak')} / {d.get('queue_capacity')}",
+                  full, PINK if d.get("queue_full") else LGRN)
+    out += _noted("rate limit", d.get("rate_limit"),
+                  "immediate admits per window")
+    return "\n".join(out)
+
+
+def _by_model(hash_map: dict, suffix: str) -> dict:
+    """Regroup a flat `<model>:field` Redis hash into {model: {field: value}}."""
+    grouped: dict[str, dict] = {}
+    for k, v in (hash_map or {}).items():
+        if ":" not in k:
+            continue
+        model, field = k.rsplit(":", 1)
+        grouped.setdefault(model, {})[field] = v
+    return grouped
+
+
+def fmt_queue(d: Any) -> str:
+    out = [header(
+        "Inspect the queue backlog in Redis",
+        "The datastore's live queue depth — proof the backlog rose above zero "
+        "under load")]
+    out.append(f"    {BLUE}{'tier':<15}{'depth':<9}{'peak':<9}{'capacity':<11}"
+               f"{'state'}{RESET}")
+    out.append("")
+    for model, f in _by_model(d, "queue").items():
+        depth = int(f.get("depth", 0)); cap = int(f.get("capacity", 0))
+        full = depth >= cap > 0
+        state = f"{PINK}FULL{RESET}" if full else f"{LIME}has room{RESET}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{model:<15}{str(depth):<9}"
+            f"{str(f.get('peak')):<9}{str(cap):<11}{RESET}{state}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_ratelimit(d: Any) -> str:
+    out = [header(
+        "Compare the rate-limit count against its threshold",
+        "The datastore's admitted count vs the configured limit — the window "
+        "that decides accept-now or queue")]
+    out.append(f"    {BLUE}{'tier':<15}{'admitted':<11}{'limit':<9}"
+               f"{'state'}{RESET}")
+    out.append("")
+    for model, f in _by_model(d, "rl").items():
+        adm = int(f.get("admitted", 0)); lim = int(f.get("limit", 0))
+        at = adm >= lim > 0
+        state = f"{PINK}AT LIMIT{RESET}" if at else f"{LIME}under limit{RESET}"
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{model:<15}{str(adm):<11}{str(lim):<9}"
+            f"{RESET}{state}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_matrix(d: dict) -> str:
+    out = [header(
+        "Trigger rate-limit decisions by provider, tier, and class",
+        "The same burst against every tier — each provider / class has its own "
+        "limit, so each sheds at a different point", width=90)]
+    out += star("burst size", d.get("burst_size"))
+    out.append(f"    {BLUE}{'model':<14}{'tier':<11}{'class':<14}{'rate':<7}"
+               f"{'queue':<8}{'accepted':<10}{'delayed':<9}{'rejected'}{RESET}")
+    out.append("")
+    for r in d.get("tiers", []):
+        rej = r.get("rejected", 0)
+        rej_c = PINK if rej else LGRN
+        out.append(
+            f"  {PINK}★{RESET} {LGRN}{str(r.get('model')):<14}"
+            f"{str(r.get('tier')):<11}{str(r.get('request_class')):<14}"
+            f"{str(r.get('rate_limit')):<7}{str(r.get('queue_capacity')):<8}"
+            f"{LIME}{str(r.get('accepted')):<10}{BLUE}{str(r.get('delayed')):<9}"
+            f"{rej_c}{rej}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_failfast(d: Any) -> str:
+    # curl appends a second JSON line ({"http_status": N}); fmt reads both.
+    detail, http = {}, None
+    rows = d if isinstance(d, list) else [d]
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        if "http_status" in r:
+            http = r["http_status"]
+        elif "detail" in r and isinstance(r["detail"], dict):
+            detail = r["detail"]
+        elif "disposition" in r:
+            detail = r
+    out = [header(
+        "Exceed the queue and prove the fail-fast 429",
+        "With the queue full, one more request is rejected fast — a clean HTTP "
+        "429 to the caller and a durable rejected receipt")]
+    if http is not None:
+        note = "Too Many Requests" if int(http) == 429 else ""
+        out += _noted("http status", http, note,
+                      PINK if int(http) == 429 else LGRN)
+    out += _noted("admitted", detail.get("admitted"), "the request was shed", PINK)
+    out += _noted("disposition", detail.get("disposition"), "fail fast, not served", PINK)
+    out += star("reason", detail.get("reason"), PINK)
+    out += _noted("queue", f"{detail.get('queue_depth')} / {detail.get('queue_capacity')}",
+                  "backlog is full", PINK)
+    out += star("request_id", detail.get("request_id"))
+    out += _noted("receipt_persisted", detail.get("receipt_persisted"),
+                  "the shed is auditable in PostgreSQL", LIME)
+    return "\n".join(out)
+
+
+def fmt_dispositions(d: dict) -> str:
+    out = [header(
+        "Distinguish every request's fate in the receipts",
+        "Straight from PostgreSQL: accepted, delayed, and rejected — each a "
+        "durable, distinguishable record", width=80)]
+    out += star("total requests", d.get("total"))
+    disp = d.get("dispositions", {})
+    out += sect("by disposition")
+    out += _noted("accepted", disp.get("accepted"), "served now", LIME)
+    out += _noted("delayed", disp.get("delayed"), "queued", BLUE)
+    out += _noted("rejected", disp.get("rejected"), "shed — no tokens, no cost", PINK)
+    out += sect("sample receipts")
+    out.append(f"    {BLUE}{'disposition':<13}{'request':<18}{'model':<14}"
+               f"{'tokens':<8}{'cost':<12}{'status'}{RESET}")
+    out.append("")
+    for r in d.get("samples", []):
+        disp_v = str(r.get("disposition"))
+        dc = {"accepted": LIME, "delayed": BLUE, "rejected": PINK}.get(disp_v, LGRN)
+        cost = f"${float(r.get('cost_estimate_usd', 0)):.6f}"
+        out.append(
+            f"  {PINK}★{RESET} {dc}{disp_v:<13}{RESET}{LGRN}{str(r.get('request_id')):<18}"
+            f"{str(r.get('selected_model')):<14}{str(r.get('total_tokens')):<8}"
+            f"{cost:<12}{str(r.get('provider_status'))}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -661,6 +825,12 @@ VIEWS = {
     "mixed-counters": fmt_mixed_counters,
     "mixed-receipts": fmt_mixed_receipts,
     "disposition": fmt_disposition,
+    "spike": fmt_spike,
+    "queue": fmt_queue,
+    "ratelimit": fmt_ratelimit,
+    "matrix": fmt_matrix,
+    "failfast": fmt_failfast,
+    "dispositions": fmt_dispositions,
 }
 
 
