@@ -89,9 +89,19 @@ check_tool() { # name  version-cmd  brew-pkg
   local name="$1" vcmd="$2" pkg="$3"
   if command -v "$name" >/dev/null 2>&1; then
     ok "${name} present — $(eval "$vcmd" 2>&1 | head -1)"
+    return
+  fi
+  # Missing is not a failure yet — try to install, then re-check. Only a tool
+  # that is STILL missing after the attempt counts against the final verdict,
+  # so a successful auto-install reports READY, not NOT READY.
+  warn "${name} not found — installing via Homebrew ..."
+  brew_install "$pkg"
+  hash -r 2>/dev/null || true   # forget cached PATH lookups so the new binary is found
+  if command -v "$name" >/dev/null 2>&1; then
+    ok "${name} present — $(eval "$vcmd" 2>&1 | head -1)"
   else
-    bad "${name} not found"
-    brew_install "$pkg"
+    bad "${name} still missing after install attempt"
+    fix "install ${pkg} manually, then re-run this script"
   fi
 }
 
@@ -115,10 +125,22 @@ done
 if [ -n "$PYBIN" ] && [ "$("$PYBIN" -c 'import sys;print("%d.%d"%sys.version_info[:2])')" = "3.13" ]; then
   ok "python 3.13 present — $($PYBIN --version)"
 elif [ -n "$PYBIN" ]; then
-  warn "found $($PYBIN --version) — 3.13 is the recording baseline"
+  # A usable python is present but not the 3.13 baseline — note it and try to add
+  # 3.13. This is not a failure: the venv still builds on the python we have.
+  warn "found $($PYBIN --version) — 3.13 is the recording baseline; adding it ..."
   [ "$IS_MAC" = "1" ] && brew_install python@3.13
 else
-  bad "no python found"; brew_install python@3.13
+  # No python at all — install, then re-check. Only a still-missing python fails.
+  warn "no python found — installing python@3.13 via Homebrew ..."
+  brew_install python@3.13
+  hash -r 2>/dev/null || true
+  if command -v python3.13 >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+    PYBIN="$(command -v python3.13 || command -v python3)"
+    ok "python present — $($PYBIN --version)"
+  else
+    bad "python still missing after install attempt"
+    fix "install python@3.13 manually, then re-run this script"
+  fi
 fi
 [ -z "$PYBIN" ] && PYBIN="python3"
 
