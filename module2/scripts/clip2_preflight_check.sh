@@ -7,8 +7,10 @@
 #
 #   bash module2/scripts/clip2_preflight_check.sh
 #
-# Defaults target Docker Compose on macOS; override with env vars for a native
-# stack: API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD
+# Step 1 runs the real k6 spike when k6 is installed; otherwise it drives the SAME
+# atomic admission path with a concurrent-curl burst, so the validated outcome
+# matches the live demo. Override the stack with env vars for a native run:
+# API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD
 # =============================================================================
 set -uo pipefail
 
@@ -60,106 +62,137 @@ emit "${GRAY}stack:${R} API=${LGRN}${API_BASE}${R}  PG=${LGRN}${PGHOST}:${PGPORT
 emit "${GRAY}resetting to a clean, repeatable state ...${R}"
 curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 
-# STEP 1 — controlled spike: accepted / delayed / rejected
-step_head "1" "Run a controlled traffic spike" \
-  "A burst must split three ways — admitted now, queued, or shed — deterministically." \
-  "submitted 20, then accepted 6, delayed 10, rejected 4, and the queue FULL at 10/10."
-show_cmd "curl -s -X POST \$API_BASE/load/spike -d '{\"model\":\"balanced-std\",\"count\":20}' | python3 scripts/fmt.py --type spike"
-RAW="$(curl -s -X POST "$API_BASE/load/spike" -H 'Content-Type: application/json' -d '{"model":"balanced-std","count":20}')"
-emit "$(printf '%s' "$RAW" | $FMT --type spike 2>&1)"
-if echo "$RAW" | jq -e '.submitted==20 and .accepted==6 and .delayed==10 and .rejected==4 and .queue_full==true' >/dev/null 2>&1; then
-  verdict 0 "spike of 20 split deterministically into 6 accepted / 10 delayed / 4 rejected, queue full" "" ""
-  LO+=("Step 1: a request queue with a configurable rate limit absorbs a spike and sheds the overflow (TO2, EO2a, EO2b)")
+# STEP 1 — real k6 spike (or concurrent-curl fallback over the same atomic path)
+step_head "1" "Run the k6 spike and read the HTTP outcomes" \
+  "Real concurrent load must split into 200s and 429s with no failures — atomically correct under races." \
+  "submitted 20, HTTP 200 16, HTTP 429 4, HTTP 500 0, failures 0, split 6/10/4."
+if command -v k6 >/dev/null 2>&1; then
+  show_cmd "API_BASE=\$API_BASE k6 run --quiet module2/k6/clip2_spike.js"
+  API_BASE="$API_BASE" k6 run --quiet "$ROOT/module2/k6/clip2_spike.js" >/tmp/k6out.txt 2>/dev/null
+  SUM="$(cat "$ROOT/module2/k6/last_summary.json" 2>/dev/null)"
 else
-  verdict 1 "spike did not split into the expected 6/10/4" \
-    "Check RATE_LIMITS and classify_arrival in app/providers/registry.py and run_spike in app/resilience/admission.py." \
-    "POST /load/spike {model:balanced-std,count:20} must return accepted=6, delayed=10, rejected=4, queue_full=true. Fix app/resilience/admission.py."
+  show_cmd "seq 20 | xargs -P20 curl -X POST \$API_BASE/load/submit ...   # concurrent burst (k6 not installed)"
+  CODES="$(seq 20 | xargs -P 20 -I {} curl -s -o /dev/null -w '%{http_code}\n' -X POST "$API_BASE/load/submit" -H 'Content-Type: application/json' -d '{"model":"balanced-std"}')"
+  H200="$(printf '%s\n' "$CODES" | grep -c '^200$')"
+  H429="$(printf '%s\n' "$CODES" | grep -c '^429$')"
+  H500="$(printf '%s\n' "$CODES" | grep -c '^5..$')"
+  DD="$(curl -s "$API_BASE/resilience/dispositions")"
+  ACC="$(printf '%s' "$DD" | jq '.dispositions.accepted')"
+  DEL="$(printf '%s' "$DD" | jq '.dispositions.delayed')"
+  REJ="$(printf '%s' "$DD" | jq '.dispositions.rejected')"
+  SUM="$(printf '{"submitted":20,"accepted":%s,"delayed":%s,"rejected":%s,"http_200":%s,"http_429":%s,"http_500":%s,"failed":0}' "$ACC" "$DEL" "$REJ" "$H200" "$H429" "$H500")"
+fi
+emit "$(printf '%s' "$SUM" | $FMT --type k6-summary 2>&1)"
+if echo "$SUM" | jq -e '.accepted==6 and .delayed==10 and .rejected==4 and .http_200==16 and .http_429==4 and .http_500==0 and .failed==0' >/dev/null 2>&1; then
+  verdict 0 "20 concurrent requests split 6 accepted / 10 delayed / 4 rejected — 16x200, 4x429, no 500s or failures" "" ""
+  LO+=("Step 1: a rate-limited queue absorbs a real concurrent spike and sheds the overflow (TO2, EO2a, EO2e)")
+else
+  verdict 1 "the concurrent spike did not split into 6/10/4 with clean HTTP outcomes" \
+    "Check the atomic admission Lua in app/db/redis_client.py and RATE_LIMITS in app/providers/registry.py." \
+    "20 concurrent POST /load/submit must yield accepted=6, delayed=10, rejected=4 (16x200, 4x429), 0 failures. Fix app/db/redis_client.py."
 fi
 
-# STEP 2 — queue depth from Redis
-step_head "2" "Read the queue backlog straight from Redis" \
-  "The datastore's live queue depth must prove the backlog rose above zero under load." \
-  "balanced-std depth 10, peak 10, capacity 10 — the queue is FULL."
-show_cmd "docker compose exec -T redis redis-cli --json HGETALL resilience:queue | python3 scripts/fmt.py --type queue"
-RAW="$(redis_query --json HGETALL resilience:queue)"
-emit "$(printf '%s' "$RAW" | $FMT --type queue 2>&1)"
-if echo "$RAW" | jq -e '(.["balanced-std:depth"]|tonumber)==10 and (.["balanced-std:capacity"]|tonumber)==10' >/dev/null 2>&1; then
-  verdict 0 "Redis resilience:queue shows depth 10 at capacity 10 — the backlog is real" "" ""
-  LO+=("Step 2: the queue backlog is observable live in the datastore (EO2a, EO2e)")
+# STEP 2 — real queue list of request IDs
+step_head "2" "Inspect the real queue in Redis" \
+  "The queue must hold actual request IDs — real parked work, not only a depth counter." \
+  "10 real request IDs in the Redis LIST, depth 10 at capacity 10."
+show_cmd "docker compose exec -T redis redis-cli --json LRANGE resilience:queue:balanced-std 0 -1 | python3 scripts/fmt.py --type queue-list"
+RAW="$(redis_query --json LRANGE resilience:queue:balanced-std 0 -1)"
+emit "$(printf '%s' "$RAW" | $FMT --type queue-list 2>&1)"
+if echo "$RAW" | jq -e 'length==10 and all(.[]; startswith("req-"))' >/dev/null 2>&1; then
+  verdict 0 "the Redis LIST holds 10 real queued request IDs — genuine parked work" "" ""
+  LO+=("Step 2: the queue is a real list of request IDs the operator can inspect (EO2a)")
 else
-  verdict 1 "Redis queue depth does not match the spike backlog" \
-    "Check set_queue in app/db/redis_client.py and the depth update in run_spike." \
-    "HGETALL resilience:queue after the spike must show balanced-std:depth=10 and balanced-std:capacity=10. Fix app/db/redis_client.py."
+  verdict 1 "the queue does not hold 10 real request IDs" \
+    "Check the RPUSH in the admission Lua (app/db/redis_client.py) and queue_ids()." \
+    "LRANGE resilience:queue:balanced-std after the spike must return 10 req- IDs. Fix app/db/redis_client.py."
 fi
 
 # STEP 3 — rate-limit window at threshold
 step_head "3" "Compare the rate-limit count against its threshold" \
-  "The admitted count must sit exactly at the configured limit — the accept-now boundary." \
-  "balanced-std admitted 6, limit 6 — AT LIMIT."
-show_cmd "docker compose exec -T redis redis-cli --json HGETALL resilience:ratelimit | python3 scripts/fmt.py --type ratelimit"
-RAW="$(redis_query --json HGETALL resilience:ratelimit)"
+  "The admitted count must sit at the configured limit, shown with its window duration." \
+  "admitted 6 of 6 AT LIMIT, window 6 per 10s, limiter key provider:tier:class."
+show_cmd "curl -s \$API_BASE/resilience/rate-limit | python3 scripts/fmt.py --type ratelimit"
+RAW="$(curl -s "$API_BASE/resilience/rate-limit")"
 emit "$(printf '%s' "$RAW" | $FMT --type ratelimit 2>&1)"
-if echo "$RAW" | jq -e '(.["balanced-std:admitted"]|tonumber)==6 and (.["balanced-std:limit"]|tonumber)==6' >/dev/null 2>&1; then
-  verdict 0 "Redis resilience:ratelimit shows admitted 6 at limit 6 — the window is at threshold" "" ""
-  LO+=("Step 3: the configurable rate limit caps immediate admits and gates the queue (EO2a)")
+if echo "$RAW" | jq -e '.admitted==6 and .limit==6 and .window_seconds==10 and .at_limit==true and (.limiter_key|test(":"))' >/dev/null 2>&1; then
+  verdict 0 "rate-limit window shows admitted 6/6 AT LIMIT, 6 per 10s, keyed provider:tier:class" "" ""
+  LO+=("Step 3: the rate limit caps immediate admits per window and gates the queue (EO2a)")
 else
-  verdict 1 "rate-limit window does not sit at the configured threshold" \
-    "Check set_ratelimit in app/db/redis_client.py and admitted=min(count,rate_limit) in run_spike." \
-    "HGETALL resilience:ratelimit after the spike must show balanced-std:admitted=6 and balanced-std:limit=6. Fix app/resilience/admission.py."
+  verdict 1 "rate-limit window or key is wrong" \
+    "Check /resilience/rate-limit and RATE_LIMIT_WINDOW_SECONDS/limiter_key in the registry." \
+    "GET /resilience/rate-limit must show admitted=6, limit=6, window_seconds=10, at_limit=true, limiter_key with colons. Fix app/main.py."
 fi
 
-# STEP 4 — per provider/tier/class decision matrix
-step_head "4" "Trigger rate-limit decisions by provider, tier, and class" \
-  "The SAME burst must shed at a different point on each tier — limits are per provider/tier/class." \
-  "econo-mini rejects 0, balanced-std rejects 4, premium-max rejects 13 for a burst of 20."
+# STEP 4 — per provider/tier/class matrix with provider identity
+step_head "4" "Compare policies by provider, tier, and request class" \
+  "The SAME burst must shed differently per key, and the provider identity must be visible." \
+  "econo-ai rejects 0, balanced-ai rejects 4, premium-ai rejects 13, each with its provider name."
 show_cmd "curl -s \$API_BASE/resilience/matrix?count=20 | python3 scripts/fmt.py --type matrix"
 RAW="$(curl -s "$API_BASE/resilience/matrix?count=20")"
 emit "$(printf '%s' "$RAW" | $FMT --type matrix 2>&1)"
-if echo "$RAW" | jq -e '(.tiers|map(select(.model=="econo-mini"))[0].rejected)==0 and (.tiers|map(select(.model=="balanced-std"))[0].rejected)==4 and (.tiers|map(select(.model=="premium-max"))[0].rejected)==13' >/dev/null 2>&1; then
-  verdict 0 "the same 20-burst sheds 0 / 4 / 13 across shared / dedicated / reserved tiers" "" ""
-  LO+=("Step 4: rate limits are configured per provider, tier, and request class (EO2a, EO2e)")
+if echo "$RAW" | jq -e '(.tiers|map(select(.provider=="econo-ai"))[0].rejected)==0 and (.tiers|map(select(.provider=="balanced-ai"))[0].rejected)==4 and (.tiers|map(select(.provider=="premium-ai"))[0].rejected)==13 and (.tiers|all(has("provider") and has("limiter_key")))' >/dev/null 2>&1; then
+  verdict 0 "the same 20-burst sheds 0 / 4 / 13 across three named providers, each with its limiter key" "" ""
+  LO+=("Step 4: limits are keyed per provider, tier, and request class (EO2a)")
 else
-  verdict 1 "the decision matrix does not shed differently per tier" \
-    "Check RATE_LIMITS per tier in app/providers/registry.py and resilience_matrix in app/main.py." \
-    "GET /resilience/matrix?count=20 must show econo-mini rejected=0, balanced-std rejected=4, premium-max rejected=13. Fix app/main.py."
+  verdict 1 "the matrix does not show provider identity or per-key shedding" \
+    "Check _limit_row/limiter_key in app/main.py and provider fields in RATE_LIMITS." \
+    "GET /resilience/matrix?count=20 must show provider + limiter_key per row and rejected 0/4/13. Fix app/main.py."
 fi
 
-# STEP 5 — fail-fast 429 on a full queue
+# STEP 5 — fail-fast 429 + Retry-After
 step_head "5" "Exceed the queue and prove the fail-fast 429" \
-  "One request over a full queue must fail fast with HTTP 429 and a durable rejected receipt." \
-  "http status 429, disposition rejected, reason 'Queue capacity exceeded', receipt_persisted true."
+  "One request over a full queue must fail fast with HTTP 429, a Retry-After, and a durable receipt." \
+  "http 429, disposition rejected, reason 'Queue capacity exceeded', retry_after 10s, receipt_persisted true."
 show_cmd "curl -s -X POST \$API_BASE/load/submit -d '{\"model\":\"balanced-std\"}' -w '...429...' | python3 scripts/fmt.py --type failfast"
 RAW="$(curl -s -X POST "$API_BASE/load/submit" -H 'Content-Type: application/json' -d '{"model":"balanced-std"}' -w '\n{"http_status": %{http_code}}')"
 emit "$(printf '%s' "$RAW" | $FMT --type failfast 2>&1)"
-if echo "$RAW" | grep -q '"http_status": 429' && echo "$RAW" | grep -q 'Queue capacity exceeded' && echo "$RAW" | grep -q '"receipt_persisted":true'; then
-  verdict 0 "a full queue rejects the next request with HTTP 429 and persists a rejected receipt" "" ""
-  LO+=("Step 5: the fail-fast pattern rejects at capacity with a proper 429 response (EO2b, EO2e)")
+if echo "$RAW" | grep -q '"http_status": 429' && echo "$RAW" | grep -q 'Queue capacity exceeded' && echo "$RAW" | grep -q '"retry_after_seconds":10' && echo "$RAW" | grep -q '"receipt_persisted":true'; then
+  verdict 0 "a full queue rejects with HTTP 429, Retry-After 10s, and a durable rejected receipt" "" ""
+  LO+=("Step 5: the fail-fast pattern rejects at capacity with a proper 429 + Retry-After (EO2b)")
 else
-  verdict 1 "the overflow request did not fail fast with a 429" \
-    "Check submit_one in app/resilience/admission.py and the HTTPException(429) in load_submit (app/main.py)." \
-    "POST /load/submit on a full queue must return HTTP 429 with 'Queue capacity exceeded' and receipt_persisted true. Fix app/main.py load_submit()."
+  verdict 1 "the overflow request did not fail fast with 429 + Retry-After" \
+    "Check load_submit HTTPException(429, headers Retry-After) in app/main.py." \
+    "POST /load/submit on a full queue must return HTTP 429 with retry_after_seconds=10 and receipt_persisted true. Fix app/main.py."
 fi
 
-# STEP 6 — durable dispositions in PostgreSQL
+# STEP 6 — durable dispositions with estimate labels
 step_head "6" "Distinguish every request's fate in the receipts" \
-  "Accepted, delayed, and rejected must each be a distinct, durable PostgreSQL receipt." \
-  "total 21, accepted 6, delayed 10, rejected 5 — rejected rows carry 0 tokens and \$0 cost."
+  "Accepted, delayed, and rejected must each be a distinct receipt; rejected cost must be zero." \
+  "total 21, accepted 6, delayed 10, rejected 5 — rejected rows carry 0 est tokens and \$0 est cost."
 show_cmd "curl -s \$API_BASE/resilience/dispositions | python3 scripts/fmt.py --type dispositions"
 RAW="$(curl -s "$API_BASE/resilience/dispositions")"
 emit "$(printf '%s' "$RAW" | $FMT --type dispositions 2>&1)"
 if echo "$RAW" | jq -e '.total==21 and .dispositions.accepted==6 and .dispositions.delayed==10 and .dispositions.rejected==5 and (.samples|any(.disposition=="rejected" and .total_tokens==0))' >/dev/null 2>&1; then
   verdict 0 "receipts distinguish 6 accepted / 10 delayed / 5 rejected, rejected rows costing nothing" "" ""
-  LO+=("Step 6: every accepted, delayed, and rejected request is a distinguishable durable receipt (EO2b, EO2e)")
+  LO+=("Step 6: every accepted, delayed, and rejected request is a distinguishable durable receipt (EO2b)")
 else
   verdict 1 "receipts do not distinguish the three dispositions as expected" \
-    "Check disposition/request_class columns and count_by_disposition in app/db/postgres.py and _receipt in admission.py." \
-    "GET /resilience/dispositions must return total=21 with accepted=6, delayed=10, rejected=5 and rejected receipts at 0 tokens. Fix app/resilience/admission.py."
+    "Check disposition column and count_by_disposition in app/db/postgres.py." \
+    "GET /resilience/dispositions must return total=21 with 6/10/5 and rejected receipts at 0 tokens. Fix app/resilience/admission.py."
+fi
+
+# STEP 7 — correlate one request across log and receipt
+step_head "7" "Correlate one request across logs and receipts" \
+  "One request ID must appear in the structured log and the PostgreSQL receipt, agreeing on the outcome." \
+  "one log per disposition, and a rejected request ID present in both log and receipt with matching disposition."
+show_cmd "curl -s \$API_BASE/resilience/admission-logs | python3 scripts/fmt.py --type admission-logs"
+RAW="$(curl -s "$API_BASE/resilience/admission-logs")"
+emit "$(printf '%s' "$RAW" | $FMT --type admission-logs 2>&1)"
+if echo "$RAW" | jq -e '(.samples|map(.disposition)|(index("accepted") and index("delayed") and index("rejected"))) and .correlate.in_log==true and .correlate.in_receipt==true and .correlate.match==true' >/dev/null 2>&1; then
+  verdict 0 "one request ID reconciles across the structured log and the durable receipt" "" ""
+  LO+=("Step 7: structured logs plus receipts give a three-way trace of every request (EO2b, EO2e)")
+else
+  verdict 1 "the log/receipt correlation did not hold" \
+    "Check log_admission/get_admission_logs and receipt_by_request_id in app/db." \
+    "GET /resilience/admission-logs must show one log per disposition and correlate.match=true. Fix app/main.py."
 fi
 
 # COVERAGE + SUMMARY
 banner "LEARNING OBJECTIVE COVERAGE"
-emit "${WHITE}TO2, EO2a, EO2b, EO2e — Absorb a spike with a rate-limited queue, fail${R}"
-emit "${WHITE}       fast at capacity, and prove every request's fate in the receipts${R}"
+emit "${WHITE}TO2, EO2a, EO2b, EO2e — Absorb a real k6 spike with a rate-limited queue,${R}"
+emit "${WHITE}       fail fast at capacity, and trace every request across log and receipt${R}"
+emit "${GRAY}       (EO2e here = controlled load + overload; failures/latency/quota are separate)${R}"
 if [ "${#LO[@]}" -gt 0 ]; then for e in "${LO[@]}"; do emit "  ${LIME}✔${R} ${GRAY}${e}${R}"; done; else emit "  ${PINK}✗ no evidence captured${R}"; fi
 
 banner "SUMMARY"

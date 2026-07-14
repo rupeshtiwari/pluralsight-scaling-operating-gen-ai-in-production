@@ -221,26 +221,29 @@ SMART_VALIDATION_CASES: list[dict] = [
 # operator's knobs: raise them to absorb more, lower them to shed sooner.
 ADMISSION_POLICY_NAME = "admission_control"
 
+# The rate limit is keyed per provider, tier, and request class. Each tier sits
+# behind its own provider with its own quota mode: a shared provider gets a
+# generous limit, a reserved provider a tight one. The request_class names the
+# traffic the key serves. rate_limit is immediate admits per window; the window
+# is how long that budget lasts; queue_capacity is the waiting backlog.
+RATE_LIMIT_WINDOW_SECONDS = 10
+
 RATE_LIMITS: dict[str, dict] = {
-    "econo-mini":   {"request_class": "bulk",        "rate_limit": 10, "queue_capacity": 20},
-    "balanced-std": {"request_class": "interactive", "rate_limit": 6,  "queue_capacity": 10},
-    "premium-max":  {"request_class": "critical",    "rate_limit": 3,  "queue_capacity": 4},
+    "econo-mini":   {"provider": "econo-ai",    "request_class": "batch",
+                     "rate_limit": 10, "queue_capacity": 20},
+    "balanced-std": {"provider": "balanced-ai", "request_class": "interactive",
+                     "rate_limit": 6,  "queue_capacity": 10},
+    "premium-max":  {"provider": "premium-ai",  "request_class": "premium",
+                     "rate_limit": 3,  "queue_capacity": 4},
 }
 DEFAULT_SPIKE_MODEL = "balanced-std"
 
 
-def classify_arrival(index: int, rate_limit: int, queue_capacity: int) -> str:
-    """Map a 0-based arrival index to its admission disposition, deterministically.
-
-    accepted — within the rate limit, served immediately
-    delayed  — over the rate limit but within queue capacity, waits in the queue
-    rejected — over queue capacity, fail fast with HTTP 429, nothing served
-    """
-    if index < rate_limit:
-        return "accepted"
-    if index < rate_limit + queue_capacity:
-        return "delayed"
-    return "rejected"
+def limiter_key(model: str) -> str:
+    """The exact composite key the limiter buckets on — provider:tier:class — so
+    the per-provider, per-tier, per-class isolation is visible, not just claimed."""
+    cfg = RATE_LIMITS[model]
+    return f"{cfg['provider']}:{BASE_ADAPTERS[model].tier}:{cfg['request_class']}"
 
 
 # --- Circuit breaker, fallback, and retry backoff (Module 2, Clip 3) -------

@@ -95,10 +95,12 @@ check_tool() { # name  version-cmd  brew-pkg
   fi
 }
 
-hdr "Core tools (tmux, jq, curl)"
+hdr "Core tools (tmux, jq, curl, k6)"
 check_tool tmux "tmux -V" tmux
 check_tool jq   "jq --version" jq
 check_tool curl "curl --version" curl
+# k6 drives the Module 2 · Clip 2 load spike (also available via Docker Compose).
+check_tool k6   "k6 version" k6
 
 # --- Python 3.13 --------------------------------------------------------------
 hdr "Python 3.13"

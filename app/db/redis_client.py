@@ -142,52 +142,60 @@ def reset_mixed() -> None:
 
 
 # --- Admission control state (Module 2, Clip 2) ---------------------------
-# Three hashes hold the live resilience state an operator watches during a
-# spike, each keyed so a single `redis-cli HGETALL` reads it straight from the
-# datastore:
-#   resilience:queue        — <model>:depth / :peak / :capacity  (backlog)
-#   resilience:ratelimit    — <model>:admitted / :limit          (window count)
-#   resilience:dispositions — accepted / delayed / rejected      (running tally)
+# The admission decision is made by ONE atomic Redis script so it is correct
+# under real concurrent load (k6): the rate-limit counter and the queue length
+# are read and updated in a single server-side step, so no two racing requests
+# can both slip past a full queue. State lives in real datastore structures:
+#   resilience:admitted:<model>  — INCR counter, the rate-limit window
+#   resilience:queue:<model>     — a real LIST of queued request IDs (the backlog)
+#   resilience:dispositions      — accepted / delayed / rejected tally (HASH)
+#   resilience:logs              — structured admission-decision log events (LIST)
 
-_RES_QUEUE_KEY = "resilience:queue"
-_RES_RL_KEY = "resilience:ratelimit"
 _RES_DISP_KEY = "resilience:dispositions"
+_RES_LOGS_KEY = "resilience:logs"
 
 
-def set_queue(model: str, depth: int, peak: int, capacity: int) -> None:
-    client().hset(_RES_QUEUE_KEY, mapping={
-        f"{model}:depth": depth, f"{model}:peak": peak,
-        f"{model}:capacity": capacity})
+def _admitted_key(model: str) -> str:
+    return f"resilience:admitted:{model}"
 
 
-def get_queue(model: str) -> dict[str, int]:
-    raw = client().hgetall(_RES_QUEUE_KEY)
-    return {
-        "depth": int(raw.get(f"{model}:depth", 0)),
-        "peak": int(raw.get(f"{model}:peak", 0)),
-        "capacity": int(raw.get(f"{model}:capacity", 0)),
-    }
+def _queue_key(model: str) -> str:
+    return f"resilience:queue:{model}"
 
 
-def queue_hash() -> dict[str, str]:
-    return client().hgetall(_RES_QUEUE_KEY)
+# Atomic admission: within one Redis execution, admit if under the rate limit,
+# else enqueue if the queue has room, else reject. Returns the disposition.
+_ADMIT_LUA = """
+local admitted = tonumber(redis.call('GET', KEYS[1]) or '0')
+if admitted < tonumber(ARGV[1]) then
+  redis.call('INCR', KEYS[1])
+  return 'accepted'
+end
+if redis.call('LLEN', KEYS[2]) < tonumber(ARGV[2]) then
+  redis.call('RPUSH', KEYS[2], ARGV[3])
+  return 'delayed'
+end
+return 'rejected'
+"""
 
 
-def set_ratelimit(model: str, admitted: int, limit: int) -> None:
-    client().hset(_RES_RL_KEY, mapping={
-        f"{model}:admitted": admitted, f"{model}:limit": limit})
+def admit(model: str, rate_limit: int, queue_capacity: int, request_id: str) -> str:
+    """Atomically decide accepted / delayed / rejected for one request."""
+    return client().eval(
+        _ADMIT_LUA, 2, _admitted_key(model), _queue_key(model),
+        rate_limit, queue_capacity, request_id)
 
 
-def get_ratelimit(model: str) -> dict[str, int]:
-    raw = client().hgetall(_RES_RL_KEY)
-    return {
-        "admitted": int(raw.get(f"{model}:admitted", 0)),
-        "limit": int(raw.get(f"{model}:limit", 0)),
-    }
+def get_admitted(model: str) -> int:
+    return int(client().get(_admitted_key(model)) or 0)
 
 
-def ratelimit_hash() -> dict[str, str]:
-    return client().hgetall(_RES_RL_KEY)
+def queue_depth(model: str) -> int:
+    return int(client().llen(_queue_key(model)))
+
+
+def queue_ids(model: str, limit: int = 25) -> list[str]:
+    return client().lrange(_queue_key(model), 0, limit - 1)
 
 
 def disposition_incr(disposition: str) -> None:
@@ -198,8 +206,23 @@ def disposition_hash() -> dict[str, str]:
     return client().hgetall(_RES_DISP_KEY)
 
 
+def log_admission(event: dict) -> None:
+    """Append one structured admission-decision log event (newest last)."""
+    client().rpush(_RES_LOGS_KEY, json.dumps(event))
+
+
+def get_admission_logs() -> list[dict]:
+    raw = client().lrange(_RES_LOGS_KEY, 0, -1)
+    return [json.loads(x) for x in raw]
+
+
 def reset_resilience() -> None:
-    client().delete(_RES_QUEUE_KEY, _RES_RL_KEY, _RES_DISP_KEY)
+    c = client()
+    keys = [_RES_DISP_KEY, _RES_LOGS_KEY]
+    for m in BASE_ADAPTERS:
+        keys.append(_admitted_key(m))
+        keys.append(_queue_key(m))
+    c.delete(*keys)
 
 
 # --- Circuit breaker state (Module 2, Clip 3) -----------------------------

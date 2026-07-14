@@ -232,13 +232,14 @@ added as later modules land.
 | `/routing/mixed-batch` | GET | Individual decisions from the mixed batch, tagged by kind |
 | `/routing/mixed-counters` | GET | Per-kind mixed-batch counters (Redis) |
 | `/routing/disposition` | GET | Reconcile API + Redis + receipts → CONFIRMED / BLOCKED |
-| `/resilience/limits` | GET | Admission-control config — per-tier rate limit, queue capacity, request class |
-| `/load/spike` | POST | Run one deterministic traffic burst — accepted / delayed / rejected |
-| `/resilience/queue` | GET | Live queue backlog for a tier — depth, peak, capacity (Redis) |
-| `/resilience/rate-limit` | GET | Live rate-limit window for a tier — admitted vs limit (Redis) |
-| `/resilience/matrix` | GET | Same burst across every tier — each sheds at its own limit |
-| `/load/submit` | POST | Submit one request; fails fast with HTTP 429 when the queue is full |
+| `/resilience/limits` | GET | Admission-control config — per provider/tier/class rate limit, window, queue capacity |
+| `/load/submit` | POST | Atomically admit one request; HTTP 429 + Retry-After when the queue is full |
+| `/load/spike` | POST | Deterministic internal spike over the same atomic path (preflight helper) |
+| `/resilience/queue` | GET | The real queue for a tier — the list of queued request IDs + depth (Redis) |
+| `/resilience/rate-limit` | GET | Live rate-limit window for a tier — admitted vs limit, with window (Redis) |
+| `/resilience/matrix` | GET | Same burst across every provider key — each sheds at its own limit |
 | `/resilience/dispositions` | GET | Receipts grouped by disposition — accepted / delayed / rejected |
+| `/resilience/admission-logs` | GET | Structured admission logs + one request correlated across log and receipt |
 | `/resilience/circuit-config` | GET | Circuit-breaker thresholds, fallback routes, and backoff schedule |
 | `/resilience/drill` | POST | Run the deterministic breaker drill — closed → open → half-open → recovered |
 | `/resilience/circuit` | GET | Per-request circuit state timeline from the drill |

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 
 from app.config import settings
 from app.db import postgres, redis_client
@@ -37,6 +37,7 @@ from app.providers.registry import (
     FAILURE_THRESHOLD,
     FALLBACK_ROUTES,
     OVERRIDE_RULES,
+    RATE_LIMIT_WINDOW_SECONDS,
     RATE_LIMITS,
     SIZE_THRESHOLD_TOKENS,
     SMART_POLICY_NAME,
@@ -46,6 +47,7 @@ from app.providers.registry import (
     WEIGHTED_POLICY_NAME,
     WEIGHTED_WEIGHTS,
     backoff_schedule,
+    limiter_key,
     weighted_sequence,
 )
 from app.resilience import admission, circuit
@@ -410,30 +412,39 @@ def routing_disposition() -> dict:
 
 # --- Admission control: queues, rate limits, fail-fast (Module 2, Clip 2) --
 
+def _limit_row(model: str, cfg: dict) -> dict:
+    base = BASE_ADAPTERS[model]
+    return {
+        "provider": cfg["provider"],
+        "model": model,
+        "tier": base.tier,
+        "quota_mode": base.quota_mode,
+        "request_class": cfg["request_class"],
+        "limiter_key": limiter_key(model),
+        "rate_limit": cfg["rate_limit"],
+        "queue_capacity": cfg["queue_capacity"],
+    }
+
+
 @app.get("/resilience/limits")
 def resilience_limits() -> dict:
-    """The admission-control configuration: per tier, the provider quota mode,
-    the request class it serves, the rate limit (immediate admits), the queue
-    capacity (waiting slots), and the total burst it can absorb before shedding."""
+    """The admission-control configuration, keyed per provider / tier / request
+    class: the rate limit (immediate admits per window), the window duration, the
+    queue capacity (waiting slots), and the total burst absorbed before shedding."""
     rows = []
     for model, cfg in RATE_LIMITS.items():
-        base = BASE_ADAPTERS[model]
-        rows.append({
-            "model": model,
-            "tier": base.tier,
-            "quota_mode": base.quota_mode,
-            "request_class": cfg["request_class"],
-            "rate_limit": cfg["rate_limit"],
-            "queue_capacity": cfg["queue_capacity"],
-            "burst_capacity": cfg["rate_limit"] + cfg["queue_capacity"],
-        })
-    return {"policy_name": ADMISSION_POLICY_NAME, "limits": rows}
+        row = _limit_row(model, cfg)
+        row["burst_capacity"] = cfg["rate_limit"] + cfg["queue_capacity"]
+        rows.append(row)
+    return {"policy_name": ADMISSION_POLICY_NAME,
+            "window_seconds": RATE_LIMIT_WINDOW_SECONDS, "limits": rows}
 
 
 @app.post("/load/spike")
 def load_spike(body: SpikeRequest) -> dict:
-    """Run one controlled, deterministic traffic burst against a tier: absorb
-    what fits the rate limit, queue what fits the backlog, shed the rest."""
+    """Deterministic internal spike over the SAME atomic admission path k6 drives:
+    submit `count` requests, absorb what fits the rate limit, queue what fits the
+    backlog, shed the rest. Used by the preflight so it matches the live demo."""
     if body.model not in RATE_LIMITS:
         raise HTTPException(status_code=404, detail=f"unknown model: {body.model}")
     return admission.run_spike(body.model, body.count, body.request_class)
@@ -441,73 +452,91 @@ def load_spike(body: SpikeRequest) -> dict:
 
 @app.get("/resilience/queue")
 def resilience_queue(model: str = "balanced-std") -> dict:
-    """Live queue backlog for a tier, read from Redis — depth, peak, capacity."""
-    q = redis_client.get_queue(model)
-    return {"model": model, **q, "full": q["depth"] >= q["capacity"] > 0}
+    """The real queue for a tier, read from Redis — the actual list of queued
+    request IDs plus the depth against capacity."""
+    if model not in RATE_LIMITS:
+        raise HTTPException(status_code=404, detail=f"unknown model: {model}")
+    capacity = RATE_LIMITS[model]["queue_capacity"]
+    depth = redis_client.queue_depth(model)
+    return {
+        "model": model,
+        "queue_key": f"resilience:queue:{model}",
+        "queued_request_ids": redis_client.queue_ids(model),
+        "depth": depth,
+        "capacity": capacity,
+        "full": depth >= capacity > 0,
+    }
 
 
 @app.get("/resilience/rate-limit")
 def resilience_rate_limit(model: str = "balanced-std") -> dict:
-    """Live rate-limit window for a tier, read from Redis — admitted vs limit."""
-    rl = redis_client.get_ratelimit(model)
-    return {"model": model, **rl, "at_limit": rl["admitted"] >= rl["limit"] > 0}
+    """The live rate-limit window for a tier, read from Redis — admitted vs the
+    configured limit, and the window duration that budget lasts."""
+    if model not in RATE_LIMITS:
+        raise HTTPException(status_code=404, detail=f"unknown model: {model}")
+    limit = RATE_LIMITS[model]["rate_limit"]
+    admitted = redis_client.get_admitted(model)
+    return {
+        "model": model,
+        "limiter_key": limiter_key(model),
+        "admitted": admitted,
+        "limit": limit,
+        "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
+        "at_limit": admitted >= limit > 0,
+    }
 
 
 @app.get("/resilience/matrix")
 def resilience_matrix(count: int = 20) -> dict:
-    """The rate-limit decision matrix: the SAME burst size against every tier,
-    projected through each tier's own configured limit — three providers, three
-    request classes, three different accepted / delayed / rejected outcomes."""
+    """The rate-limit decision matrix: the SAME burst against every provider key,
+    projected through each key's own limit — three providers, three request
+    classes, three different accepted / delayed / rejected outcomes."""
     rows = []
     for model, cfg in RATE_LIMITS.items():
-        base = BASE_ADAPTERS[model]
         rate, capacity = cfg["rate_limit"], cfg["queue_capacity"]
         accepted = min(count, rate)
         delayed = max(0, min(count - accepted, capacity))
         rejected = max(0, count - accepted - delayed)
-        rows.append({
-            "model": model,
-            "tier": base.tier,
-            "quota_mode": base.quota_mode,
-            "request_class": cfg["request_class"],
-            "rate_limit": rate,
-            "queue_capacity": capacity,
-            "accepted": accepted,
-            "delayed": delayed,
-            "rejected": rejected,
-        })
+        row = _limit_row(model, cfg)
+        row.update(accepted=accepted, delayed=delayed, rejected=rejected)
+        rows.append(row)
     return {"policy_name": ADMISSION_POLICY_NAME, "burst_size": count, "tiers": rows}
 
 
 @app.post("/load/submit")
-def load_submit(body: SubmitRequest) -> dict:
-    """Submit ONE request against the current queue. Returns 200 when admitted or
-    delayed; fails fast with HTTP 429 'Queue capacity exceeded' when the queue is
-    full — and persists a rejected receipt either way so the shed is auditable."""
+def load_submit(body: SubmitRequest, response: Response) -> dict:
+    """Submit ONE request through the atomic admission path. Returns 200 when
+    admitted or delayed; fails fast with HTTP 429 'Queue capacity exceeded' plus a
+    Retry-After header when the queue is full — and persists a receipt either way."""
     if body.model not in RATE_LIMITS:
         raise HTTPException(status_code=404, detail=f"unknown model: {body.model}")
-    disposition, receipt, state = admission.submit_one(body.model, body.request_class)
+    disposition, receipt, event = admission.submit_one(body.model, body.request_class)
     payload = {
         "admitted": disposition != "rejected",
         "disposition": disposition,
-        "reason": "Queue capacity exceeded" if disposition == "rejected"
-                  else f"admitted ({disposition})",
+        "reason": event["reason"],
         "request_id": receipt["request_id"],
+        "provider": event["provider"],
         "model": body.model,
         "request_class": receipt["request_class"],
-        "queue_depth": state["queue_depth"],
-        "queue_capacity": state["queue_capacity"],
+        "queue_depth": event["queue_depth"],
+        "queue_capacity": event["queue_capacity"],
+        "http_status": event["http_status"],
         "receipt_persisted": True,
     }
     if disposition == "rejected":
-        raise HTTPException(status_code=429, detail=payload)
+        payload["retry_after_seconds"] = RATE_LIMIT_WINDOW_SECONDS
+        raise HTTPException(status_code=429, detail=payload,
+                            headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)})
+    response.headers["X-Admission-Disposition"] = disposition
     return payload
 
 
 @app.get("/resilience/dispositions")
 def resilience_dispositions() -> dict:
     """Every request's fate straight from the PostgreSQL receipts, grouped by
-    disposition — accepted, delayed, rejected — with a few sample rows each."""
+    disposition — accepted, delayed, rejected — with a few sample rows each. Costs
+    shown are estimates; a rejected request never runs, so its estimate is zero."""
     counts = postgres.count_by_disposition()
     for k in ("accepted", "delayed", "rejected"):
         counts.setdefault(k, 0)
@@ -516,6 +545,40 @@ def resilience_dispositions() -> dict:
         "total": sum(counts.values()),
         "dispositions": counts,
         "samples": postgres.dispositions_detail(limit_each=2),
+    }
+
+
+@app.get("/resilience/admission-logs")
+def resilience_admission_logs(request_id: str | None = None) -> dict:
+    """Structured admission-decision logs, and a correlation that proves one
+    request ID appears in the caller response, the log, and the durable receipt."""
+    logs = redis_client.get_admission_logs()
+    samples = {}
+    for e in logs:
+        d = e.get("disposition")
+        if d not in samples:
+            samples[d] = e
+    # Correlate: the given request_id, else the most recent rejected one.
+    target = request_id
+    if not target:
+        rejected = [e for e in logs if e.get("disposition") == "rejected"]
+        target = rejected[-1]["request_id"] if rejected else (logs[-1]["request_id"] if logs else None)
+    log_event = next((e for e in logs if e.get("request_id") == target), None)
+    receipt = postgres.receipt_by_request_id(target) if target else None
+    correlate = {
+        "request_id": target,
+        "in_log": log_event is not None,
+        "in_receipt": receipt is not None,
+        "log_disposition": log_event.get("disposition") if log_event else None,
+        "receipt_disposition": receipt.get("disposition") if receipt else None,
+        "match": bool(log_event and receipt
+                      and log_event.get("disposition") == receipt.get("disposition")),
+    }
+    return {
+        "policy_name": ADMISSION_POLICY_NAME,
+        "count": len(logs),
+        "samples": [samples[k] for k in ("accepted", "delayed", "rejected") if k in samples],
+        "correlate": correlate,
     }
 
 

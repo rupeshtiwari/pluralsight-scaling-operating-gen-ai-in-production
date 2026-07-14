@@ -1,53 +1,63 @@
-"""Deterministic admission control (Module 2, Clip 2).
+"""Admission control (Module 2, Clip 2).
 
-Proves queuing, rate limiting, and fail-fast behaviour WITHOUT real
-concurrency. A burst of N requests is classified against a tier's configured
-rate limit and queue capacity by a pure function, so the accepted / delayed /
-rejected split is identical on every run — testable in CI, repeatable on camera.
+Every request is admitted, queued, or rejected by ONE atomic Redis script, so
+the decision is correct under real concurrent load (k6): the rate-limit counter
+and the queue length are checked and updated together, and no two racing
+requests can both pass a full queue. The queue is a real Redis LIST of request
+IDs — actual queued work, not a depth counter — and every decision emits a
+structured log event and a durable PostgreSQL receipt, so an operator can
+correlate one request across the caller response, the log, and the ledger.
 
-    accepted — admitted immediately, within the rate limit (served now)
-    delayed  — over the rate limit but within queue capacity (waits in queue)
-    rejected — over queue capacity: fail fast with HTTP 429, nothing served
+    accepted — within the rate limit, served now (HTTP 200)
+    delayed  — over the limit, within queue capacity, parked in the queue (200)
+    rejected — over queue capacity, fail fast (HTTP 429, Retry-After)
 
-Every request — including a reject — writes ONE durable receipt tagged with its
-disposition, so the caller-facing outcome, the live Redis state, and the
-PostgreSQL record all agree.
+Costs shown for accepted/delayed requests are ESTIMATES for capacity planning;
+a rejected request never reaches the model, so its tokens and cost are zero.
 """
 from __future__ import annotations
 
+import json
+import logging
 import uuid
 
 from app.db import postgres, redis_client
 from app.providers.adapter import adapter_config, estimate_cost, estimate_tokens
 from app.providers.registry import (
     ADMISSION_POLICY_NAME,
+    BASE_ADAPTERS,
     RATE_LIMITS,
-    classify_arrival,
+    RATE_LIMIT_WINDOW_SECONDS,
+    limiter_key,
 )
 from app.schemas import TokenEstimate
 
-# One fixed reference prompt so token and cost estimates are deterministic.
 SPIKE_PROMPT = "Summarize this customer support ticket into one sentence for triage."
-
 _ZERO_TOKENS = TokenEstimate(prompt=0, completion=0, total=0)
+
+_HTTP = {"accepted": 200, "delayed": 200, "rejected": 429}
+_REASON = {
+    "accepted": "within rate limit",
+    "delayed": "queued for capacity",
+    "rejected": "Queue capacity exceeded",
+}
+
+# Real structured logs to stdout so `docker compose logs api` shows them, too.
+_log = logging.getLogger("admission")
+if not _log.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(message)s"))
+    _log.addHandler(_h)
+    _log.setLevel(logging.INFO)
 
 
 def _receipt(model: str, disposition: str, request_class: str) -> dict:
-    """Build one normalized receipt for an admitted, delayed, or rejected request.
-
-    A rejected request was never served, so it costs nothing and produces no
-    output: tokens, cost, quality, and latency target are all zero. That is what
-    lets an operator tell a shed request apart from a served one in the ledger.
-    """
-    condition = redis_client.get_condition(model)
-    cfg = adapter_config(model, condition)
+    cfg = adapter_config(model, "healthy")
     served = disposition != "rejected"
-
     tokens = estimate_tokens(SPIKE_PROMPT) if served else _ZERO_TOKENS
     cost = estimate_cost(tokens.total, cfg.cost_per_1k_usd) if served else 0.0
     quality = cfg.quality_score if served else 0.0
     latency = cfg.latency_target_ms if served else 0
-
     return {
         "request_id": f"req-{uuid.uuid4().hex[:12]}",
         "selected_model": cfg.model,
@@ -66,76 +76,73 @@ def _receipt(model: str, disposition: str, request_class: str) -> dict:
     }
 
 
-def run_spike(model: str, count: int, request_class: str | None) -> dict:
-    """Run one deterministic burst against a tier and persist every receipt.
-
-    Resets the resilience state first so the spike is repeatable, then classifies
-    each arrival, writes its receipt, and updates the live Redis queue,
-    rate-limit, and disposition state an operator watches.
-    """
+def submit_one(model: str, request_class: str | None) -> tuple[str, dict, dict]:
+    """Atomically admit ONE request, persist its receipt, and log the decision.
+    Returns (disposition, receipt, log_event)."""
     cfg = RATE_LIMITS[model]
     rate, capacity = cfg["rate_limit"], cfg["queue_capacity"]
     rc = request_class or cfg["request_class"]
 
+    receipt = _receipt(model, "pending", rc)  # request_id first, decision next
+    request_id = receipt["request_id"]
+    disposition = redis_client.admit(model, rate, capacity, request_id)
+
+    receipt["disposition"] = disposition
+    receipt["route_reason"] = f"admission_{disposition}"
+    if disposition == "rejected":
+        receipt.update(latency_target_ms=0, prompt_tokens=0, completion_tokens=0,
+                       total_tokens=0, cost_estimate_usd=0.0, quality_score=0.0)
+    postgres.insert_receipt(receipt)
+    redis_client.disposition_incr(disposition)
+
+    event = {
+        "event": "admission_decision",
+        "request_id": request_id,
+        "provider": cfg["provider"],
+        "model": model,
+        "tier": BASE_ADAPTERS[model].tier,
+        "request_class": rc,
+        "limiter_key": limiter_key(model),
+        "rate_limit_count": redis_client.get_admitted(model),
+        "rate_limit": rate,
+        "queue_depth": redis_client.queue_depth(model),
+        "queue_capacity": capacity,
+        "disposition": disposition,
+        "reason": _REASON[disposition],
+        "http_status": _HTTP[disposition],
+        "est_tokens": receipt["total_tokens"],
+        "est_cost_usd": receipt["cost_estimate_usd"],
+    }
+    redis_client.log_admission(event)
+    _log.info(json.dumps(event))
+    return disposition, receipt, event
+
+
+def run_spike(model: str, count: int, request_class: str | None) -> dict:
+    """Deterministic internal spike: submit `count` requests through the SAME
+    atomic path k6 uses, so preflight validation matches the live demo without
+    requiring k6. Resets first for a repeatable run."""
+    cfg = RATE_LIMITS[model]
+    rc = request_class or cfg["request_class"]
     redis_client.reset_resilience()
+    postgres.clear_admission_receipts()
     counts = {"accepted": 0, "delayed": 0, "rejected": 0}
-    for i in range(count):
-        disposition = classify_arrival(i, rate, capacity)
-        postgres.insert_receipt(_receipt(model, disposition, rc))
-        redis_client.disposition_incr(disposition)
+    for _ in range(count):
+        disposition, _, _ = submit_one(model, rc)
         counts[disposition] += 1
-
-    admitted = min(count, rate)
-    depth = counts["delayed"]  # requests left waiting in the queue
-    redis_client.set_queue(model, depth=depth, peak=depth, capacity=capacity)
-    redis_client.set_ratelimit(model, admitted=admitted, limit=rate)
-
-    base = adapter_config(model, redis_client.get_condition(model))
     return {
         "policy_name": ADMISSION_POLICY_NAME,
+        "provider": cfg["provider"],
         "model": model,
-        "tier": base.tier,
+        "tier": BASE_ADAPTERS[model].tier,
         "request_class": rc,
         "submitted": count,
         "accepted": counts["accepted"],
         "delayed": counts["delayed"],
         "rejected": counts["rejected"],
-        "rate_limit": rate,
-        "queue_capacity": capacity,
-        "queue_peak": depth,
-        "queue_full": depth >= capacity,
+        "rate_limit": cfg["rate_limit"],
+        "queue_capacity": cfg["queue_capacity"],
+        "queue_depth": redis_client.queue_depth(model),
+        "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
+        "queue_full": redis_client.queue_depth(model) >= cfg["queue_capacity"],
     }
-
-
-def submit_one(model: str, request_class: str | None) -> tuple[str, dict, dict]:
-    """Submit ONE request against the current live queue state.
-
-    Returns (disposition, receipt, state). If the rate-limit window still has
-    room the request is accepted; else if the queue has room it is delayed;
-    otherwise it is rejected — the fail-fast path the caller sees as HTTP 429.
-    """
-    cfg = RATE_LIMITS[model]
-    rate, capacity = cfg["rate_limit"], cfg["queue_capacity"]
-    rc = request_class or cfg["request_class"]
-
-    rl = redis_client.get_ratelimit(model)
-    q = redis_client.get_queue(model)
-    admitted, depth = rl["admitted"], q["depth"]
-
-    if admitted < rate:
-        disposition = "accepted"
-        redis_client.set_ratelimit(model, admitted=admitted + 1, limit=rate)
-    elif depth < capacity:
-        disposition = "delayed"
-        depth += 1
-        redis_client.set_queue(model, depth=depth,
-                               peak=max(depth, q["peak"]), capacity=capacity)
-    else:
-        disposition = "rejected"
-
-    receipt = _receipt(model, disposition, rc)
-    postgres.insert_receipt(receipt)
-    redis_client.disposition_incr(disposition)
-    state = {"admitted": admitted, "rate_limit": rate,
-             "queue_depth": depth, "queue_capacity": capacity}
-    return disposition, receipt, state

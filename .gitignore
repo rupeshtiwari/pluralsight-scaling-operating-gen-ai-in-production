@@ -9,3 +9,6 @@ __pycache__/
 module*/*preflight_log.txt
 module*/demo_capture.txt
 environment-setup/setup_log.txt
+
+# k6 generated summary
+module2/k6/last_summary.json

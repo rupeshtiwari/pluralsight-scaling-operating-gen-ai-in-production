@@ -129,6 +129,30 @@ def count_by_disposition() -> dict[str, int]:
         return {k: int(v) for k, v in conn.execute(sql).fetchall()}
 
 
+def clear_admission_receipts() -> None:
+    """Remove prior admission-control receipts so re-running the spike is
+    idempotent and the disposition totals always reflect the latest run."""
+    with connect() as conn:
+        conn.execute("DELETE FROM receipts WHERE policy_name = 'admission_control'")
+
+
+def receipt_by_request_id(request_id: str) -> dict | None:
+    """One receipt by request ID — used to correlate a single request across the
+    caller response, the structured log, and the durable ledger."""
+    with connect() as conn:
+        cur = conn.execute(
+            "SELECT request_id, disposition, selected_model, request_class, "
+            "total_tokens, cost_estimate_usd, route_reason FROM receipts "
+            "WHERE request_id = %s", (request_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d.name for d in cur.description]
+        r = dict(zip(cols, row))
+    r["cost_estimate_usd"] = float(r["cost_estimate_usd"])
+    return r
+
+
 def dispositions_detail(limit_each: int = 2) -> list[dict]:
     """A few durable receipts per disposition, tagged so the demo can show
     accepted, delayed, and rejected requests side by side from PostgreSQL."""

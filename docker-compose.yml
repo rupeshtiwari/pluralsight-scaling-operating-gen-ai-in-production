@@ -58,3 +58,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  # k6 load generator (Module 2, Clip 2). Run on demand, never as a long-lived
+  # service, so it is gated behind the "load" profile and `docker compose up`
+  # never starts it. Students with host k6 (brew install k6) run `k6 run ...`
+  # directly; this service is the no-host-install fallback:
+  #   docker compose run --rm k6 run --quiet module2/k6/clip2_spike.js
+  k6:
+    image: grafana/k6:0.49.0
+    profiles: ["load"]
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      API_BASE: http://api:8000
+    depends_on:
+      - api

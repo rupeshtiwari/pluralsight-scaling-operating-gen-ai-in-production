@@ -66,6 +66,9 @@ if command -v docker >/dev/null 2>&1; then
 fi
 
 # --- CLI tools ---------------------------------------------------------------
+# k6 drives the Module 2 · Clip 2 load spike. It is also available as a Docker
+# Compose service (profile "load"), so a missing host k6 is a warning, not a
+# hard failure — the rest of the course still runs.
 for tool in tmux jq python3 psql curl; do
   if command -v "$tool" >/dev/null 2>&1; then
     ok "$tool present"
@@ -78,6 +81,12 @@ for tool in tmux jq python3 psql curl; do
     esac
   fi
 done
+if command -v k6 >/dev/null 2>&1; then
+  ok "k6 present"
+else
+  warn "k6 not found — Module 2 · Clip 2 uses it (or run it via Docker: docker compose run --rm k6 ...)"
+  fix "brew install k6"
+fi
 
 # --- demo ports free? (a stale stack may be holding them) --------------------
 port_busy() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
