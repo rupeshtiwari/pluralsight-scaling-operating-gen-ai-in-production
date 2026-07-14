@@ -202,5 +202,67 @@ def reset_resilience() -> None:
     client().delete(_RES_QUEUE_KEY, _RES_RL_KEY, _RES_DISP_KEY)
 
 
+# --- Circuit breaker state (Module 2, Clip 3) -----------------------------
+# The breaker's live state, the per-request timeline, the retry log, and a
+# per-role tally (primary vs fallback) — the operator evidence the demo reads.
+
+_CB_STATE_KEY = "circuit:state"
+_CB_TIMELINE_KEY = "circuit:timeline"
+_CB_RETRYLOG_KEY = "circuit:retrylog"
+_CB_SUMMARY_KEY = "circuit:summary"
+_CB_COUNTS_KEY = "circuit:counts"
+
+
+def set_circuit_state(model: str, state: str, failures: int, threshold: int) -> None:
+    client().hset(_CB_STATE_KEY, mapping={
+        f"{model}:state": state, f"{model}:failures": failures,
+        f"{model}:threshold": threshold})
+
+
+def circuit_state_hash() -> dict[str, str]:
+    return client().hgetall(_CB_STATE_KEY)
+
+
+def set_circuit_timeline(data: list) -> None:
+    client().set(_CB_TIMELINE_KEY, json.dumps(data))
+
+
+def get_circuit_timeline() -> list:
+    raw = client().get(_CB_TIMELINE_KEY)
+    return json.loads(raw) if raw else []
+
+
+def set_circuit_retrylog(data: list) -> None:
+    client().set(_CB_RETRYLOG_KEY, json.dumps(data))
+
+
+def get_circuit_retrylog() -> list:
+    raw = client().get(_CB_RETRYLOG_KEY)
+    return json.loads(raw) if raw else []
+
+
+def set_circuit_summary(data: dict) -> None:
+    client().set(_CB_SUMMARY_KEY, json.dumps(data))
+
+
+def get_circuit_summary() -> dict:
+    raw = client().get(_CB_SUMMARY_KEY)
+    return json.loads(raw) if raw else {}
+
+
+def circuit_incr(role: str) -> None:
+    client().hincrby(_CB_COUNTS_KEY, role, 1)
+
+
+def circuit_counts() -> dict[str, int]:
+    raw = client().hgetall(_CB_COUNTS_KEY)
+    return {k: int(v) for k, v in raw.items()}
+
+
+def reset_circuit() -> None:
+    client().delete(_CB_STATE_KEY, _CB_TIMELINE_KEY, _CB_RETRYLOG_KEY,
+                    _CB_SUMMARY_KEY, _CB_COUNTS_KEY)
+
+
 def ping() -> bool:
     return bool(client().ping())

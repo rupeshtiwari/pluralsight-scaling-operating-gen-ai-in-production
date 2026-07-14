@@ -243,6 +243,69 @@ def classify_arrival(index: int, rate_limit: int, queue_capacity: int) -> str:
     return "rejected"
 
 
+# --- Circuit breaker, fallback, and retry backoff (Module 2, Clip 3) -------
+# A circuit breaker protects the caller from a failing provider. It moves
+# through four states with visible thresholds:
+#   closed    — healthy; requests flow to the primary
+#   open      — too many consecutive failures; the primary is skipped (fail
+#               fast) and traffic goes to a healthy fallback model
+#   half_open — after a cooldown, one probe is allowed through to test recovery
+#   closed    — a successful probe recovers the circuit (recovered)
+CIRCUIT_POLICY_NAME = "circuit_breaker"
+FAILURE_THRESHOLD = 3      # consecutive failures that trip the circuit open
+COOLDOWN_PROBES = 1        # requests served by fallback before a half-open probe
+SUCCESS_THRESHOLD = 1      # successful probes that close a half-open circuit
+
+# When a primary tier is unsafe, traffic fails over to a healthy alternative.
+FALLBACK_ROUTES: dict[str, str] = {
+    "balanced-std": "econo-mini",
+    "premium-max": "balanced-std",
+    "econo-mini": "balanced-std",
+}
+
+# Exponential backoff for retrying a failing provider, tuned for LLM latency:
+# a base delay doubled each attempt, capped, with deterministic jitter so the
+# schedule is repeatable and bounded — no retry storm.
+BACKOFF_BASE_MS = 200
+BACKOFF_FACTOR = 2
+BACKOFF_MAX_ATTEMPTS = 3    # cap: at most 3 tries, then fail over
+BACKOFF_CAP_MS = 2000
+# Deterministic per-attempt jitter (ms) — fixed, not random, so the demo repeats.
+BACKOFF_JITTER_MS = (0, 30, 70)
+
+# The conditions that count as a provider "failure" for the breaker.
+FAILURE_CONDITIONS = {"error", "quota", "slow"}
+
+
+def backoff_schedule() -> list[dict]:
+    """The deterministic retry schedule: attempt number, base delay, jitter, and
+    the effective wait — doubling each attempt, capped, bounded by the attempt
+    limit so retries can never storm."""
+    schedule = []
+    for i in range(BACKOFF_MAX_ATTEMPTS):
+        base = min(BACKOFF_BASE_MS * (BACKOFF_FACTOR ** i), BACKOFF_CAP_MS) if i else 0
+        jitter = BACKOFF_JITTER_MS[i % len(BACKOFF_JITTER_MS)]
+        schedule.append({
+            "attempt": i + 1,
+            "base_delay_ms": base,
+            "jitter_ms": jitter,
+            "wait_ms": base + jitter,
+        })
+    return schedule
+
+
+# The deterministic circuit-breaker drill (Clip 3). A fixed sequence of requests
+# against a primary that fails, then heals — so one run walks the full state
+# journey closed -> open -> half_open -> recovered, repeatably. Each entry is the
+# primary's condition for that request; the fallback stays healthy throughout.
+CIRCUIT_DRILL_PRIMARY = "balanced-std"
+# Six failures then two healthy calls: trips the breaker (3 consecutive fails),
+# sheds while open, takes a half-open probe that fails and reopens, then a second
+# probe that succeeds and recovers — every state exercised, storm visibly avoided.
+CIRCUIT_DRILL_SEQUENCE = ["error", "error", "error", "error", "error", "error",
+                          "healthy", "healthy"]
+
+
 # --- Supported deterministic conditions -----------------------------------
 # Each condition maps to the status string shown on screen plus the way it
 # bends the effective latency and quality so the simulation is repeatable.

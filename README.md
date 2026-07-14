@@ -239,6 +239,12 @@ added as later modules land.
 | `/resilience/matrix` | GET | Same burst across every tier — each sheds at its own limit |
 | `/load/submit` | POST | Submit one request; fails fast with HTTP 429 when the queue is full |
 | `/resilience/dispositions` | GET | Receipts grouped by disposition — accepted / delayed / rejected |
+| `/resilience/circuit-config` | GET | Circuit-breaker thresholds, fallback routes, and backoff schedule |
+| `/resilience/drill` | POST | Run the deterministic breaker drill — closed → open → half-open → recovered |
+| `/resilience/circuit` | GET | Per-request circuit state timeline from the drill |
+| `/resilience/fallback` | GET | Fallback routing outcome — caller kept whole while the primary is unsafe |
+| `/resilience/retry-log` | GET | Retry attempts, backoff schedule, and storm prevention |
+| `/resilience/failover-reconcile` | GET | Reconcile caller + Redis + receipts → CONFIRMED / BLOCKED |
 
 ## Project Structure
 
@@ -254,8 +260,8 @@ added as later modules land.
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability
 │   ├── README.md                module index → 6 clips
-│   ├── demo/                     clip2 ✅ · clip3, clip5, clip6 (planned)
-│   └── scripts/                 demo_up.sh, demo_down.sh, clip2 preflight
+│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5, clip6 (planned)
+│   └── scripts/                 demo_up.sh, demo_down.sh, clip2/clip3 preflight
 ├── module3/                     Module 3: LLMOps + readiness (planned)
 │   ├── README.md                module index → 6 clips
 │   └── demo/                     clip2, clip3, clip5, clip6 (planned)

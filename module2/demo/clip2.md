@@ -27,7 +27,7 @@ provider (EO2a), and a fail-fast path that rejects at capacity with a proper err
 response (EO2b), both simulated in a controlled, repeatable environment (EO2e).
 Every request's fate is measured live in Redis and recorded durably in PostgreSQL.
 (This proves admission control under a burst — not automatic failover between
-models, retry backoff, or long-run behaviour, which the next clips cover.)
+models, retry backoff, or long-run distribution behaviour.)
 
 ## Learning objectives covered
 
@@ -121,7 +121,7 @@ because the queue is already full. That is admission control doing its job: the
 queue *absorbed* a spike more than triple the immediate limit instead of hammering
 the provider with all twenty at once. The split is **deterministic** — a clean
 burst of 20 against 6 + 10 always lands 6 / 10 / 4 — which is what makes it
-testable in CI and repeatable on camera. A production limiter is usually
+testable in CI and repeatable on every run. A production limiter is usually
 *probabilistic* under real concurrency; here we fix the arrival order so the proof
 is exact.
 

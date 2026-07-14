@@ -26,21 +26,29 @@ from app.db import postgres, redis_client
 from app.providers.adapter import adapter_config, estimate_cost, estimate_tokens, probe
 from app.providers.registry import (
     ADMISSION_POLICY_NAME,
+    BACKOFF_MAX_ATTEMPTS,
     BASE_ADAPTERS,
+    CIRCUIT_POLICY_NAME,
     COMPLEXITY_TIERS,
     CONDITIONS,
+    COOLDOWN_PROBES,
     DEFAULT_MODEL,
+    FAILURE_CONDITIONS,
+    FAILURE_THRESHOLD,
+    FALLBACK_ROUTES,
     OVERRIDE_RULES,
     RATE_LIMITS,
     SIZE_THRESHOLD_TOKENS,
     SMART_POLICY_NAME,
     SMART_VALIDATION_CASES,
+    SUCCESS_THRESHOLD,
     TASK_COMPLEXITY,
     WEIGHTED_POLICY_NAME,
     WEIGHTED_WEIGHTS,
+    backoff_schedule,
     weighted_sequence,
 )
-from app.resilience import admission
+from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
 from app.routing.weighted import ROUTE_REASON as WEIGHTED_ROUTE_REASON
@@ -58,6 +66,7 @@ async def lifespan(app: FastAPI):
         redis_client.reset_smart()
         redis_client.reset_mixed()
         redis_client.reset_resilience()
+        redis_client.reset_circuit()
     except Exception:
         pass
     yield
@@ -135,6 +144,7 @@ def admin_reset() -> dict:
     redis_client.reset_smart()
     redis_client.reset_mixed()
     redis_client.reset_resilience()
+    redis_client.reset_circuit()
     return {"status": "reset", "receipts": postgres.count_receipts(),
             "conditions": redis_client.all_conditions()}
 
@@ -506,6 +516,119 @@ def resilience_dispositions() -> dict:
         "total": sum(counts.values()),
         "dispositions": counts,
         "samples": postgres.dispositions_detail(limit_each=2),
+    }
+
+
+# --- Circuit breaker, fallback, retry backoff (Module 2, Clip 3) ----------
+
+@app.get("/resilience/circuit-config")
+def resilience_circuit_config() -> dict:
+    """The breaker's configured thresholds, the fallback routes, and the retry
+    backoff schedule — the knobs that decide when to trip, where to fail over,
+    and how long to wait between retries."""
+    return {
+        "policy_name": CIRCUIT_POLICY_NAME,
+        "failure_modes": sorted(FAILURE_CONDITIONS),
+        "failure_threshold": FAILURE_THRESHOLD,
+        "cooldown_probes": COOLDOWN_PROBES,
+        "success_threshold": SUCCESS_THRESHOLD,
+        "max_attempts": BACKOFF_MAX_ATTEMPTS,
+        "fallback_routes": FALLBACK_ROUTES,
+        "backoff_schedule": backoff_schedule(),
+    }
+
+
+@app.post("/resilience/drill")
+def resilience_drill() -> dict:
+    """Run the deterministic circuit-breaker drill: a primary that fails then
+    heals, driving the breaker through closed -> open -> half_open -> recovered
+    while a healthy fallback keeps the caller served."""
+    return circuit.run_drill()
+
+
+@app.get("/resilience/circuit")
+def resilience_circuit() -> dict:
+    """The per-request state timeline from the drill — every transition, the
+    model that served, and whether the primary or the fallback answered."""
+    summary = redis_client.get_circuit_summary()
+    return {
+        "policy_name": CIRCUIT_POLICY_NAME,
+        "primary": summary.get("primary"),
+        "fallback": summary.get("fallback"),
+        "tripped": summary.get("tripped"),
+        "recovered": summary.get("recovered"),
+        "final_state": summary.get("final_state"),
+        "timeline": redis_client.get_circuit_timeline(),
+    }
+
+
+@app.get("/resilience/fallback")
+def resilience_fallback() -> dict:
+    """Fallback routing proof: how many requests the primary served vs how many
+    a healthy alternative served while the primary was unsafe — with the caller
+    kept whole throughout."""
+    summary = redis_client.get_circuit_summary()
+    primary_served = summary.get("primary_served", 0)
+    fallback_served = summary.get("fallback_served", 0)
+    total = primary_served + fallback_served
+    return {
+        "policy_name": CIRCUIT_POLICY_NAME,
+        "primary": summary.get("primary"),
+        "fallback": summary.get("fallback"),
+        "requests_answered": total,
+        "total": total,
+        "caller_errors": 0,  # every request was served (primary or fallback)
+        "primary_served": primary_served,
+        "fallback_served": fallback_served,
+        "counts": redis_client.circuit_counts(),
+    }
+
+
+@app.get("/resilience/retry-log")
+def resilience_retry_log() -> dict:
+    """The retry evidence: per request, how many primary attempts were made and
+    the backoff between them — capped so a failing provider is retried, then
+    failed over, never stormed. Once the circuit is open, zero primary attempts."""
+    summary = redis_client.get_circuit_summary()
+    return {
+        "policy_name": CIRCUIT_POLICY_NAME,
+        "max_attempts": BACKOFF_MAX_ATTEMPTS,
+        "backoff_schedule": summary.get("backoff_schedule", backoff_schedule()),
+        "total_primary_attempts": summary.get("total_primary_attempts"),
+        "attempts_without_breaker": summary.get("attempts_without_breaker"),
+        "storm_prevented": summary.get("storm_prevented"),
+        "retrylog": redis_client.get_circuit_retrylog(),
+    }
+
+
+@app.get("/resilience/failover-reconcile")
+def resilience_failover_reconcile() -> dict:
+    """Reconcile the three sources of truth for the drill: the caller-facing
+    summary, the Redis role tally, and the PostgreSQL receipts — confirmed only
+    when the primary/fallback counts agree and the circuit recovered."""
+    summary = redis_client.get_circuit_summary()
+    api = {"primary": summary.get("primary_served", 0),
+           "fallback": summary.get("fallback_served", 0)}
+    redis_counts = redis_client.circuit_counts()
+    receipts = postgres.count_circuit_roles()
+    roles = {}
+    for role in ("primary", "fallback"):
+        a = int(api.get(role, 0))
+        r = int(redis_counts.get(role, 0))
+        p = int(receipts.get(role, 0))
+        roles[role] = {"api": a, "redis": r, "receipts": p, "agree": a == r == p}
+    counts_agree = all(v["agree"] for v in roles.values())
+    recovered = bool(summary.get("recovered"))
+    total = sum(api.values())
+    receipts_complete = total > 0 and sum(receipts.values()) == total
+    confirmed = counts_agree and recovered and receipts_complete
+    return {
+        "policy_name": CIRCUIT_POLICY_NAME,
+        "roles": roles,
+        "counts_agree": counts_agree,
+        "recovered": recovered,
+        "receipts_complete": receipts_complete,
+        "disposition": "CONFIRMED" if confirmed else "BLOCKED",
     }
 
 

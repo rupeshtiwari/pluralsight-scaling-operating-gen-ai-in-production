@@ -38,6 +38,9 @@ ALTER TABLE receipts ADD COLUMN IF NOT EXISTS override_class TEXT;
 -- request_class is the caller-declared traffic class.
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS disposition TEXT;
 ALTER TABLE receipts ADD COLUMN IF NOT EXISTS request_class TEXT;
+-- Additive column for the circuit breaker (Module 2, Clip 3); the model a
+-- request fell back FROM when the primary was unsafe. NULL for primary-served.
+ALTER TABLE receipts ADD COLUMN IF NOT EXISTS fallback_from TEXT;
 """
 
 
@@ -55,7 +58,8 @@ def insert_receipt(receipt: dict) -> None:
     # (Module 2 Clip 2) are set only by their own policies; default them so
     # baseline and weighted receipts insert unchanged.
     receipt = {"complexity": None, "override_class": None,
-               "disposition": None, "request_class": None, **receipt}
+               "disposition": None, "request_class": None,
+               "fallback_from": None, **receipt}
     with connect() as conn:
         conn.execute(
             """
@@ -64,14 +68,14 @@ def insert_receipt(receipt: dict) -> None:
                 route_reason, latency_target_ms, prompt_tokens,
                 completion_tokens, total_tokens, cost_estimate_usd,
                 quality_score, policy_name, complexity, override_class,
-                disposition, request_class
+                disposition, request_class, fallback_from
             ) VALUES (
                 %(request_id)s, %(selected_model)s, %(provider_tier)s,
                 %(provider_status)s, %(route_reason)s, %(latency_target_ms)s,
                 %(prompt_tokens)s, %(completion_tokens)s, %(total_tokens)s,
                 %(cost_estimate_usd)s, %(quality_score)s, %(policy_name)s,
                 %(complexity)s, %(override_class)s,
-                %(disposition)s, %(request_class)s
+                %(disposition)s, %(request_class)s, %(fallback_from)s
             )
             ON CONFLICT (request_id) DO NOTHING
             """,
@@ -147,6 +151,44 @@ def dispositions_detail(limit_each: int = 2) -> list[dict]:
     for r in rows:
         r["cost_estimate_usd"] = float(r["cost_estimate_usd"])
     return rows
+
+
+def circuit_receipts() -> list[dict]:
+    """Circuit-breaker receipts in order, tagged with what served each request
+    (primary vs fallback) and the model it fell back from — the durable proof
+    that failover happened and later recovered."""
+    sql = """
+        SELECT request_id, selected_model, provider_tier, route_reason,
+               fallback_from, total_tokens, cost_estimate_usd, provider_status
+        FROM receipts WHERE policy_name = 'circuit_breaker'
+        ORDER BY created_at
+    """
+    with connect() as conn:
+        cur = conn.execute(sql)
+        cols = [d.name for d in cur.description]
+        rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+    for r in rows:
+        r["cost_estimate_usd"] = float(r["cost_estimate_usd"])
+    return rows
+
+
+def clear_circuit_receipts() -> None:
+    """Remove prior circuit-breaker receipts so re-running the drill is
+    idempotent and the failover reconciliation always matches the latest run."""
+    with connect() as conn:
+        conn.execute("DELETE FROM receipts WHERE policy_name = 'circuit_breaker'")
+
+
+def count_circuit_roles() -> dict[str, int]:
+    """Count circuit receipts by serving role: primary (fallback_from IS NULL)
+    vs fallback (fallback_from set)."""
+    sql = """
+        SELECT CASE WHEN fallback_from IS NULL THEN 'primary' ELSE 'fallback' END
+                 AS role, count(*)
+        FROM receipts WHERE policy_name = 'circuit_breaker' GROUP BY 1
+    """
+    with connect() as conn:
+        return {k: int(v) for k, v in conn.execute(sql).fetchall()}
 
 
 def inconsistent_receipts() -> int:
