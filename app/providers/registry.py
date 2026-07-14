@@ -302,10 +302,13 @@ def backoff_schedule() -> list[dict]:
 # journey closed -> open -> half_open -> recovered, repeatably. Each entry is the
 # primary's condition for that request; the fallback stays healthy throughout.
 CIRCUIT_DRILL_PRIMARY = "balanced-std"
-# Six failures then two healthy calls: trips the breaker (3 consecutive fails),
-# sheds while open, takes a half-open probe that fails and reopens, then a second
-# probe that succeeds and recovers — every state exercised, storm visibly avoided.
-CIRCUIT_DRILL_SEQUENCE = ["error", "error", "error", "error", "error", "error",
+# Six failures then two healthy calls. The failures deliberately span all three
+# deterministic modes — slow, error, quota — so the demo simulates each: the
+# first three (slow, error, quota) trip the breaker; it sheds while open; a
+# half-open probe (quota) fails and reopens; a second probe (healthy) succeeds
+# and recovers. Every state exercised, every failure mode simulated, storm
+# visibly avoided.
+CIRCUIT_DRILL_SEQUENCE = ["slow", "error", "quota", "error", "quota", "slow",
                           "healthy", "healthy"]
 
 

@@ -32,8 +32,8 @@ using deterministic provider stubs, not a live outage.)
 
 | Step | LO sub-element | What proves it |
 |------|----------------|----------------|
-| 1 | EO2e | Failure modes are deterministic provider stubs; thresholds are explicit |
-| 2 | EO2c | The circuit moves through closed, open, half-open, and recovered with thresholds visible |
+| 1 | EO2e | Slow, error, and quota failures are deterministic provider stubs; thresholds are explicit |
+| 2 | EO2c, EO2e | The circuit moves through closed, open, half-open, recovered, driven by all three failure modes |
 | 3 | EO2c | Fallback routes traffic to a healthy alternative; the caller sees no failure |
 | 4 | EO2d | Retries use exponential backoff, capped — and an open circuit makes zero attempts |
 | 5 | EO2e | Caller response, fallback receipt, and retry log reconcile to one confirmed outcome |
@@ -46,7 +46,7 @@ using deterministic provider stubs, not a live outage.)
 | 2 | `/resilience/circuit` | One drill walks every circuit state, each transition tagged |
 | 3 | `/resilience/fallback` | A healthy alternative keeps the caller whole while the primary is unsafe |
 | 4 | `/resilience/retry-log` | Backoff spaces the retries and an open circuit prevents the storm |
-| 5 | `/resilience/failover-reconcile` | Caller, Redis, and receipts agree — and the circuit recovered |
+| 5 | `/resilience/failover-reconcile` | Caller response, fallback receipt, and retry log agree — and the circuit recovered |
 
 ## Prerequisites
 
@@ -135,22 +135,29 @@ curl -s http://localhost:8000/resilience/circuit | python3 scripts/fmt.py --type
 ```
 
 **Expected output:** ★ `primary: balanced-std`, ★ `fallback: econo-mini`,
-★ `tripped: true`, ★ `recovered: true`, then an eight-row journey whose `circuit`
-column shows `closed`, then `open`, then `half_open`, then back to `closed`, and
-whose `transition` column reads `failover`, `trip`, `shed`, `probe_failed`,
-`recovered`, `healthy`.
+★ `tripped: true`, ★ `recovered: true`, then an eight-row journey whose `primary
+cond` column spans all three failure modes — `slow`, `error`, `quota` — whose
+`circuit` column shows `closed`, then `open`, then `half_open`, then back to
+`closed`, and whose `transition` column reads `failover`, `trip`, `shed`,
+`probe_failed`, `recovered`, `healthy`.
 
 **What the learner should notice:** This is the state machine doing its whole job in
-one pass. The first three requests hit an erroring primary: each is retried, fails,
-and **fails over** — and on the third the failure count reaches the threshold and the
-circuit **trips** to `open`. While `open`, requests are **shed** straight to the
-fallback with zero primary attempts. After the cooldown, one request is handled in
-`half_open` — a single probe — and because the primary is still erroring, the probe
-fails and the circuit stays open. Later, once the primary is healthy again, the next
-`half_open` probe succeeds and the circuit is **recovered** to `closed`. The `circuit`
-column is the key: it shows the exact state each request was handled under, so
-`half_open` is not a hidden internal detail — it is a visible, thresholded step
-between failing and trusting the provider again.
+one pass, against all three deterministic failure modes. Read the `primary cond`
+column: the first three requests hit the primary while it returns a **slow**
+response, then a hard **error**, then a **quota** exhaustion — three different faults,
+each simulated by a provider stub, and each counting equally as a failure. Every one
+is retried, fails, and **fails over** to the alternative; on the third, the failure
+count reaches the threshold and the circuit **trips** to `open`. What matters is that
+the breaker does not care *which* fault occurred — slow, error, or quota, a failure
+is a failure, and three in a row is enough to stop trusting the provider. While
+`open`, requests are **shed** straight to the fallback with zero primary attempts.
+After the cooldown, one request is handled in `half_open` — a single probe — and
+because the primary is still failing (a `quota` fault this time), the probe fails and
+the circuit reopens. Later, once the primary is healthy again, the next `half_open`
+probe succeeds and the circuit is **recovered** to `closed`. The `circuit` column is
+the key: it shows the exact state each request was handled under, so `half_open` is
+not a hidden internal detail — it is a visible, thresholded step between failing and
+trusting the provider again.
 
 ### Step 3: Prove fallback routing keeps the caller whole
 
@@ -211,23 +218,31 @@ confirmed outcome an operator can trust.
 ```bash
 curl -s http://localhost:8000/resilience/failover-reconcile | python3 scripts/fmt.py --type failover-reconcile \
   --title "Reconcile caller response, receipt, and retry log" \
-  --why "CONFIRMED only when the caller summary, the Redis tally, and the PostgreSQL receipts agree and the circuit recovered"
+  --why "CONFIRMED only when the caller response, the PostgreSQL fallback receipt, and the retry log agree and the circuit recovered"
 ```
 
 **Expected output:** ★ `disposition: CONFIRMED`, ★ `counts_agree: true`,
-★ `recovered: true`, ★ `receipts_complete: true`, then a per-role row —
-`primary 2/2/2 ✓`, `fallback 6/6/6 ✓`.
+★ `recovered: true`, ★ `receipts_complete: true`, then a per-role row with three
+columns — `caller`, `receipt`, `retry log` — reading `primary 2 / 2 / 2 ✓` and
+`fallback 6 / 6 / 6 ✓`.
 
 **What the learner should notice:** A resilience control you cannot audit is a
-resilience control you cannot trust, so this step reconciles the drill three ways.
-The caller-facing summary said two primary and six fallback; the live Redis tally
-says the same; and the durable PostgreSQL receipts — one per request, tagged with the
-model each fell back from — say the same again. Because all three agree **and** the
-circuit `recovered`, the disposition reads `CONFIRMED`. If a fallback had been
-miscounted, or a receipt lost, or the circuit had never closed, one of these checks
-would fail and the disposition would read `BLOCKED`, pointing at the row to
-investigate. Reset and run the drill again and you get the same `CONFIRMED` — failover
-and recovery, validated end to end, repeatably.
+resilience control you cannot trust, so this step reconciles the drill across the
+three independent records the outline calls for — and they are genuinely independent.
+The **caller response** is what each request returned to its caller: two served by the
+primary, six by the fallback. The **fallback receipt** is the durable PostgreSQL
+record — one row per request, each tagged with the model it fell back from — and it
+says the same two and six. The **retry log** is the separate attempt record, derived
+from what the retry machinery actually did rather than from the summary, and it counts
+the same split again. Three records, built by three different parts of the system,
+and every one agrees: two primary, six fallback. Because they agree **and** the circuit
+`recovered`, the disposition reads `CONFIRMED`. If a fallback had been miscounted, a
+receipt lost, or the retry log disagreed — or if the circuit had never closed — one
+check would fail and the disposition would read `BLOCKED`, pointing at the exact role
+to investigate. This is the difference between *hoping* failover worked and *proving*
+it did: the caller, the ledger, and the retry log all tell the identical story. Reset
+and run the drill again and you get the same `CONFIRMED` — failover and recovery,
+validated end to end, repeatably.
 
 ## Preflight check
 

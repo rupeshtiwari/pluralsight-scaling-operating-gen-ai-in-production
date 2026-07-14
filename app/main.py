@@ -666,23 +666,31 @@ def resilience_retry_log() -> dict:
 
 @app.get("/resilience/failover-reconcile")
 def resilience_failover_reconcile() -> dict:
-    """Reconcile the three sources of truth for the drill: the caller-facing
-    summary, the Redis role tally, and the PostgreSQL receipts — confirmed only
-    when the primary/fallback counts agree and the circuit recovered."""
+    """Reconcile the three sources of truth the outline names: the CALLER
+    response (the run summary), the fallback RECEIPT (PostgreSQL), and the RETRY
+    LOG (the per-request attempt record). Confirmed only when the primary and
+    fallback counts agree across all three and the circuit recovered."""
     summary = redis_client.get_circuit_summary()
-    api = {"primary": summary.get("primary_served", 0),
-           "fallback": summary.get("fallback_served", 0)}
-    redis_counts = redis_client.circuit_counts()
+    caller = {"primary": summary.get("primary_served", 0),
+              "fallback": summary.get("fallback_served", 0)}
     receipts = postgres.count_circuit_roles()
+    # The retry log's own tally: a request the primary served vs one that failed
+    # over — derived from the durable retry record, not the run summary.
+    retrylog = redis_client.get_circuit_retrylog()
+    log_counts = {
+        "primary": sum(1 for e in retrylog if e.get("outcome") == "primary_served"),
+        "fallback": sum(1 for e in retrylog if e.get("outcome") == "failed_over"),
+    }
     roles = {}
     for role in ("primary", "fallback"):
-        a = int(api.get(role, 0))
-        r = int(redis_counts.get(role, 0))
+        c = int(caller.get(role, 0))
         p = int(receipts.get(role, 0))
-        roles[role] = {"api": a, "redis": r, "receipts": p, "agree": a == r == p}
+        l = int(log_counts.get(role, 0))
+        roles[role] = {"caller": c, "receipt": p, "retry_log": l,
+                       "agree": c == p == l}
     counts_agree = all(v["agree"] for v in roles.values())
     recovered = bool(summary.get("recovered"))
-    total = sum(api.values())
+    total = sum(caller.values())
     receipts_complete = total > 0 and sum(receipts.values()) == total
     confirmed = counts_agree and recovered and receipts_complete
     return {

@@ -988,8 +988,8 @@ def fmt_retry_log(d: dict) -> str:
 def fmt_failover_reconcile(d: dict) -> str:
     out = [header(
         "Reconcile caller response, receipt, and retry log",
-        "CONFIRMED only when the caller summary, the Redis tally, and the "
-        "PostgreSQL receipts agree and the circuit recovered", width=80)]
+        "CONFIRMED only when the caller response, the PostgreSQL fallback "
+        "receipt, and the retry log agree and the circuit recovered", width=80)]
     disp = d.get("disposition")
     out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)
     out += star("counts_agree", d.get("counts_agree"),
@@ -998,15 +998,15 @@ def fmt_failover_reconcile(d: dict) -> str:
                 LIME if d.get("recovered") else PINK)
     out += star("receipts_complete", d.get("receipts_complete"),
                 LIME if d.get("receipts_complete") else PINK)
-    out.append(f"    {BLUE}{'role':<12}{'api':<7}{'redis':<8}{'receipts':<11}"
+    out.append(f"    {BLUE}{'role':<12}{'caller':<9}{'receipt':<10}{'retry log':<11}"
                f"{'agree'}{RESET}")
     out.append("")
     for role in ("primary", "fallback"):
         t = d.get("roles", {}).get(role, {})
         mark = f"{LIME}✓{RESET}" if t.get("agree") else f"{PINK}✗{RESET}"
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{role:<12}{str(t.get('api')):<7}"
-            f"{str(t.get('redis')):<8}{str(t.get('receipts')):<11}{RESET}{mark}")
+            f"  {PINK}★{RESET} {LGRN}{role:<12}{str(t.get('caller')):<9}"
+            f"{str(t.get('receipt')):<10}{str(t.get('retry_log')):<11}{RESET}{mark}")
         out.append("")
     return "\n".join(out)
 

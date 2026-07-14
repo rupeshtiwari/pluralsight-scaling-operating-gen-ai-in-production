@@ -71,19 +71,19 @@ fi
 
 # STEP 2 — run drill, walk the states
 step_head "2" "Walk the circuit through its states" \
-  "One drill must drive the circuit through closed, open, half-open, and recovered with each state visible." \
-  "an 8-row journey whose circuit column shows closed, open, and half_open, with tripped and recovered true."
+  "One drill must drive the circuit through closed, open, half-open, recovered — against all three failure modes." \
+  "an 8-row journey whose primary cond spans slow/error/quota and whose circuit column shows closed, open, half_open."
 show_cmd "curl -s -X POST \$API_BASE/resilience/drill >/dev/null; curl -s \$API_BASE/resilience/circuit | python3 scripts/fmt.py --type circuit"
 curl -s -X POST "$API_BASE/resilience/drill" >/dev/null
 RAW="$(curl -s "$API_BASE/resilience/circuit")"
 emit "$(printf '%s' "$RAW" | $FMT --type circuit 2>&1)"
-if echo "$RAW" | jq -e '.tripped==true and .recovered==true and ([.timeline[].circuit]|unique|(index("closed") and index("open") and index("half_open"))) and ([.timeline[].transition]|index("recovered"))' >/dev/null 2>&1; then
-  verdict 0 "the drill walks closed → open → half_open → recovered, every transition visible" "" ""
-  LO+=("Step 2: the breaker detects failures and moves through all four states (EO2c)")
+if echo "$RAW" | jq -e '.tripped==true and .recovered==true and ([.timeline[].circuit]|unique|(index("closed") and index("open") and index("half_open"))) and ([.timeline[].transition]|index("recovered")) and ([.timeline[].primary_condition]|unique|(index("slow") and index("error") and index("quota")))' >/dev/null 2>&1; then
+  verdict 0 "the drill walks closed → open → half_open → recovered, driven by slow, error, AND quota failures" "" ""
+  LO+=("Step 2: the breaker moves through all four states, simulating slow, error, and quota (EO2c, EO2e)")
 else
-  verdict 1 "the circuit did not walk all four states" \
-    "Check the state machine and CIRCUIT_DRILL_SEQUENCE in app/resilience/circuit.py and app/providers/registry.py." \
-    "After POST /resilience/drill, GET /resilience/circuit must show circuit states closed, open, half_open and a recovered transition with tripped=true, recovered=true. Fix app/resilience/circuit.py."
+  verdict 1 "the circuit did not walk all four states across all three failure modes" \
+    "Check the state machine and CIRCUIT_DRILL_SEQUENCE (must span slow/error/quota) in app/resilience/circuit.py and app/providers/registry.py." \
+    "After POST /resilience/drill, GET /resilience/circuit must show primary_condition spanning slow, error, quota; circuit states closed, open, half_open; a recovered transition; tripped=true, recovered=true. Fix app/providers/registry.py."
 fi
 
 # STEP 3 — fallback keeps the caller whole
@@ -118,20 +118,20 @@ else
     "GET /resilience/retry-log must show total_primary_attempts=12, attempts_without_breaker=18, storm_prevented=true. Fix app/resilience/circuit.py."
 fi
 
-# STEP 5 — reconcile caller / redis / receipts
+# STEP 5 — reconcile the three named sources: caller / fallback receipt / retry log
 step_head "5" "Reconcile caller response, receipt, and retry log" \
-  "The caller summary, the Redis tally, and the PostgreSQL receipts must agree and the circuit must have recovered." \
-  "disposition CONFIRMED with counts_agree, recovered, receipts_complete true; primary 2/2/2 and fallback 6/6/6."
+  "The caller response, the PostgreSQL fallback receipt, and the retry log must agree and the circuit must have recovered." \
+  "disposition CONFIRMED with counts_agree, recovered, receipts_complete true; primary 2/2/2 and fallback 6/6/6 across caller/receipt/retry log."
 show_cmd "curl -s \$API_BASE/resilience/failover-reconcile | python3 scripts/fmt.py --type failover-reconcile"
 RAW="$(curl -s "$API_BASE/resilience/failover-reconcile")"
 emit "$(printf '%s' "$RAW" | $FMT --type failover-reconcile 2>&1)"
-if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .counts_agree==true and .recovered==true and .receipts_complete==true and (.roles|to_entries|all(.value.agree==true))' >/dev/null 2>&1; then
-  verdict 0 "caller, Redis, and receipts reconcile to CONFIRMED — failover validated end to end" "" ""
+if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .counts_agree==true and .recovered==true and .receipts_complete==true and (.roles|to_entries|all(.value.agree==true and (.value|has("caller") and has("receipt") and has("retry_log"))))' >/dev/null 2>&1; then
+  verdict 0 "caller response, fallback receipt, and retry log reconcile to CONFIRMED — failover validated end to end" "" ""
   LO+=("Step 5: caller response, fallback receipt, and retry log agree on one outcome (EO2e)")
 else
-  verdict 1 "the failover reconciliation is not CONFIRMED" \
-    "Check /resilience/failover-reconcile in app/main.py and count_circuit_roles in app/db/postgres.py." \
-    "GET /resilience/failover-reconcile after a clean drill must return disposition=CONFIRMED with counts_agree, recovered, receipts_complete all true. Fix app/main.py."
+  verdict 1 "the failover reconciliation is not CONFIRMED across the three sources" \
+    "Check /resilience/failover-reconcile (caller/receipt/retry_log) in app/main.py and count_circuit_roles in app/db/postgres.py." \
+    "GET /resilience/failover-reconcile after a clean drill must return disposition=CONFIRMED with caller, receipt, and retry_log agreeing per role. Fix app/main.py."
 fi
 
 # COVERAGE + SUMMARY
