@@ -234,7 +234,7 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "${WHITE}PROMPT TO FIX THIS CHECK (paste into Claude if any step failed):${R}"
+emit "${WHITE}PROMPT TO FIX THIS CHECK (paste into your AI coding assistant if any step failed):${R}"
 emit "${GRAY}\"Run bash module1/scripts/preflight_check.sh. For every step marked ✗ FAIL,${R}"
 emit "${GRAY} read the HOW TO FIX and PROMPT TO FIX lines, open the named source file,${R}"
 emit "${GRAY} correct the app so the step's assertion passes, then reset with${R}"
