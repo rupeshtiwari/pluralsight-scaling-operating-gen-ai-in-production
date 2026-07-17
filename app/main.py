@@ -53,6 +53,7 @@ from app.providers.registry import (
 from app.observability import observe
 from app.incident import diagnose
 from app.lifecycle import prompts as lc_prompts
+from app.lifecycle import validation as lc_validation
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -878,6 +879,56 @@ def lc_prompts_reconcile() -> dict:
     """Reconcile the release state: active release matches approved, no candidate
     traffic in production, and the result reproduces → CONFIRMED / BLOCKED."""
     return lc_prompts.state().get("reconcile", {})
+
+
+# --- LLMOps lifecycle: model baseline validation (Module 3, Clip 3) --------
+
+@app.post("/lifecycle/validation/run")
+def lc_validation_run() -> dict:
+    """Evaluate every candidate model against the baseline gate (quality, latency,
+    cost, failure rate, output-contract compliance) and build the report."""
+    return lc_validation.run_validation()
+
+
+@app.get("/lifecycle/validation/gate")
+def lc_validation_gate() -> dict:
+    """The baseline gate summary — the dimensions checked and each candidate's
+    eligibility. Enforced by a real Pytest suite (tests/baseline)."""
+    return lc_validation.state().get("gate", {})
+
+
+@app.get("/lifecycle/validation/baseline")
+def lc_validation_baseline() -> dict:
+    """The approved baseline thresholds each candidate must clear, per dimension."""
+    return lc_validation.state().get("baseline", {})
+
+
+@app.get("/lifecycle/validation/pass")
+def lc_validation_pass() -> dict:
+    """The passing candidate — every dimension within its threshold, eligible for
+    promotion."""
+    return lc_validation.state().get("pass", {})
+
+
+@app.get("/lifecycle/validation/fail")
+def lc_validation_fail() -> dict:
+    """The failing candidate — the dimensions that drifted past threshold, blocked
+    from promotion."""
+    return lc_validation.state().get("fail", {})
+
+
+@app.get("/lifecycle/validation/decision")
+def lc_validation_decision() -> dict:
+    """The release decision per candidate — a candidate cannot become the default
+    without clearing the baseline."""
+    return lc_validation.state().get("decision", {})
+
+
+@app.get("/lifecycle/validation/reconcile")
+def lc_validation_reconcile() -> dict:
+    """Reconcile: the default stays on the approved model; only a baseline-passing
+    candidate is eligible → CONFIRMED / BLOCKED."""
+    return lc_validation.state().get("reconcile", {})
 
 
 @app.get("/receipts")

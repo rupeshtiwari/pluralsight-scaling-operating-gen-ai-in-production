@@ -1449,6 +1449,121 @@ def fmt_lc_reconcile(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- LLMOps lifecycle views: model baseline validation (M3, Clip 3) -------
+
+def _mv(value: Any, unit: str) -> str:
+    if unit == "$":
+        return f"${float(value):.2f}"
+    if unit == "%":
+        return f"{value}%"
+    if unit == "ms":
+        return f"{value}ms"
+    return str(value)
+
+
+def fmt_validation_gate(d: dict) -> str:
+    out = [header(
+        "Run the baseline gate",
+        "A candidate model must clear a five-dimension baseline — enforced by a "
+        "real Pytest suite — before it can be promoted", width=92)]
+    out += _noted("approved model", d.get("approved_model"), "the gate's reference", LIME)
+    out += _noted("checks", d.get("checks"),
+                  f"{len(d.get('dimensions', []))} dimensions × {len(d.get('candidates', []))} candidates", BLUE)
+    out += ctx("dimensions", ", ".join(d.get("dimensions", [])))
+    out.append("")
+    out += sect("candidates against the gate")
+    for c in d.get("candidates", []):
+        el = c.get("eligible")
+        ec = LIME if el else PINK
+        verdict = "eligible" if el else f"blocked ({c.get('breaches')} breach{'es' if c.get('breaches',0)!=1 else ''})"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(c.get('candidate')):<24}{RESET}"
+                   f"{GRAY}{str(c.get('label')):<20}{RESET}{ec}{verdict}{RESET}")
+        out.append("")
+    ge = d.get("gate_enforced")
+    out += star("gate enforced", str(ge).lower(), LIME if ge else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_validation_baseline(d: dict) -> str:
+    out = [header(
+        "Inspect the baseline thresholds",
+        "The approved baseline every candidate is measured against — quality, "
+        "latency, cost, failure rate, and contract compliance", width=86)]
+    out += _noted("approved model", d.get("approved_model"), "the reference the gate holds", LIME)
+    out.append(f"    {BLUE}{'dimension':<26}{'objective'}{RESET}")
+    out.append("")
+    for r in d.get("rows", []):
+        obj = f"{r.get('comparator')} {_mv(r.get('threshold'), r.get('unit',''))}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<26}{RESET}{BLUE}{obj}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_validation_candidate(d: dict) -> str:
+    el = d.get("eligible")
+    title = "Validate the passing candidate" if el else "Validate the failing candidate"
+    why = ("Every dimension is within its threshold — the candidate is eligible "
+           "for promotion" if el else
+           "The dimensions that drifted past threshold block the candidate from "
+           "promotion")
+    out = [header(title, why, width=88)]
+    out += star("candidate", d.get("candidate"))
+    out += _noted("verdict", "eligible" if el else "blocked",
+                  d.get("label"), LIME if el else PINK)
+    out.append(f"    {BLUE}{'dimension':<26}{'value':<12}{'objective':<14}{'status'}{RESET}")
+    out.append("")
+    for r in d.get("rows", []):
+        ok = r.get("status") == "pass"
+        sc = LIME if ok else PINK
+        val = _mv(r.get("value"), r.get("unit", ""))
+        obj = f"{r.get('comparator')} {_mv(r.get('threshold'), r.get('unit',''))}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<26}"
+                   f"{sc}{val:<12}{RESET}{BLUE}{obj:<14}{RESET}{sc}{r.get('status')}{RESET}")
+        out.append("")
+    if not el:
+        out += _noted("breaches", ", ".join(d.get("breaches", [])), "must be fixed before promotion", PINK)
+    return "\n".join(out)
+
+
+def fmt_validation_decision(d: dict) -> str:
+    out = [header(
+        "Record the release decision",
+        "Promote the candidate that cleared the baseline, block the one that did "
+        "not — neither becomes the default without passing", width=92)]
+    for dec in d.get("decisions", []):
+        el = dec.get("eligible")
+        ec = LIME if el else PINK
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(dec.get('candidate')):<24}{RESET}"
+                   f"{ec}{str(dec.get('decision'))}{RESET}")
+        bd = dec.get("becomes_default")
+        out.append(f"      {BLUE}becomes default{RESET} {LIME if not bd else PINK}{str(bd).lower()}{RESET}"
+                   f"   {GRAY}{dec.get('note')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_validation_reconcile(d: dict) -> str:
+    disp = d.get("disposition")
+    ok = disp == "CONFIRMED"
+    out = [header(
+        "Reconcile the release state",
+        "The default stays on the approved model; only a baseline-passing "
+        "candidate is eligible, and promotion still goes through a canary", width=90)]
+    out += star("disposition", disp, LIME if ok else PINK)
+    du = d.get("default_unchanged")
+    out += _noted("approved model", d.get("approved_model"),
+                  "default unchanged" if du else "default CHANGED", LIME if du else PINK)
+    out += _noted("eligible candidates", ", ".join(d.get("eligible_candidates", [])) or "none",
+                  "cleared the baseline", LIME)
+    out += _noted("blocked candidates", ", ".join(d.get("blocked_candidates", [])) or "none",
+                  "held back by the gate", PINK)
+    ge = d.get("gate_enforced")
+    out += _noted("gate enforced", str(ge).lower(), "by the Pytest baseline suite", LIME if ge else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -1508,6 +1623,11 @@ VIEWS = {
     "lc-rollback": fmt_lc_rollback,
     "lc-reproducibility": fmt_lc_reproducibility,
     "lc-reconcile": fmt_lc_reconcile,
+    "validation-gate": fmt_validation_gate,
+    "validation-baseline": fmt_validation_baseline,
+    "validation-candidate": fmt_validation_candidate,
+    "validation-decision": fmt_validation_decision,
+    "validation-reconcile": fmt_validation_reconcile,
 }
 
 

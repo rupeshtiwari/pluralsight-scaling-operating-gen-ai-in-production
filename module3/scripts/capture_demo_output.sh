@@ -51,5 +51,30 @@ run "Step 6 — Reconcile the release state" \
   "curl -s \$API_BASE/lifecycle/prompts/reconcile | python3 scripts/fmt.py --type lc-reconcile" \
   "curl -s $API_BASE/lifecycle/prompts/reconcile" lc-reconcile
 
+# --- Clip 3: validate model updates against quality baselines --------------
+rec ""
+rec "MODULE 3 · CLIP 3 — DEMO CAPTURE (validate model updates against quality baselines)"
+curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
+curl -s -X POST "$API_BASE/lifecycle/validation/run" >/dev/null 2>&1
+
+run "Step 1 — Run the baseline gate (Pytest)" \
+  "pytest tests/baseline -q; curl -s \$API_BASE/lifecycle/validation/gate | python3 scripts/fmt.py --type validation-gate" \
+  "curl -s $API_BASE/lifecycle/validation/gate" validation-gate
+run "Step 2 — Inspect the baseline thresholds" \
+  "curl -s \$API_BASE/lifecycle/validation/baseline | python3 scripts/fmt.py --type validation-baseline" \
+  "curl -s $API_BASE/lifecycle/validation/baseline" validation-baseline
+run "Step 3 — Validate the passing candidate" \
+  "curl -s \$API_BASE/lifecycle/validation/pass | python3 scripts/fmt.py --type validation-candidate" \
+  "curl -s $API_BASE/lifecycle/validation/pass" validation-candidate
+run "Step 4 — Validate the failing candidate" \
+  "curl -s \$API_BASE/lifecycle/validation/fail | python3 scripts/fmt.py --type validation-candidate" \
+  "curl -s $API_BASE/lifecycle/validation/fail" validation-candidate
+run "Step 5 — Record the release decision" \
+  "curl -s \$API_BASE/lifecycle/validation/decision | python3 scripts/fmt.py --type validation-decision" \
+  "curl -s $API_BASE/lifecycle/validation/decision" validation-decision
+run "Step 6 — Reconcile the release state" \
+  "curl -s \$API_BASE/lifecycle/validation/reconcile | python3 scripts/fmt.py --type validation-reconcile" \
+  "curl -s $API_BASE/lifecycle/validation/reconcile" validation-reconcile
+
 rec ""
 rec "transcript written to: module3/demo_capture.txt"
