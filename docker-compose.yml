@@ -108,3 +108,22 @@ services:
       - "9090:9090"     # Prometheus UI — query metrics and see firing SLO alerts
     depends_on:
       - api
+
+  # Grafana (Module 2, Clip 6). The operator dashboard the incident demo reads —
+  # datasource and the "GenAI incident" board are provisioned, so it is live the
+  # moment the obs profile is up. Anonymous access on for a friction-free demo.
+  grafana:
+    image: grafana/grafana:11.1.4
+    profiles: ["obs"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"     # Grafana UI — the provisioned GenAI incident dashboard
+    depends_on:
+      - prometheus

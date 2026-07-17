@@ -1154,6 +1154,177 @@ def fmt_correlate(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- Incident diagnosis views (Module 2, Clip 6) --------------------------
+
+def _cell_value(v: Any, unit: str) -> str:
+    if unit == "$":
+        return f"${float(v):.4f}"
+    if unit == "%":
+        return f"{v}%"
+    if unit == "ms":
+        return f"{v}ms"
+    return str(v)
+
+
+def fmt_incident_alerts(d: dict) -> str:
+    out = [header(
+        "Read the alert timeline",
+        "Which signal fired first — the first alert is a symptom, not the root "
+        "cause", width=86)]
+    out += star("first signal", d.get("first_signal"), PINK)
+    out += sect("alerts in fire order")
+    for a in d.get("alerts", []):
+        sev = str(a.get("severity"))
+        sc = PINK if sev == "page" else LGRN
+        tag = f"   {PINK}← first bad signal{RESET}" if a.get("first_signal") else ""
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(a.get('at')):<8}{RESET}"
+                   f"{WHITE}{str(a.get('alert'))}{RESET}{tag}")
+        out.append(f"      {BLUE}dimension{RESET} {a.get('dimension')}   "
+                   f"{BLUE}severity{RESET} {sc}{sev}{RESET}   "
+                   f"{GRAY}{a.get('detail')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_incident_dashboard(d: dict) -> str:
+    out = [header(
+        "Open the operator dashboard",
+        "Latency, quota saturation, cost per request, and quality pass rate — "
+        "each baseline versus current against its objective", width=100)]
+    out += star("window requests", d.get("window_requests"))
+    out.append(f"    {BLUE}{'metric':<24}{'dimension':<16}{'baseline':<12}"
+               f"{'current':<12}{'objective':<14}{'status'}{RESET}")
+    out.append("")
+    for p in d.get("panels", []):
+        unit = p.get("unit", "")
+        breach = p.get("status") == "breach"
+        curcol = PINK if breach else LIME
+        stc = PINK if breach else LIME
+        base_s = _cell_value(p.get("baseline"), unit)
+        cur_s = _cell_value(p.get("current"), unit)
+        obj_s = f"{p.get('comparator')} {_cell_value(p.get('objective'), unit)}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(p.get('metric')):<24}{RESET}"
+                   f"{GRAY}{str(p.get('dimension')):<16}{RESET}"
+                   f"{GRAY}{base_s:<12}{RESET}{curcol}{cur_s:<12}{RESET}"
+                   f"{BLUE}{obj_s:<14}{RESET}{stc}{p.get('status')}{RESET}")
+        out.append("")
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_incident_isolate(d: dict) -> str:
+    out = [header(
+        "Isolate the latency from one trace",
+        "Queueing, retry, and fallback are innocent — the degraded provider call "
+        "owns the time", width=88)]
+    out += star("trace id", d.get("trace_id"))
+    out += star("total", f"{d.get('total_ms')} ms")
+    out += sect("who owns the time (queueing / retry / fallback / provider)")
+    out.append(f"    {BLUE}{'stage':<16}{'duration':<11}{'share':<9}{'verdict'}{RESET}")
+    out.append("")
+    for c in d.get("contributors", []):
+        root = c.get("verdict") == "root cause"
+        vc = PINK if root else LIME
+        barcol = PINK if root else ADA
+        share = float(c.get("share_pct", 0))
+        bar = "█" * max(1, round(share / 100 * 20))
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(c.get('stage')):<16}"
+                   f"{str(c.get('ms'))+'ms':<11}{str(c.get('share_pct'))+'%':<9}{RESET}"
+                   f"{barcol}{bar}{RESET} {vc}{c.get('verdict')}{RESET}")
+        out.append("")
+    out += _noted("provider", f"{d.get('provider')} ({d.get('provider_status')})",
+                  "the fault mode", PINK)
+    out += star("root cause", d.get("root_cause"), PINK)
+    return "\n".join(out)
+
+
+def fmt_incident_quota(d: dict) -> str:
+    out = [header(
+        "Prove the quota pressure and the shed",
+        "Admission control sheds excess load with a 429 and a Retry-After, "
+        "protecting the provider behind its quota", width=88)]
+    out += _noted("provider", f"{d.get('provider')} · {d.get('tier')}",
+                  f"{d.get('quota_mode')} quota, {d.get('request_class')} class")
+    out += _noted("rate limit", f"{d.get('rate_limit')} per {d.get('window_seconds')}s",
+                  "the operator's shed knob")
+    out += sect("what happened to the burst")
+    out += _noted("submitted", d.get("submitted"), "requests in the window")
+    out += _noted("accepted", d.get("accepted"), "admitted and served", LIME)
+    out += _noted("rejected (429)", d.get("rejected_429"),
+                  f"shed with Retry-After {d.get('retry_after_seconds')}s", PINK)
+    out += _noted("quota utilization", f"{d.get('quota_utilization_pct')}%",
+                  "the provider, held below exhaustion", PINK)
+    out += star("provider status", d.get("provider_status"),
+                _status_color(d.get("provider_status", "")))
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_incident_cost(d: dict) -> str:
+    up = float(d.get("current_per_request_usd", 0)) > float(d.get("baseline_per_request_usd", 0))
+    out = [header(
+        "Trace the cost drift to its cause",
+        "The extra dollars tie to retries and failover on the degraded provider "
+        "— reconciled to the cent, not hand-waved", width=90)]
+    out += _noted("baseline", f"${float(d.get('baseline_per_request_usd',0)):.4f} / request",
+                  "before the incident")
+    out += _noted("current", f"${float(d.get('current_per_request_usd',0)):.4f} / request",
+                  f"+{d.get('drift_pct')}%", PINK if up else LIME)
+    out += _noted("objective", f"${float(d.get('objective_per_request_usd',0)):.4f} / request",
+                  "the cost budget", BLUE)
+    out += sect("where the extra dollars went")
+    out.append(f"    {BLUE}{'driver':<26}{'add / request':<16}{'why'}{RESET}")
+    out.append("")
+    for dr in d.get("drivers", []):
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(dr.get('driver')):<26}"
+                   f"+${float(dr.get('add_per_request_usd',0)):.4f}{RESET}")
+        out.append(f"      {GRAY}{dr.get('detail')}{RESET}")
+        out.append("")
+    rc = LIME if d.get("reconciles") else PINK
+    out += star("reconciles to current", str(d.get("reconciles")).lower(), rc)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_incident_quality(d: dict) -> str:
+    below = float(d.get("pass_rate_pct", 100)) < float(d.get("objective_pass_rate_pct", 90))
+    out = [header(
+        "Confirm the quality regression from sampling",
+        "Grouped failure reasons that cluster on the degraded provider — every "
+        "failure is a confident, wrong 200", width=90)]
+    out += _noted("pass rate",
+                  f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
+                  f"baseline {d.get('baseline_pass_rate_pct')}%, objective "
+                  f">= {d.get('objective_pass_rate_pct')}%", PINK if below else LIME)
+    out += sect("failure reasons (grouped)")
+    for r in d.get("failure_reasons", []):
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('reason')):<34}{RESET}"
+                   f"{PINK}×{r.get('count')}{RESET}")
+        out.append("")
+    out += _noted("cluster", d.get("cluster"), "not random — the degraded provider", PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_incident_action(d: dict) -> str:
+    out = [header(
+        "Choose the operator action from the evidence",
+        "Four alerts, one provider fault, one evidence-based decision per "
+        "dimension — act on the cause, not each symptom", width=94)]
+    out += star("root cause", d.get("root_cause"), PINK)
+    out += sect("decisions (evidence → action → expected effect)")
+    for dec in d.get("decisions", []):
+        out.append(f"  {PINK}★{RESET} {WHITE}{str(dec.get('dimension'))}{RESET}   "
+                   f"{GRAY}{dec.get('evidence')}{RESET}")
+        out.append(f"      {BLUE}action{RESET} {LGRN}{dec.get('action')}{RESET}")
+        out.append(f"      {BLUE}expected{RESET} {ADA}{dec.get('expected_effect')}{RESET}")
+        out.append("")
+    disp = d.get("disposition")
+    out += star("disposition", disp, LIME if disp == "ACT" else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -1200,6 +1371,13 @@ VIEWS = {
     "slo": fmt_slo,
     "diagnose": fmt_diagnose,
     "correlate": fmt_correlate,
+    "incident-alerts": fmt_incident_alerts,
+    "incident-dashboard": fmt_incident_dashboard,
+    "incident-isolate": fmt_incident_isolate,
+    "incident-quota": fmt_incident_quota,
+    "incident-cost": fmt_incident_cost,
+    "incident-quality": fmt_incident_quality,
+    "incident-action": fmt_incident_action,
 }
 
 

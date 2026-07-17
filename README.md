@@ -187,8 +187,8 @@ All package and container versions are pinned in `requirements.txt` and
 | EO1b | Weighted load balancing across model tiers | 1 | ✅ Policy shows weight + latency target + cost per tier; `redis-cli HGETALL` proves the 10/6/4 (50/30/20) spread directly; validation confirms observed == configured |
 | EO1c | Payload-based routing to appropriate tiers | 1 | ✅ Declared complexity (separate from prompt size) selects the tier; token estimate + complexity + cost shown and persisted per request |
 | EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Overrides bypass the decision in both directions (bulk→economy, legal→premium); `would_have_selected` + Redis `weighted: 0` prove the bypass |
-| EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | k6 spike, HTTP 429 receipt, circuit states, backoff timing _(planned)_ |
-| EO3a–e | Tracing, logging schema, quality sampling, SLOs, incident diagnosis | 2 | Trace spans, structured logs, Grafana, SLO alerts _(planned)_ |
+| EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | ✅ Real k6 spike + atomic Redis admission (429 + Retry-After), circuit states, deterministic backoff, incident shed |
+| EO3a–e | Tracing, logging schema, quality sampling, SLOs, incident diagnosis | 2 | ✅ OpenTelemetry spans, structured logs, Prometheus `/metrics` + Grafana board, SLO alerts, root-cause incident diagnosis |
 | EO4a–d | Prompt versioning, model validation, canary, deprecation | 3 | Version rollback, baseline gate, canary promotion _(planned)_ |
 | EO5a–d | Readiness criteria, deployment patterns, runbook, maturity | 3 | Readiness audit, deployment decision, runbook _(planned)_ |
 
@@ -207,8 +207,8 @@ All package and container versions are pinned in `requirements.txt` and
 
 ## API Reference
 
-Endpoints available today (Module 1 complete; Module 2 Clip 2 landed). More are
-added as later modules land.
+Endpoints available today (Module 1 and Module 2 complete). More are added as
+later modules land.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -255,6 +255,14 @@ added as later modules land.
 | `/observe/slo` | GET | SLO evaluation across latency, availability, quality → OK / ALERT |
 | `/observe/diagnose` | GET | Slow-request root cause from nested span timings |
 | `/observe/correlate` | GET | Tie one request's cost and quality to the operator action |
+| `/incident/run` | POST | Trigger the controlled incident — one provider fault, four alerts |
+| `/incident/alerts` | GET | Alert timeline in fire order — the first bad signal |
+| `/incident/dashboard` | GET | Operator dashboard — latency, quota, cost, quality vs objectives |
+| `/incident/isolate` | GET | Isolate the latency from one trace — provider vs queue/retry/fallback |
+| `/incident/quota` | GET | Quota pressure and the 429 shed — admission control protecting the provider |
+| `/incident/cost` | GET | Cost drift reconciled to its drivers on the degraded provider |
+| `/incident/quality` | GET | Quality regression from sampling — grouped failure reasons |
+| `/incident/action` | GET | Root cause + one evidence-based action per dimension |
 
 ## Project Structure
 

@@ -1,0 +1,13 @@
+# Grafana datasource provisioning (Module 2, Clip 6). Points Grafana at the
+# Prometheus server in the obs profile so the GenAI incident dashboard has live
+# data with no manual setup — the dashboard is provisioned too.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

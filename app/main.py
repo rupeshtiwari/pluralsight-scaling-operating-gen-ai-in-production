@@ -51,6 +51,7 @@ from app.providers.registry import (
     weighted_sequence,
 )
 from app.observability import observe
+from app.incident import diagnose
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -767,6 +768,64 @@ def observe_correlate() -> dict:
     """Correlate one request's token count, cost, quality status, and the
     operator action from the structured record."""
     return observe.state().get("correlate", {})
+
+
+# --- Incident diagnosis: the capstone (Module 2, Clip 6) -------------------
+
+@app.post("/incident/run")
+def incident_run() -> dict:
+    """Trigger the deterministic incident: one provider fault (balanced-ai
+    degraded) that lights up latency, quota, cost, and quality at once."""
+    return diagnose.run_incident()
+
+
+@app.get("/incident/alerts")
+def incident_alerts() -> dict:
+    """The alert timeline — which SLO fired first. The first signal is a symptom,
+    not the root cause."""
+    return diagnose.state().get("alerts", {})
+
+
+@app.get("/incident/dashboard")
+def incident_dashboard() -> dict:
+    """The operator dashboard: latency, quota saturation, cost per request, and
+    quality pass rate, each baseline vs current against its objective."""
+    return diagnose.state().get("dashboard", {})
+
+
+@app.get("/incident/isolate")
+def incident_isolate() -> dict:
+    """Isolate the latency from one trace: queueing, retry, and fallback are
+    innocent; the degraded provider call owns the time."""
+    return diagnose.state().get("isolate", {})
+
+
+@app.get("/incident/quota")
+def incident_quota() -> dict:
+    """The quota pressure: admission control sheds excess load with a 429 and a
+    Retry-After, protecting the provider behind its quota."""
+    return diagnose.state().get("quota", {})
+
+
+@app.get("/incident/cost")
+def incident_cost() -> dict:
+    """The cost drift tied to its cause: retries and failover on the degraded
+    provider, reconciled to the dollar."""
+    return diagnose.state().get("cost", {})
+
+
+@app.get("/incident/quality")
+def incident_quality() -> dict:
+    """The quality regression confirmed by sampling: grouped failure reasons that
+    cluster on the degraded provider."""
+    return diagnose.state().get("quality", {})
+
+
+@app.get("/incident/action")
+def incident_action() -> dict:
+    """The root cause and the coordinated action: four alerts, one provider fault,
+    one evidence-based decision per dimension."""
+    return diagnose.state().get("action", {})
 
 
 @app.get("/receipts")

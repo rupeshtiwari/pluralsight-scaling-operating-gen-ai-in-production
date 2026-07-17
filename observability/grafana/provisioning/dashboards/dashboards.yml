@@ -1,0 +1,16 @@
+# Grafana dashboard provisioning (Module 2, Clip 6). Loads every dashboard JSON
+# under /var/lib/grafana/dashboards on startup, so the GenAI incident board is
+# there the moment Grafana comes up — no import step during the demo.
+apiVersion: 1
+
+providers:
+  - name: genai
+    orgId: 1
+    folder: ""
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
