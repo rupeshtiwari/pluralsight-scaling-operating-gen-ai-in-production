@@ -54,6 +54,7 @@ from app.observability import observe
 from app.incident import diagnose
 from app.lifecycle import prompts as lc_prompts
 from app.lifecycle import validation as lc_validation
+from app.lifecycle import canary as lc_canary
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -929,6 +930,57 @@ def lc_validation_reconcile() -> dict:
     """Reconcile: the default stays on the approved model; only a baseline-passing
     candidate is eligible → CONFIRMED / BLOCKED."""
     return lc_validation.state().get("reconcile", {})
+
+
+# --- LLMOps lifecycle: canary promotion, hold, rollback (Module 3, Clip 5) --
+
+@app.post("/lifecycle/canary/run")
+def lc_canary_run() -> dict:
+    """Build the canary state: start a 10% canary, watch its signals, evaluate the
+    promotion criteria, and produce the promote and rollback decisions."""
+    return lc_canary.run_canary()
+
+
+@app.get("/lifecycle/canary/start")
+def lc_canary_start() -> dict:
+    """The canary start: 10% of eligible traffic shifted to the candidate release,
+    with the blast radius bounded to that slice."""
+    return lc_canary.state().get("start", {})
+
+
+@app.get("/lifecycle/canary/watch")
+def lc_canary_watch() -> dict:
+    """The canary's live signals — quality, latency, cost, error rate, and contract
+    compliance — next to the approved release."""
+    return lc_canary.state().get("watch", {})
+
+
+@app.get("/lifecycle/canary/criteria")
+def lc_canary_criteria() -> dict:
+    """The promotion criteria: every signal within threshold AND a receipt trail
+    proving the exposure stayed bounded."""
+    return lc_canary.state().get("criteria", {})
+
+
+@app.get("/lifecycle/canary/promote")
+def lc_canary_promote() -> dict:
+    """The promote decision for a healthy canary — a staged ramp to the new
+    default, each stage still watched."""
+    return lc_canary.state().get("promote", {})
+
+
+@app.get("/lifecycle/canary/rollback")
+def lc_canary_rollback() -> dict:
+    """The rollback decision for a degraded canary — production returns to the
+    approved release, with the blast radius capped at the canary slice."""
+    return lc_canary.state().get("rollback", {})
+
+
+@app.get("/lifecycle/canary/reconcile")
+def lc_canary_reconcile() -> dict:
+    """Reconcile after rollback: production is on the approved release, canary
+    exposure is zero, and the blast radius stayed bounded → CONFIRMED / BLOCKED."""
+    return lc_canary.state().get("reconcile", {})
 
 
 @app.get("/receipts")

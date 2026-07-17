@@ -76,5 +76,30 @@ run "Step 6 — Reconcile the release state" \
   "curl -s \$API_BASE/lifecycle/validation/reconcile | python3 scripts/fmt.py --type validation-reconcile" \
   "curl -s $API_BASE/lifecycle/validation/reconcile" validation-reconcile
 
+# --- Clip 5: canary promotion, hold, and rollback --------------------------
+rec ""
+rec "MODULE 3 · CLIP 5 — DEMO CAPTURE (canary promotion, hold, and rollback)"
+curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
+curl -s -X POST "$API_BASE/lifecycle/canary/run" >/dev/null 2>&1
+
+run "Step 1 — Start the canary" \
+  "curl -s -X POST \$API_BASE/lifecycle/canary/run >/dev/null; curl -s \$API_BASE/lifecycle/canary/start | python3 scripts/fmt.py --type canary-start" \
+  "curl -s $API_BASE/lifecycle/canary/start" canary-start
+run "Step 2 — Watch the canary signals" \
+  "curl -s \$API_BASE/lifecycle/canary/watch | python3 scripts/fmt.py --type canary-watch" \
+  "curl -s $API_BASE/lifecycle/canary/watch" canary-watch
+run "Step 3 — Check the promotion criteria" \
+  "curl -s \$API_BASE/lifecycle/canary/criteria | python3 scripts/fmt.py --type canary-criteria" \
+  "curl -s $API_BASE/lifecycle/canary/criteria" canary-criteria
+run "Step 4 — Promote the healthy canary" \
+  "curl -s \$API_BASE/lifecycle/canary/promote | python3 scripts/fmt.py --type canary-promote" \
+  "curl -s $API_BASE/lifecycle/canary/promote" canary-promote
+run "Step 5 — Hold and roll back the degraded canary" \
+  "curl -s \$API_BASE/lifecycle/canary/rollback | python3 scripts/fmt.py --type canary-rollback" \
+  "curl -s $API_BASE/lifecycle/canary/rollback" canary-rollback
+run "Step 6 — Reconcile after rollback" \
+  "curl -s \$API_BASE/lifecycle/canary/reconcile | python3 scripts/fmt.py --type canary-reconcile" \
+  "curl -s $API_BASE/lifecycle/canary/reconcile" canary-reconcile
+
 rec ""
 rec "transcript written to: module3/demo_capture.txt"
