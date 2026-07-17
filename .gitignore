@@ -12,3 +12,8 @@ environment-setup/setup_log.txt
 
 # k6 generated summary
 module2/k6/last_summary.json
+
+# local IDE config + OS cruft — never publish
+.claude/
+.DS_Store
+**/.DS_Store
