@@ -52,6 +52,7 @@ from app.providers.registry import (
 )
 from app.observability import observe
 from app.incident import diagnose
+from app.lifecycle import prompts as lc_prompts
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -826,6 +827,57 @@ def incident_action() -> dict:
     """The root cause and the coordinated action: four alerts, one provider fault,
     one evidence-based decision per dimension."""
     return diagnose.state().get("action", {})
+
+
+# --- LLMOps lifecycle: prompt versioning + rollback (Module 3, Clip 2) -----
+
+@app.post("/lifecycle/prompts/run")
+def lc_prompts_run() -> dict:
+    """Read the real prompt repository and build the versioning/rollback state:
+    receipts, candidate isolation, rollback, reproducibility, reconcile."""
+    return lc_prompts.run_prompts()
+
+
+@app.get("/lifecycle/prompts/registry")
+def lc_prompts_registry() -> dict:
+    """The prompt version registry: version ids, owners, fixtures, model pins,
+    evaluation run ids, release tags, and lifecycle status."""
+    return lc_prompts.state().get("registry", {})
+
+
+@app.get("/lifecycle/prompts/receipts")
+def lc_prompts_receipts() -> dict:
+    """Request receipts, each linking a prompt version, model version, and
+    evaluation run id to a release tag and result hash."""
+    return lc_prompts.state().get("receipts", {})
+
+
+@app.get("/lifecycle/prompts/isolation")
+def lc_prompts_isolation() -> dict:
+    """The candidate prompt change, deployed to an isolated lane that approved
+    production traffic never reaches."""
+    return lc_prompts.state().get("isolation", {})
+
+
+@app.get("/lifecycle/prompts/rollback")
+def lc_prompts_rollback() -> dict:
+    """The rollback: production returns to the approved release id, targeting a
+    retained, immutable version."""
+    return lc_prompts.state().get("rollback", {})
+
+
+@app.get("/lifecycle/prompts/reproducibility")
+def lc_prompts_reproducibility() -> dict:
+    """Replay the approved version with its preserved prompt, fixture, and model,
+    and confirm the recomputed result hash matches the recorded one."""
+    return lc_prompts.state().get("reproducibility", {})
+
+
+@app.get("/lifecycle/prompts/reconcile")
+def lc_prompts_reconcile() -> dict:
+    """Reconcile the release state: active release matches approved, no candidate
+    traffic in production, and the result reproduces → CONFIRMED / BLOCKED."""
+    return lc_prompts.state().get("reconcile", {})
 
 
 @app.get("/receipts")

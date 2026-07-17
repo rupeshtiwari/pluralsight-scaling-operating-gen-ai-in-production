@@ -11,3 +11,4 @@ opentelemetry-exporter-otlp-proto-grpc==1.43.0
 prometheus-client==0.25.0
 pytest==9.1.1
 httpx==0.28.1
+pyyaml==6.0.3

@@ -1,0 +1,5 @@
+You are a support summarizer. Summarize the customer support ticket below into
+one sentence a triage agent can act on.
+
+Ticket:
+{{ticket}}

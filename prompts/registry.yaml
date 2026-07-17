@@ -1,0 +1,47 @@
+# Prompt version registry (Module 3, Clip 2).
+#
+# Prompts are versioned like code. Every version is an immutable file under
+# prompts/<prompt_id>/, and this manifest records the metadata that makes an
+# experiment reproducible and a rollback safe: the owner, the fixture it was
+# evaluated against, the model version it was pinned to, the evaluation run that
+# graded it, its release tag, and its lifecycle status.
+#
+# status values:
+#   approved    — the current production default; approved traffic uses this
+#   superseded  — a previously-approved version, kept for reproducible rollback
+#   candidate   — under evaluation; must never receive approved production traffic
+prompt_id: support_summary
+approved_release: rel-2026.06        # the single source of truth for production
+versions:
+  - version: v1.0.0
+    file: support_summary/v1.0.0.txt
+    owner: rupesh
+    created: "2026-05-01"
+    fixture: support_summary/fixtures/ticket_a.txt
+    model_version: balanced-std@2026-04
+    eval_run_id: ev-1001
+    release_tag: rel-2026.05
+    status: superseded
+    notes: first production prompt
+
+  - version: v2.0.0
+    file: support_summary/v2.0.0.txt
+    owner: rupesh
+    created: "2026-06-15"
+    fixture: support_summary/fixtures/ticket_a.txt
+    model_version: balanced-std@2026-06
+    eval_run_id: ev-1042
+    release_tag: rel-2026.06
+    status: approved
+    notes: adds length + grounding rules; current default
+
+  - version: v3.0.0-rc1
+    file: support_summary/v3.0.0-rc1.txt
+    owner: rupesh
+    created: "2026-07-10"
+    fixture: support_summary/fixtures/ticket_a.txt
+    model_version: balanced-std@2026-06
+    eval_run_id: ev-1077
+    release_tag: rel-2026.07-rc1
+    status: candidate
+    notes: adds priority + reference-quoting; under evaluation, not for production

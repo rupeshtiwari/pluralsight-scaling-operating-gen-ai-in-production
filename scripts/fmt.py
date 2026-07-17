@@ -1325,6 +1325,130 @@ def fmt_incident_action(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- LLMOps lifecycle views: prompt versioning + rollback (M3, Clip 2) ----
+
+def fmt_lc_registry(d: dict) -> str:
+    out = [header(
+        "Inspect the prompt version registry",
+        "Prompts versioned like code — version id, owner, fixture, model pin, "
+        "evaluation run, release tag, and lifecycle status", width=98)]
+    out += star("prompt id", d.get("prompt_id"))
+    out += _noted("approved release", d.get("approved_release"), "the production default", LIME)
+    out.append(f"    {BLUE}{'version':<14}{'status':<12}{'model':<22}{'eval run':<10}"
+               f"{'release':<18}{'result hash'}{RESET}")
+    out.append("")
+    for v in d.get("versions", []):
+        appr = v.get("is_approved")
+        st = str(v.get("status"))
+        stc = LIME if appr else (BLUE if st == "candidate" else GRAY)
+        vc = LIME if appr else LGRN
+        tag = f"  {LIME}← approved{RESET}" if appr else ""
+        out.append(f"  {PINK}★{RESET} {vc}{str(v.get('version')):<14}{RESET}"
+                   f"{stc}{st:<12}{RESET}{LGRN}{str(v.get('model_version')):<22}"
+                   f"{str(v.get('eval_run_id')):<10}{str(v.get('release_tag')):<18}{RESET}"
+                   f"{GRAY}{v.get('result_hash')}{RESET}{tag}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_lc_prompt_receipts(d: dict) -> str:
+    out = [header(
+        "Link prompt version, model, and eval run to receipts",
+        "Every request receipt carries the release identity — prompt version, "
+        "model version, evaluation run, release tag, and result hash", width=96)]
+    out += _noted("approved version", d.get("approved_version"),
+                  f"release {d.get('approved_release')}", LIME)
+    out.append(f"    {BLUE}{'request':<14}{'prompt':<12}{'model':<22}{'eval':<10}"
+               f"{'release':<14}{'result hash'}{RESET}")
+    out.append("")
+    for r in d.get("receipts", []):
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('request_id')):<14}"
+                   f"{str(r.get('prompt_version')):<12}{str(r.get('model_version')):<22}"
+                   f"{str(r.get('eval_run_id')):<10}{str(r.get('release_tag')):<14}{RESET}"
+                   f"{GRAY}{r.get('result_hash')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_lc_isolation(d: dict) -> str:
+    out = [header(
+        "Deploy the prompt change to an isolated lane",
+        "A candidate version enters isolated — approved production traffic never "
+        "reaches it, so an untested prompt cannot affect a customer", width=94)]
+    out += _noted("candidate", f"{d.get('candidate_version')} ({d.get('candidate_release')})",
+                  "under evaluation", BLUE)
+    out += _noted("approved", f"{d.get('approved_version')} ({d.get('approved_release')})",
+                  "still serving production", LIME)
+    out += sect("traffic lanes")
+    out.append(f"    {BLUE}{'lane':<20}{'version':<14}{'release':<18}{'requests':<10}{'serves customers'}{RESET}")
+    out.append("")
+    for ln in d.get("lanes", []):
+        serves = ln.get("serves_customers")
+        sc = LIME if serves else GRAY
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(ln.get('lane')):<20}"
+                   f"{str(ln.get('version')):<14}{str(ln.get('release_tag')):<18}"
+                   f"{str(ln.get('requests')):<10}{RESET}{sc}{str(serves).lower()}{RESET}")
+        out.append("")
+    cip = d.get("candidate_in_production")
+    out += star("candidate in production", cip, LIME if cip == 0 else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_lc_rollback(d: dict) -> str:
+    out = [header(
+        "Roll back production to the approved release",
+        "The rollback targets a retained, immutable release id — production "
+        "returns to the approved version with zero candidate traffic", width=92)]
+    out += _noted("from", f"{d.get('from_version')} ({d.get('from_release')})",
+                  "the candidate, withdrawn", PINK)
+    out += _noted("to", f"{d.get('to_version')} ({d.get('to_release')})",
+                  "the approved release", LIME)
+    out += star("active release after", d.get("active_release_after"), LIME)
+    cip = d.get("candidate_in_production_after")
+    out += star("candidate in production after", cip, LIME if cip == 0 else PINK)
+    out += ctx("retained versions", ", ".join(d.get("retained_versions", [])))
+    out.append("")
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_lc_reproducibility(d: dict) -> str:
+    ok = d.get("reproducible")
+    out = [header(
+        "Prove the rollback is reproducible",
+        "Preserved prompt, fixture, and model reproduce the same result hash — "
+        "reproducible, not merely re-run", width=92)]
+    out += _noted("version", f"{d.get('version')} ({d.get('release_tag')})",
+                  f"model {d.get('model_version')}, fixture {d.get('fixture')}")
+    out += star("recorded result hash", d.get("recorded_result_hash"))
+    out += star("replayed result hash", d.get("replayed_result_hash"))
+    out += star("reproducible", str(ok).lower(), LIME if ok else PINK)
+    out += ctx("preserved", ", ".join(d.get("preserved", [])))
+    out.append("")
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_lc_reconcile(d: dict) -> str:
+    disp = d.get("disposition")
+    ok = disp == "CONFIRMED"
+    out = [header(
+        "Reconcile the release state",
+        "Active release matches approved, no candidate traffic leaked, and the "
+        "result reproduces — the release state is provable", width=90)]
+    out += star("disposition", disp, LIME if ok else PINK)
+    am = d.get("active_matches_approved")
+    out += _noted("active release", d.get("active_release"),
+                  f"approved {d.get('approved_release')}", LIME if am else PINK)
+    cip = d.get("candidate_in_production")
+    out += _noted("candidate in production", cip, "blast radius", LIME if cip == 0 else PINK)
+    rp = d.get("reproducible")
+    out += _noted("reproducible", str(rp).lower(), "result identity preserved", LIME if rp else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -1378,6 +1502,12 @@ VIEWS = {
     "incident-cost": fmt_incident_cost,
     "incident-quality": fmt_incident_quality,
     "incident-action": fmt_incident_action,
+    "lc-registry": fmt_lc_registry,
+    "lc-prompt-receipts": fmt_lc_prompt_receipts,
+    "lc-isolation": fmt_lc_isolation,
+    "lc-rollback": fmt_lc_rollback,
+    "lc-reproducibility": fmt_lc_reproducibility,
+    "lc-reconcile": fmt_lc_reconcile,
 }
 
 
