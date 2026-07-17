@@ -51,6 +51,9 @@ services:
       POSTGRES_DB: genai
       POSTGRES_USER: genai
       POSTGRES_PASSWORD: genai
+      # When the obs profile is up, ship spans to the collector (forwarded to
+      # Jaeger). Harmless when the collector is absent — export is best-effort.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
     ports:
       - "8000:8000"
     depends_on:
@@ -72,5 +75,36 @@ services:
       - .:/work
     environment:
       API_BASE: http://api:8000
+    depends_on:
+      - api
+
+  # --- Observability stack (Module 2, Clip 5) -------------------------------
+  # Gated behind the "obs" profile so `docker compose up` never starts them.
+  # Bring them up with: docker compose --profile obs up -d
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    profiles: ["obs"]
+    command: ["--config=/etc/otel/config.yaml"]
+    volumes:
+      - ./observability/otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    depends_on:
+      - jaeger
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    profiles: ["obs"]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI — open one trace by its id
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    profiles: ["obs"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"     # Prometheus UI — query metrics and see firing SLO alerts
     depends_on:
       - api

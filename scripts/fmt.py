@@ -1011,6 +1011,149 @@ def fmt_failover_reconcile(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- Observability views (Module 2, Clip 5) -------------------------------
+
+def _span_tree(spans: list, total: int, highlight: str = "provider_call") -> list:
+    out = [f"    {BLUE}{'span':<16}{'duration':<11}{'share'}{RESET}", ""]
+    for s in spans:
+        name = str(s.get("span"))
+        dur = int(s.get("duration_ms", 0))
+        is_root = s.get("parent") is None
+        share = (dur / total * 100) if total else 0
+        bar = "█" * max(1, round(share / 100 * 24)) if not is_root else ""
+        label = name if is_root else f"  {name}"   # indent children
+        color = PINK if name == highlight else (WHITE if is_root else LGRN)
+        barcol = PINK if name == highlight else ADA
+        out.append(f"  {PINK}★{RESET} {color}{label:<16}{RESET}"
+                   f"{LGRN}{str(dur)+'ms':<11}{RESET}{barcol}{bar}{RESET}")
+        out.append("")
+    return out
+
+
+def fmt_trace(d: dict) -> str:
+    out = [header(
+        "Open the end-to-end trace",
+        "One request across ingress, queue, routing, provider call, retry, "
+        "fallback, and response", width=80)]
+    out += star("trace id", d.get("trace_id"))
+    out += star("total", f"{d.get('total_ms')} ms")
+    out += sect("span timeline (child spans under the request)")
+    out += _span_tree(d.get("spans", []), d.get("total_ms", 1))
+    return "\n".join(out)
+
+
+def fmt_obs_logs(d: dict) -> str:
+    out = [header(
+        "Inspect the structured logs",
+        "Every request logs one record: request id, model, route reason, "
+        "tokens, cost, latency, provider status, and quality", width=92)]
+    for e in d.get("logs", []):
+        qc = LIME if e.get("quality_status") == "pass" else PINK
+        sc = _status_color(e.get("provider_status", ""))
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(e.get('request_id'))}{RESET}  "
+                   f"{LGRN}{str(e.get('model'))}{RESET}  {GRAY}{e.get('route_reason')}{RESET}")
+        out.append(f"      {BLUE}tokens{RESET} prompt={e.get('prompt_tokens')} "
+                   f"completion={e.get('completion_tokens')} total={e.get('total_tokens')}   "
+                   f"{BLUE}cost{RESET} ${float(e.get('cost_usd',0)):.4f}   "
+                   f"{BLUE}latency{RESET} {e.get('latency_ms')}ms   "
+                   f"{BLUE}status{RESET} {sc}{e.get('provider_status')}{RESET}   "
+                   f"{BLUE}quality{RESET} {qc}{e.get('quality_status')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_metrics(d: dict) -> str:
+    out = [header(
+        "Read the Prometheus service metrics",
+        "Latency, availability, queue depth, fallback rate, retry rate, and "
+        "cost — the operator's health signals", width=80)]
+    out += star("requests observed", d.get("requests"))
+    out += sect("latency")
+    out += _noted("p50", f"{d.get('latency_p50_ms')} ms", "typical request", LIME)
+    out += _noted("p95", f"{d.get('latency_p95_ms')} ms", "the slow tail", LGRN)
+    out += sect("availability & flow")
+    out += _noted("availability", f"{d.get('availability_pct')}%", "requests answered", LIME)
+    out += _noted("queue depth", d.get("queue_depth"), "peak backlog")
+    out += _noted("fallback rate", f"{d.get('fallback_rate_pct')}%", "served by an alternative", BLUE)
+    out += _noted("retry rate", f"{d.get('retry_rate_pct')}%", "attempts that were retried", BLUE)
+    out += _noted("cost estimate", f"${d.get('cost_estimate_usd')}", "for this window")
+    return "\n".join(out)
+
+
+def fmt_quality(d: dict) -> str:
+    below = float(d.get("pass_rate_pct", 100)) < 90.0
+    out = [header(
+        "Sample output quality on live responses",
+        "Automated checks on a representative subset — a successful response "
+        "can still fail quality", width=88)]
+    out += star("policy", d.get("policy"))
+    out += star("schema", d.get("schema"))
+    out += _noted("pass rate", f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
+                  f"quality bar {d.get('quality_bar')}", PINK if below else LIME)
+    out += sect("sampled responses")
+    out.append(f"    {BLUE}{'request':<18}{'score':<8}{'status':<9}{'reviewer reason'}{RESET}")
+    out.append("")
+    for s in d.get("samples", []):
+        st = str(s.get("quality_status"))
+        sc = LIME if st == "pass" else PINK
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('request_id')):<18}"
+                   f"{str(s.get('quality_score')):<8}{sc}{st:<9}{RESET}{GRAY}{s.get('reviewer_reason')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_slo(d: dict) -> str:
+    disp = d.get("disposition")
+    out = [header(
+        "Confirm the SLO alert rules",
+        "Latency, availability, and output quality each get an objective — a "
+        "breach fires an alert", width=90)]
+    out += star("disposition", disp, PINK if disp == "ALERT" else LIME)
+    out.append(f"    {BLUE}{'slo':<20}{'dimension':<16}{'value':<10}{'objective':<14}"
+               f"{'status':<9}{'severity'}{RESET}")
+    out.append("")
+    for s in d.get("slos", []):
+        ok = s.get("status") == "ok"
+        stc = LIME if ok else PINK
+        obj = f"{s.get('comparator')} {s.get('threshold')}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('slo')):<20}"
+                   f"{str(s.get('dimension')):<16}{str(s.get('value')):<10}{obj:<14}"
+                   f"{stc}{str(s.get('status')):<9}{s.get('severity')}{RESET}")
+        out.append("")
+    return "\n".join(out)
+
+
+def fmt_diagnose(d: dict) -> str:
+    out = [header(
+        "Diagnose the slow request from its trace",
+        "Nested span timings point at the exact stage that owns the latency",
+        width=80)]
+    out += star("trace id", d.get("trace_id"))
+    out += star("total", f"{d.get('total_ms')} ms")
+    out += sect("span timeline")
+    out += _span_tree(d.get("spans", []), d.get("total_ms", 1), d.get("slowest_span", ""))
+    out += _noted("slowest span", f"{d.get('slowest_span')} — {d.get('slowest_ms')}ms "
+                  f"({d.get('slowest_share_pct')}%)", "owns the latency", PINK)
+    out += _noted("provider status", d.get("provider_status"), "the fault mode", PINK)
+    out += star("root cause", d.get("root_cause"), PINK)
+    return "\n".join(out)
+
+
+def fmt_correlate(d: dict) -> str:
+    fail = d.get("quality_status") == "fail"
+    out = [header(
+        "Correlate cost, quality, and the operator action",
+        "One structured record ties tokens and cost to the quality verdict and "
+        "what the operator did about it", width=80)]
+    out += star("request id", d.get("request_id"))
+    out += _noted("total tokens", d.get("total_tokens"), "the work that was billed")
+    out += _noted("cost", f"${float(d.get('cost_usd',0)):.4f}", "spent on this response")
+    out += _noted("quality status", f"{d.get('quality_status')} (score {d.get('quality_score')})",
+                  "trustworthy or not", PINK if fail else LIME)
+    out += star("operator action", d.get("operator_action"))
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -1050,6 +1193,13 @@ VIEWS = {
     "fallback": fmt_fallback,
     "retry-log": fmt_retry_log,
     "failover-reconcile": fmt_failover_reconcile,
+    "trace": fmt_trace,
+    "obs-logs": fmt_obs_logs,
+    "metrics": fmt_metrics,
+    "quality": fmt_quality,
+    "slo": fmt_slo,
+    "diagnose": fmt_diagnose,
+    "correlate": fmt_correlate,
 }
 
 

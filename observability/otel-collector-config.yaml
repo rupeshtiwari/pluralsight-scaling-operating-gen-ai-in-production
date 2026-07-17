@@ -1,0 +1,26 @@
+# OpenTelemetry Collector (Module 2, Clip 5).
+# Receives spans from the FastAPI service over OTLP and forwards them to Jaeger,
+# so the trace id shown in the terminal opens in the Jaeger UI.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch: {}
+
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+  debug:
+    verbosity: normal
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger, debug]

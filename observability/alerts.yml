@@ -1,0 +1,32 @@
+# SLO alert rules (Module 2, Clip 5). Real Prometheus alerting rules covering the
+# three dimensions from the demo: latency, availability, and output quality. They
+# evaluate against the metrics the service exposes at /metrics.
+groups:
+  - name: genai-slos
+    rules:
+      - alert: LatencyP95AboveObjective
+        expr: histogram_quantile(0.95, sum(rate(genai_request_latency_ms_bucket[5m])) by (le)) > 2500
+        for: 1m
+        labels:
+          severity: ticket
+          dimension: latency
+        annotations:
+          summary: "p95 latency is above the 2500ms objective"
+
+      - alert: AvailabilityBelowObjective
+        expr: (sum(rate(genai_requests_total{outcome="success"}[5m])) / sum(rate(genai_requests_total[5m]))) * 100 < 99
+        for: 1m
+        labels:
+          severity: page
+          dimension: availability
+        annotations:
+          summary: "availability is below the 99% objective"
+
+      - alert: QualityPassRateBelowObjective
+        expr: genai_quality_pass_rate < 90
+        for: 1m
+        labels:
+          severity: page
+          dimension: output_quality
+        annotations:
+          summary: "output quality pass rate is below the 90% objective"

@@ -100,5 +100,33 @@ run "Step 5 — Reconcile caller response, receipt, and retry log" \
   "curl -s \$API_BASE/resilience/failover-reconcile | python3 scripts/fmt.py --type failover-reconcile" \
   "curl -s $API_BASE/resilience/failover-reconcile" failover-reconcile
 
+# --- Clip 5: traces, logs, metrics, quality sampling -----------------------
+rec ""
+rec "MODULE 2 · CLIP 5 — DEMO CAPTURE (traces, logs, metrics, quality sampling)"
+curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
+curl -s -X POST "$API_BASE/observe/run" >/dev/null 2>&1
+
+run "Step 1 — Open the end-to-end trace" \
+  "curl -s -X POST \$API_BASE/observe/run >/dev/null; curl -s \$API_BASE/observe/trace | python3 scripts/fmt.py --type trace" \
+  "curl -s $API_BASE/observe/trace" trace
+run "Step 2 — Inspect the structured logs" \
+  "curl -s \$API_BASE/observe/logs | python3 scripts/fmt.py --type obs-logs" \
+  "curl -s $API_BASE/observe/logs" obs-logs
+run "Step 3 — Read the Prometheus service metrics" \
+  "curl -s \$API_BASE/observe/metrics | python3 scripts/fmt.py --type metrics" \
+  "curl -s $API_BASE/observe/metrics" metrics
+run "Step 4 — Sample output quality on live responses" \
+  "curl -s \$API_BASE/observe/quality | python3 scripts/fmt.py --type quality" \
+  "curl -s $API_BASE/observe/quality" quality
+run "Step 5 — Confirm the SLO alert rules" \
+  "curl -s \$API_BASE/observe/slo | python3 scripts/fmt.py --type slo" \
+  "curl -s $API_BASE/observe/slo" slo
+run "Step 6 — Diagnose the slow request from its trace" \
+  "curl -s \$API_BASE/observe/diagnose | python3 scripts/fmt.py --type diagnose" \
+  "curl -s $API_BASE/observe/diagnose" diagnose
+run "Step 7 — Correlate cost, quality, and the operator action" \
+  "curl -s \$API_BASE/observe/correlate | python3 scripts/fmt.py --type correlate" \
+  "curl -s $API_BASE/observe/correlate" correlate
+
 rec ""
 rec "transcript written to: module2/demo_capture.txt"

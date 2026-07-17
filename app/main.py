@@ -50,6 +50,7 @@ from app.providers.registry import (
     limiter_key,
     weighted_sequence,
 )
+from app.observability import observe
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -701,6 +702,71 @@ def resilience_failover_reconcile() -> dict:
         "receipts_complete": receipts_complete,
         "disposition": "CONFIRMED" if confirmed else "BLOCKED",
     }
+
+
+# --- Observability: traces, logs, metrics, quality, SLOs (Module 2, Clip 5) --
+
+@app.post("/observe/run")
+def observe_run() -> dict:
+    """Run the deterministic observed batch: emit OpenTelemetry traces, record
+    Prometheus metrics, sample output quality, and evaluate the SLOs."""
+    return observe.run_observe()
+
+
+@app.get("/observe/trace")
+def observe_trace() -> dict:
+    """The end-to-end trace for one request: ingress, queue, routing, provider
+    call, retry, fallback, response — with each span's duration."""
+    return observe.state().get("trace", {})
+
+
+@app.get("/observe/logs")
+def observe_logs() -> dict:
+    """Structured logs carrying request id, model, route reason, tokens, cost,
+    latency, provider status, and quality status."""
+    return {"logs": observe.state().get("logs", [])}
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    """Real Prometheus exposition — the endpoint a Prometheus server scrapes."""
+    from prometheus_client import CONTENT_TYPE_LATEST
+    return Response(content=observe.metrics_exposition(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/observe/metrics")
+def observe_metrics() -> dict:
+    """The service metrics an operator watches — latency, availability, queue
+    depth, fallback rate, retry rate, and cost — summarized for the demo view."""
+    return observe.state().get("metrics", {})
+
+
+@app.get("/observe/quality")
+def observe_quality() -> dict:
+    """Output quality sampling over a representative subset: schema, policy, and
+    the reviewer reason behind each pass or fail."""
+    return observe.state().get("quality", {})
+
+
+@app.get("/observe/slo")
+def observe_slo() -> dict:
+    """SLO evaluation across latency, availability, and output quality, with the
+    alert that fires when a dimension breaches its objective."""
+    return observe.state().get("slo", {})
+
+
+@app.get("/observe/diagnose")
+def observe_diagnose() -> dict:
+    """Root-cause a slow request: the trace's nested span timings point at the
+    stage responsible for the latency."""
+    return observe.state().get("diagnose", {})
+
+
+@app.get("/observe/correlate")
+def observe_correlate() -> dict:
+    """Correlate one request's token count, cost, quality status, and the
+    operator action from the structured record."""
+    return observe.state().get("correlate", {})
 
 
 @app.get("/receipts")

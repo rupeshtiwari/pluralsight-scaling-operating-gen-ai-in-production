@@ -5,8 +5,8 @@ rate limiting, and automatic fallback mechanisms · TO3 — Establish observabil
 through distributed tracing, structured logging, and output quality monitoring. ·
 **30 minutes**
 
-> **Status: in progress.** Clips 2 and 3 are built and preflight-verified;
-> Clips 5 and 6 are scaffolded from the course outline and land next.
+> **Status: in progress.** Clips 2, 3, and 5 are built and preflight-verified;
+> Clip 6 is scaffolded from the course outline and lands next.
 
 ## Demos
 
@@ -14,7 +14,7 @@ through distributed tracing, structured logging, and output quality monitoring. 
 |---|-------|--------|---------------------|---------|
 | 2 | Prove queues, rate limits, and fail-fast behavior | 6 min | TO2, EO2a, EO2b, EO2e | [demo/clip2.md](demo/clip2.md) ✅ |
 | 3 | Prove circuit breaker fallback and retry backoff | 6 min | EO2c, EO2d, EO2e | [demo/clip3.md](demo/clip3.md) ✅ |
-| 5 | Prove traces, logs, metrics, and quality sampling | 6 min | EO3a–e | [demo/clip5.md](demo/clip5.md) _(planned)_ |
+| 5 | Prove traces, logs, metrics, and quality sampling | 6 min | EO3a–e | [demo/clip5.md](demo/clip5.md) ✅ |
 | 6 | Diagnose latency, quota pressure, cost drift, and quality regression | 6 min | TO2, EO2e, TO3, EO3a–e | [demo/clip6.md](demo/clip6.md) _(planned)_ |
 
 ## Learning Objectives

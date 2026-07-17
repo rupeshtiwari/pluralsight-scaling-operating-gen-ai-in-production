@@ -246,6 +246,15 @@ added as later modules land.
 | `/resilience/fallback` | GET | Fallback routing outcome — caller kept whole while the primary is unsafe |
 | `/resilience/retry-log` | GET | Retry attempts, backoff schedule, and storm prevention |
 | `/resilience/failover-reconcile` | GET | Reconcile caller + Redis + receipts → CONFIRMED / BLOCKED |
+| `/observe/run` | POST | Run the observed batch — emit traces, record metrics, sample quality |
+| `/observe/trace` | GET | One request's end-to-end span timeline |
+| `/observe/logs` | GET | Structured logs — request id, model, tokens, cost, latency, status, quality |
+| `/metrics` | GET | Real Prometheus exposition (scraped on the `obs` profile) |
+| `/observe/metrics` | GET | Metrics summary — latency, availability, queue, fallback, retry, cost |
+| `/observe/quality` | GET | Output quality sampling — schema, policy, reviewer reasons |
+| `/observe/slo` | GET | SLO evaluation across latency, availability, quality → OK / ALERT |
+| `/observe/diagnose` | GET | Slow-request root cause from nested span timings |
+| `/observe/correlate` | GET | Tie one request's cost and quality to the operator action |
 
 ## Project Structure
 
@@ -261,8 +270,8 @@ added as later modules land.
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability
 │   ├── README.md                module index → 6 clips
-│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5, clip6 (planned)
-│   └── scripts/                 demo_up.sh, demo_down.sh, clip2/clip3 preflight
+│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5 ✅ · clip6 (planned)
+│   └── scripts/                 demo_up.sh, demo_down.sh, clip2/clip3/clip5 preflight
 ├── module3/                     Module 3: LLMOps + readiness (planned)
 │   ├── README.md                module index → 6 clips
 │   └── demo/                     clip2, clip3, clip5, clip6 (planned)
