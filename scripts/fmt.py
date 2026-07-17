@@ -1691,6 +1691,133 @@ def fmt_canary_reconcile(d: dict) -> str:
     return "\n".join(out)
 
 
+# --- LLMOps lifecycle views: readiness audit + runbook (M3, Clip 6) -------
+
+def fmt_readiness_deprecation(d: dict) -> str:
+    out = [header(
+        "Migrate off the deprecated model",
+        "A deprecated model retires behind the uniform adapter contract — traffic "
+        "routes to a replacement with compatibility receipts", width=92)]
+    out += _noted("deprecated", d.get("deprecated_model"),
+                  f"sunset {d.get('sunset_date')}", PINK)
+    out += _noted("replacement", d.get("replacement_model"),
+                  "via the replacement adapter", LIME)
+    out += _noted("migrated", f"{d.get('migrated_requests')} requests",
+                  f"disruption: {d.get('disruption')}", LIME)
+    out += sect("compatibility receipts")
+    for c in d.get("compatibility", []):
+        ok = c.get("status") == "pass"
+        sc = LIME if ok else PINK
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(c.get('check')):<24}{RESET}{sc}{c.get('status')}{RESET}")
+        out.append("")
+    disp = d.get("disposition")
+    out += star("disposition", disp, LIME if disp == "MIGRATED" else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_audit(d: dict) -> str:
+    out = [header(
+        "Run the production readiness audit",
+        "Score scalability, observability, security, cost efficiency, and "
+        "reliability against readiness criteria", width=94)]
+    out += _noted("readiness score", f"{d.get('score')}/{d.get('max_score')}",
+                  f"{d.get('ready_dimensions')} of 5 dimensions ready", LIME)
+    out.append(f"    {BLUE}{'dimension':<18}{'score':<8}{'status':<9}{'evidence'}{RESET}")
+    out.append("")
+    for r in d.get("rows", []):
+        ready = r.get("status") == "ready"
+        sc = LIME if ready else PINK
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<18}"
+                   f"{str(r.get('score'))+'/'+str(r.get('max')):<8}{sc}{str(r.get('status')):<9}{RESET}"
+                   f"{GRAY}{r.get('evidence')}{RESET}")
+        out.append("")
+    gaps = d.get("gaps", [])
+    out += _noted("open gaps", ", ".join(gaps) if gaps else "none",
+                  "to close before scale", PINK if gaps else LIME)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_decision(d: dict) -> str:
+    out = [header(
+        "Choose the deployment pattern",
+        "The cloud-native pattern the workload calls for — by latency, throughput, "
+        "and warm-start requirements", width=90)]
+    out += _noted("workload", d.get("workload"), "the deciding profile", BLUE)
+    out += star("recommended pattern", d.get("recommended_pattern"), LIME)
+    out += sect("why")
+    for r in d.get("reasons", []):
+        out.append(f"  {PINK}★{RESET} {GRAY}{r}{RESET}")
+        out.append("")
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_patterns(d: dict) -> str:
+    chosen = d.get("chosen")
+    out = [header(
+        "Compare the deployment patterns",
+        "Serverless, containers, and dedicated GPU on latency, throughput, warm "
+        "start, and ownership", width=100)]
+    out.append(f"    {BLUE}{'pattern':<15}{'latency':<11}{'throughput':<12}"
+               f"{'warm start':<14}{'ownership':<19}{'fit'}{RESET}")
+    out.append("")
+    for r in d.get("rows", []):
+        is_chosen = r.get("pattern") == chosen
+        pc = LIME if is_chosen else LGRN
+        out.append(f"  {PINK}★{RESET} {pc}{str(r.get('pattern')):<15}{RESET}"
+                   f"{GRAY}{str(r.get('latency')):<11}{str(r.get('throughput')):<12}"
+                   f"{str(r.get('warm_start')):<14}{str(r.get('ownership')):<19}{RESET}"
+                   f"{(LIME if is_chosen else GRAY)}{r.get('fit')}{RESET}")
+        out.append("")
+    out += star("chosen", chosen, LIME)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_runbook(d: dict) -> str:
+    out = [header(
+        "Inspect the operational runbook",
+        "Deploy, monitoring thresholds, incident response, rollback, and capacity "
+        "planning — each wired to a real control", width=96)]
+    for s in d.get("sections", []):
+        out.append(f"  {PINK}★{RESET} {WHITE}{str(s.get('section'))}{RESET}")
+        out.append(f"      {GRAY}{s.get('detail')}{RESET}")
+        out.append("")
+    comp = d.get("complete")
+    out += star("runbook complete", str(comp).lower(), LIME if comp else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_maturity(d: dict) -> str:
+    disp = d.get("disposition")
+    current = d.get("current")
+    out = [header(
+        "Decide the operational maturity",
+        "Prototype, managed production, or scale-ready — an evidence-based decision "
+        "with the gaps to the next level", width=92)]
+    out += sect("maturity ladder")
+    for lvl in d.get("levels", []):
+        here = lvl == current
+        lc = LIME if here else GRAY
+        tag = f"  {LIME}← current{RESET}" if here else ""
+        out.append(f"  {PINK}★{RESET} {lc}{lvl}{RESET}{tag}")
+        out.append("")
+    out += sect("evidence")
+    for e in d.get("evidence", []):
+        out.append(f"    {GRAY}• {e}{RESET}")
+    out.append("")
+    out += sect("gaps to scale-ready")
+    for g in d.get("gap_to_next", []):
+        out.append(f"    {GRAY}• {g}{RESET}")
+    out.append("")
+    out += star("disposition", disp, LIME)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
 VIEWS = {
     "health": fmt_health,
     "providers": fmt_providers,
@@ -1761,6 +1888,12 @@ VIEWS = {
     "canary-promote": fmt_canary_promote,
     "canary-rollback": fmt_canary_rollback,
     "canary-reconcile": fmt_canary_reconcile,
+    "readiness-deprecation": fmt_readiness_deprecation,
+    "readiness-audit": fmt_readiness_audit,
+    "readiness-decision": fmt_readiness_decision,
+    "readiness-patterns": fmt_readiness_patterns,
+    "readiness-runbook": fmt_readiness_runbook,
+    "readiness-maturity": fmt_readiness_maturity,
 }
 
 

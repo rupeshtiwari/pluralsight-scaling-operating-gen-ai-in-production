@@ -101,5 +101,30 @@ run "Step 6 — Reconcile after rollback" \
   "curl -s \$API_BASE/lifecycle/canary/reconcile | python3 scripts/fmt.py --type canary-reconcile" \
   "curl -s $API_BASE/lifecycle/canary/reconcile" canary-reconcile
 
+# --- Clip 6: readiness audit + operational runbook -------------------------
+rec ""
+rec "MODULE 3 · CLIP 6 — DEMO CAPTURE (readiness audit + operational runbook)"
+curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
+curl -s -X POST "$API_BASE/lifecycle/readiness/run" >/dev/null 2>&1
+
+run "Step 1 — Migrate off the deprecated model" \
+  "curl -s -X POST \$API_BASE/lifecycle/readiness/run >/dev/null; curl -s \$API_BASE/lifecycle/readiness/deprecation | python3 scripts/fmt.py --type readiness-deprecation" \
+  "curl -s $API_BASE/lifecycle/readiness/deprecation" readiness-deprecation
+run "Step 2 — Run the production readiness audit" \
+  "curl -s \$API_BASE/lifecycle/readiness/audit | python3 scripts/fmt.py --type readiness-audit" \
+  "curl -s $API_BASE/lifecycle/readiness/audit" readiness-audit
+run "Step 3 — Choose the deployment pattern" \
+  "curl -s \$API_BASE/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision" \
+  "curl -s $API_BASE/lifecycle/readiness/decision" readiness-decision
+run "Step 4 — Compare the deployment patterns" \
+  "curl -s \$API_BASE/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns" \
+  "curl -s $API_BASE/lifecycle/readiness/patterns" readiness-patterns
+run "Step 5 — Inspect the operational runbook" \
+  "curl -s \$API_BASE/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook" \
+  "curl -s $API_BASE/lifecycle/readiness/runbook" readiness-runbook
+run "Step 6 — Decide the operational maturity" \
+  "curl -s \$API_BASE/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity" \
+  "curl -s $API_BASE/lifecycle/readiness/maturity" readiness-maturity
+
 rec ""
 rec "transcript written to: module3/demo_capture.txt"

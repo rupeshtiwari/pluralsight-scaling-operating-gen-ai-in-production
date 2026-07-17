@@ -189,8 +189,8 @@ All package and container versions are pinned in `requirements.txt` and
 | EO1d | Weighted vs deterministic trade-offs | 1 | ✅ Overrides bypass the decision in both directions (bulk→economy, legal→premium); `would_have_selected` + Redis `weighted: 0` prove the bypass |
 | EO2a–e | Queue, fail-fast, circuit breaker, retry backoff, resilience testing | 2 | ✅ Real k6 spike + atomic Redis admission (429 + Retry-After), circuit states, deterministic backoff, incident shed |
 | EO3a–e | Tracing, logging schema, quality sampling, SLOs, incident diagnosis | 2 | ✅ OpenTelemetry spans, structured logs, Prometheus `/metrics` + Grafana board, SLO alerts, root-cause incident diagnosis |
-| EO4a–d | Prompt versioning, model validation, canary, deprecation | 3 | Version rollback, baseline gate, canary promotion _(planned)_ |
-| EO5a–d | Readiness criteria, deployment patterns, runbook, maturity | 3 | Readiness audit, deployment decision, runbook _(planned)_ |
+| EO4a–d | Prompt versioning, model validation, canary, deprecation | 3 | ✅ Versioned prompt repo + reproducible rollback, real Pytest baseline gate, 10% canary promote/rollback, deprecation via replacement adapter |
+| EO5a–d | Readiness criteria, deployment patterns, runbook, maturity | 3 | ✅ Five-dimension readiness audit, container decision, operational runbook, evidence-based maturity |
 
 ## Production Concerns Coverage
 
@@ -207,8 +207,9 @@ All package and container versions are pinned in `requirements.txt` and
 
 ## API Reference
 
-Endpoints available today (Module 1 and Module 2 complete). More are added as
-later modules land.
+Endpoints available today (Modules 1, 2, and 3 complete). The `/lifecycle/*`
+endpoints (prompt versioning, model validation, canary, readiness) are listed in
+`module3/README.md`.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|

@@ -55,6 +55,7 @@ from app.incident import diagnose
 from app.lifecycle import prompts as lc_prompts
 from app.lifecycle import validation as lc_validation
 from app.lifecycle import canary as lc_canary
+from app.lifecycle import readiness as lc_readiness
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -981,6 +982,56 @@ def lc_canary_reconcile() -> dict:
     """Reconcile after rollback: production is on the approved release, canary
     exposure is zero, and the blast radius stayed bounded → CONFIRMED / BLOCKED."""
     return lc_canary.state().get("reconcile", {})
+
+
+# --- LLMOps lifecycle: readiness audit + runbook (Module 3, Clip 6) --------
+
+@app.post("/lifecycle/readiness/run")
+def lc_readiness_run() -> dict:
+    """Build the readiness state: deprecation migration, the readiness audit, the
+    deployment decision, the pattern comparison, the runbook, and the maturity."""
+    return lc_readiness.run_readiness()
+
+
+@app.get("/lifecycle/readiness/deprecation")
+def lc_readiness_deprecation() -> dict:
+    """Manage an upstream deprecation: route to a replacement adapter with
+    compatibility receipts, and minimal disruption."""
+    return lc_readiness.state().get("deprecation", {})
+
+
+@app.get("/lifecycle/readiness/audit")
+def lc_readiness_audit() -> dict:
+    """The readiness audit across scalability, observability, security, cost
+    efficiency, and reliability."""
+    return lc_readiness.state().get("audit", {})
+
+
+@app.get("/lifecycle/readiness/decision")
+def lc_readiness_decision() -> dict:
+    """The deployment decision — the cloud-native pattern the workload calls for."""
+    return lc_readiness.state().get("decision", {})
+
+
+@app.get("/lifecycle/readiness/patterns")
+def lc_readiness_patterns() -> dict:
+    """Compare serverless, containers, and dedicated GPU on latency, throughput,
+    warm start, and ownership."""
+    return lc_readiness.state().get("patterns", {})
+
+
+@app.get("/lifecycle/readiness/runbook")
+def lc_readiness_runbook() -> dict:
+    """The operational runbook: deploy, monitoring thresholds, incident response,
+    rollback, and capacity planning."""
+    return lc_readiness.state().get("runbook", {})
+
+
+@app.get("/lifecycle/readiness/maturity")
+def lc_readiness_maturity() -> dict:
+    """The maturity decision — prototype, managed production, or scale-ready — with
+    the evidence and the gaps to the next level."""
+    return lc_readiness.state().get("maturity", {})
 
 
 @app.get("/receipts")

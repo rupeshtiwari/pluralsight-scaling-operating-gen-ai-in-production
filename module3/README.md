@@ -4,8 +4,8 @@
 lifecycle of prompts and models · TO5 — Assess GenAI systems against production
 readiness criteria and establish operational practices. · **30 minutes**
 
-> **Status: in progress.** Clips 2, 3, and 5 are built and preflight-verified;
-> Clip 6 is scaffolded from the course outline and lands next.
+> **Status: complete.** All four demos (Clips 2, 3, 5, and 6) are built and
+> preflight-verified.
 
 ## Demos
 
@@ -14,7 +14,7 @@ readiness criteria and establish operational practices. · **30 minutes**
 | 2 | Prove prompt versioning and reproducible rollback | 6 min | TO4, EO4a | [demo/clip2.md](demo/clip2.md) ✅ |
 | 3 | Validate model updates against quality baselines | 6 min | EO4b | [demo/clip3.md](demo/clip3.md) ✅ |
 | 5 | Prove canary promotion, hold, and rollback decisions | 6 min | EO4c | [demo/clip5.md](demo/clip5.md) ✅ |
-| 6 | Run readiness audit and finalize operational runbook proof | 6 min | EO4d, TO5, EO5a–d | [demo/clip6.md](demo/clip6.md) _(planned)_ |
+| 6 | Run readiness audit and finalize operational runbook proof | 6 min | EO4d, TO5, EO5a–d | [demo/clip6.md](demo/clip6.md) ✅ |
 
 ## Learning Objectives
 
