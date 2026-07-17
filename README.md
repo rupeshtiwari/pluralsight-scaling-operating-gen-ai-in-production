@@ -13,8 +13,33 @@ production controls that you enable module by module. **No cloud API keys
 required** — everything runs locally with deterministic provider stubs that
 simulate healthy, slow, error, quota, quality, and deprecation conditions.
 
+## About
+
+Hands-on demos for the Pluralsight course: **Scaling & Operating Gen AI in
+Production**. A single provider-agnostic **FastAPI** AI service layer, taken from
+prototype to production through three modules: intelligent multi-model routing
+(weighted and payload-based, with deterministic overrides); resilience (queues,
+rate limiting, fail-fast admission, circuit breaker, retry backoff, automatic
+fallback); production observability (OpenTelemetry tracing, Prometheus metrics and
+Grafana, structured logging, SLOs and alerting, root-cause incident diagnosis,
+output-quality sampling); and LLMOps change management (prompt versioning and
+reproducible rollback, model baseline validation with Pytest, canary promotion and
+rollback, deprecation handling) closing with a production-readiness audit and
+operational runbook. Every demo runs entirely locally with deterministic provider
+stubs and one-screen, brand-formatted output — **no cloud API keys required**.
+
+[www.pluralsight.com/courses/scaling-operating-gen-ai-in-production](https://www.pluralsight.com/courses/scaling-operating-gen-ai-in-production)
+
+### Topics
+
+`generative-ai` · `llmops` · `fastapi` · `redis` · `postgresql` · `opentelemetry`
+· `prometheus` · `grafana` · `k6` · `pytest` · `observability` · `slo` ·
+`circuit-breaker` · `rate-limiting` · `canary-deployment` · `prompt-versioning` ·
+`model-validation` · `cost-optimization` · `production-readiness` · `pluralsight`
+
 ## Table of Contents
 
+- [About](#about)
 - [Learning Objectives](#learning-objectives)
 - [Demos — Start Here](#demos--start-here)
 - [One-Time Setup](#one-time-setup)
