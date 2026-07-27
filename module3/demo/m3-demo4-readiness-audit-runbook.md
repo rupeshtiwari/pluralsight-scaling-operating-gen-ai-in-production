@@ -241,7 +241,7 @@ exactly how ready it is.
 ## Preflight check
 
 ```bash
-bash module3/scripts/clip6_preflight_check.sh
+bash module3/scripts/m3-demo4-readiness-audit-runbook.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4d /

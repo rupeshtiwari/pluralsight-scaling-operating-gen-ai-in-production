@@ -252,7 +252,7 @@ request X, and what did it cost" without re-running anything.
 ## Preflight check
 
 ```bash
-bash module1/scripts/preflight_check.sh
+bash module1/scripts/m1-demo1-provider-adapter-layer.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to

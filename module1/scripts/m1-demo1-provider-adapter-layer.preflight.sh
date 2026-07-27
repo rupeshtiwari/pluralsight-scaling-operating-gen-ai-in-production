@@ -6,7 +6,7 @@
 # learning objectives (TO1, EO1a), and writes a readable log you can hand to a
 # reviewer to confirm LO coverage before you record.
 #
-#   bash module1/scripts/preflight_check.sh
+#   bash module1/scripts/m1-demo1-provider-adapter-layer.preflight.sh
 #
 # Works against any running stack. Defaults target Docker Compose on macOS;
 # override with env vars for a native stack:
@@ -235,7 +235,7 @@ else
 fi
 blank
 emit "${WHITE}PROMPT TO FIX THIS CHECK (paste into your AI coding assistant if any step failed):${R}"
-emit "${GRAY}\"Run bash module1/scripts/preflight_check.sh. For every step marked ✗ FAIL,${R}"
+emit "${GRAY}\"Run bash module1/scripts/m1-demo1-provider-adapter-layer.preflight.sh. For every step marked ✗ FAIL,${R}"
 emit "${GRAY} read the HOW TO FIX and PROMPT TO FIX lines, open the named source file,${R}"
 emit "${GRAY} correct the app so the step's assertion passes, then reset with${R}"
 emit "${GRAY} ./scripts/module1-demo-reset.sh and re-run the preflight until PASS: 6,${R}"

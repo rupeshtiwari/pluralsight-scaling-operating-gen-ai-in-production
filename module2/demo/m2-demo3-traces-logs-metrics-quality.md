@@ -273,7 +273,7 @@ like.
 ## Preflight check
 
 ```bash
-bash module2/scripts/clip5_preflight_check.sh
+bash module2/scripts/m2-demo3-traces-logs-metrics-quality.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to

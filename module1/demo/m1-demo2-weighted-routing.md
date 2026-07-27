@@ -247,7 +247,7 @@ distribution* — provably, not just by assertion.
 ## Preflight check
 
 ```bash
-bash module1/scripts/clip3_preflight_check.sh
+bash module1/scripts/m1-demo2-weighted-routing.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to

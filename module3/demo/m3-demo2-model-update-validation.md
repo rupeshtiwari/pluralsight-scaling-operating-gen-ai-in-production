@@ -231,7 +231,7 @@ is protected by policy, and nothing ships on a hunch.
 ## Preflight check
 
 ```bash
-bash module3/scripts/clip3_preflight_check.sh
+bash module3/scripts/m3-demo2-model-update-validation.preflight.sh
 ```
 
 Runs every step above (including the real Pytest suite), captures each command and

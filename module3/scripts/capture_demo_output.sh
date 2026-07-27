@@ -2,7 +2,7 @@
 # Capture the Module 3 demos exactly as they run, command + output in sequence,
 # to a plain-text transcript you can hand to a reviewer. No assertions here —
 # this is the raw "what appears on screen" record. For pass/fail + LO coverage
-# use the clipN_preflight_check.sh scripts instead.
+# use the *.preflight.sh scripts instead.
 #
 #   bash module3/scripts/capture_demo_output.sh
 set -uo pipefail

@@ -286,7 +286,7 @@ decision. That is what operating a GenAI service under fire actually looks like.
 ## Preflight check
 
 ```bash
-bash module2/scripts/clip6_preflight_check.sh
+bash module2/scripts/m2-demo4-diagnose-latency-quota-cost-quality.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to

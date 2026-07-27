@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO4b), and writes a readable log.
 #
-#   bash module3/scripts/clip3_preflight_check.sh
+#   bash module3/scripts/m3-demo2-model-update-validation.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PYTEST (the command that runs pytest, default "python3 -m pytest")

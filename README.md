@@ -144,7 +144,7 @@ its own line, and the header box states **what** you're looking at and **why**.
 Author validation, per module:
 
 ```bash
-bash module1/scripts/preflight_check.sh      # runs every step, asserts each LO, writes a readable log
+bash module1/scripts/m1-demo1-provider-adapter-layer.preflight.sh      # runs every step, asserts each LO, writes a readable log
 bash module1/scripts/capture_demo_output.sh  # plain-text transcript of commands + output
 ./scripts/module1-demo-reset.sh              # reset to a clean, repeatable state
 ```

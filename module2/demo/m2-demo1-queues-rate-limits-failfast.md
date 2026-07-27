@@ -284,7 +284,7 @@ review.
 ## Preflight check
 
 ```bash
-bash module2/scripts/clip2_preflight_check.sh
+bash module2/scripts/m2-demo1-queues-rate-limits-failfast.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to TO2

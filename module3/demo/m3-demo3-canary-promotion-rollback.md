@@ -232,7 +232,7 @@ production was never at risk." That is release management you can defend.
 ## Preflight check
 
 ```bash
-bash module3/scripts/clip5_preflight_check.sh
+bash module3/scripts/m3-demo3-canary-promotion-rollback.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4c,

@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO1b), and writes a readable log you can hand to a reviewer.
 #
-#   bash module1/scripts/clip3_preflight_check.sh
+#   bash module1/scripts/m1-demo2-weighted-routing.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD
@@ -184,7 +184,7 @@ else
 fi
 blank
 emit "${WHITE}PROMPT TO FIX THIS CHECK (paste into your AI coding assistant if any step failed):${R}"
-emit "${GRAY}\"Run bash module1/scripts/clip3_preflight_check.sh. For every step marked ✗ FAIL,${R}"
+emit "${GRAY}\"Run bash module1/scripts/m1-demo2-weighted-routing.preflight.sh. For every step marked ✗ FAIL,${R}"
 emit "${GRAY} read the HOW TO FIX and PROMPT TO FIX lines, open the named source file, correct${R}"
 emit "${GRAY} the app so the step's assertion passes, reset with ./scripts/module1-demo-reset.sh,${R}"
 emit "${GRAY} and re-run until PASS: 6, FAIL: 0. Do not change the demo steps or the LO.\"${R}"

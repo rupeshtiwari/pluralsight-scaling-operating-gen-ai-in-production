@@ -38,7 +38,8 @@ Reset to a clean state at any time while the stack is up:
 ## Scripts
 
 `module1/scripts/` — `demo_up.sh`, `demo_down.sh`, `capture_demo_output.sh`, and a
-preflight per demo clip (`preflight_check.sh` for Clip 2, `clip3_preflight_check.sh`
-for Clip 3, `clip5_preflight_check.sh` for Clip 5, `clip6_preflight_check.sh` for
-Clip 6) that runs every step, asserts each learning objective, and writes a
-readable log.
+preflight per demo (`m1-demo1-provider-adapter-layer.preflight.sh`,
+`m1-demo2-weighted-routing.preflight.sh`,
+`m1-demo3-payload-routing-and-overrides.preflight.sh`, and
+`m1-demo4-routing-receipts-and-disposition.preflight.sh`) that runs every step,
+asserts each learning objective, and writes a readable log.

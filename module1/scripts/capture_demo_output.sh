@@ -2,7 +2,7 @@
 # Capture the Module 1 demo exactly as it runs, command + output in sequence,
 # to a plain-text transcript you can hand to a reviewer. No assertions here —
 # this is the raw "what appears on screen" record. For pass/fail + LO coverage
-# use preflight_check.sh instead.
+# use the *.preflight.sh scripts instead.
 #
 #   bash module1/scripts/capture_demo_output.sh
 set -uo pipefail

@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO4c), and writes a readable log.
 #
-#   bash module3/scripts/clip5_preflight_check.sh
+#   bash module3/scripts/m3-demo3-canary-promotion-rollback.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE

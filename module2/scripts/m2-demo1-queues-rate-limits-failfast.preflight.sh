@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO2, EO2a/b/e), and writes a readable log for a reviewer.
 #
-#   bash module2/scripts/clip2_preflight_check.sh
+#   bash module2/scripts/m2-demo1-queues-rate-limits-failfast.preflight.sh
 #
 # Step 1 runs the real k6 spike when k6 is installed; otherwise it drives the SAME
 # atomic admission path with a concurrent-curl burst, so the validated outcome

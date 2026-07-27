@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO2, EO2e, TO3, EO3a-e), and writes a readable log.
 #
-#   bash module2/scripts/clip6_preflight_check.sh
+#   bash module2/scripts/m2-demo4-diagnose-latency-quota-cost-quality.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD

@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO1c, EO1d), and writes a readable log for a reviewer.
 #
-#   bash module1/scripts/clip5_preflight_check.sh
+#   bash module1/scripts/m1-demo3-payload-routing-and-overrides.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD

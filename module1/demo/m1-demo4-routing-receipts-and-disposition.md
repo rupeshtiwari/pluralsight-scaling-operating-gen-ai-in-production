@@ -248,7 +248,7 @@ repeatably.
 ## Preflight check
 
 ```bash
-bash module1/scripts/clip6_preflight_check.sh
+bash module1/scripts/m1-demo4-routing-receipts-and-disposition.preflight.sh
 ```
 
 Runs every step above, asserts TO1 and EO1a–d, and writes a readable log to

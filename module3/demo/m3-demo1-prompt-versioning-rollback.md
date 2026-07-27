@@ -238,7 +238,7 @@ or an auditor, that production is exactly where it should be.
 ## Preflight check
 
 ```bash
-bash module3/scripts/clip2_preflight_check.sh
+bash module3/scripts/m3-demo1-prompt-versioning-rollback.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to

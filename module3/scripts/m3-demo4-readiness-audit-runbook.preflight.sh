@@ -5,7 +5,7 @@
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO4d, TO5, EO5a-d), and writes a readable log.
 #
-#   bash module3/scripts/clip6_preflight_check.sh
+#   bash module3/scripts/m3-demo4-readiness-audit-runbook.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE
