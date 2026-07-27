@@ -16,3 +16,10 @@ the folder always exists after a clone. Run a check to populate it, e.g.:
 ```bash
 bash module2/scripts/m2-demo3-traces-logs-metrics-quality.preflight.sh
 ```
+
+Upgrading from an older checkout that left loose `module*/*preflight_log.txt`
+files behind? Collect them into this folder (renamed to the scheme above) with:
+
+```bash
+bash scripts/collect-preflight-logs.sh
+```
