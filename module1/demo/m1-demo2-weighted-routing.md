@@ -251,7 +251,7 @@ bash module1/scripts/clip3_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-EO1b, and writes a readable log to `module1/clip3_preflight_log.txt`. Expect
+EO1b, and writes a readable log to `preflight-logs/m1-demo2-weighted-routing.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Clip 2 — Build the FastAPI provider adapter layer
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip2-adapter-layer.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/m1-demo1-provider-adapter-layer.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO1, EO1a), and writes a readable log you can hand to a
 # reviewer to confirm LO coverage before you record.
@@ -16,7 +16,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module1/preflight_log.txt"
+LOG="$ROOT/preflight-logs/m1-demo1-provider-adapter-layer.log"
 : > "$LOG"
 
 # --- connection defaults (Docker Compose on macOS) ---------------------------
@@ -241,5 +241,5 @@ emit "${GRAY} correct the app so the step's assertion passes, then reset with${R
 emit "${GRAY} ./scripts/module1-demo-reset.sh and re-run the preflight until PASS: 6,${R}"
 emit "${GRAY} FAIL: 0. Do not change the demo steps or the learning objectives.\"${R}"
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module1/preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m1-demo1-provider-adapter-layer.log${R}"
 exit "$FAIL"

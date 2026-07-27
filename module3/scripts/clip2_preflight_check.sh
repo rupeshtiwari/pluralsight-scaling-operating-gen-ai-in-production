@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 3 · Demo — Prove prompt versioning and reproducible rollback
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/clip2-prompt-versioning.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/m3-demo1-prompt-versioning-rollback.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO4, EO4a), and writes a readable log.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module3/clip2_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m3-demo1-prompt-versioning-rollback.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -163,5 +163,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module3/clip2_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m3-demo1-prompt-versioning-rollback.log${R}"
 exit "$FAIL"

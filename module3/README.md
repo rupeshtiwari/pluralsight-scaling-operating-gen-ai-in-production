@@ -11,10 +11,10 @@ readiness criteria and establish operational practices. · **30 minutes**
 
 | # | Title | Length | Learning objectives | Runbook |
 |---|-------|--------|---------------------|---------|
-| 2 | Prove prompt versioning and reproducible rollback | 6 min | TO4, EO4a | [demo/clip2-prompt-versioning.md](demo/clip2-prompt-versioning.md) ✅ |
-| 3 | Validate model updates against quality baselines | 6 min | EO4b | [demo/clip3-model-validation.md](demo/clip3-model-validation.md) ✅ |
-| 5 | Prove canary promotion, hold, and rollback decisions | 6 min | EO4c | [demo/clip5-canary-release.md](demo/clip5-canary-release.md) ✅ |
-| 6 | Run readiness audit and finalize operational runbook proof | 6 min | EO4d, TO5, EO5a–d | [demo/clip6-readiness-audit.md](demo/clip6-readiness-audit.md) ✅ |
+| 2 | Prove prompt versioning and reproducible rollback | 6 min | TO4, EO4a | [demo/m3-demo1-prompt-versioning-rollback.md](demo/m3-demo1-prompt-versioning-rollback.md) ✅ |
+| 3 | Validate model updates against quality baselines | 6 min | EO4b | [demo/m3-demo2-model-update-validation.md](demo/m3-demo2-model-update-validation.md) ✅ |
+| 5 | Prove canary promotion, hold, and rollback decisions | 6 min | EO4c | [demo/m3-demo3-canary-promotion-rollback.md](demo/m3-demo3-canary-promotion-rollback.md) ✅ |
+| 6 | Run readiness audit and finalize operational runbook proof | 6 min | EO4d, TO5, EO5a–d | [demo/m3-demo4-readiness-audit-runbook.md](demo/m3-demo4-readiness-audit-runbook.md) ✅ |
 
 ## Learning Objectives
 

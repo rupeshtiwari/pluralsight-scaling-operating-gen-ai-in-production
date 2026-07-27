@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Clip 3 — Prove weighted routing across model tiers
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip3-weighted-routing.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/m1-demo2-weighted-routing.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO1b), and writes a readable log you can hand to a reviewer.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module1/clip3_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m1-demo2-weighted-routing.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -189,5 +189,5 @@ emit "${GRAY} read the HOW TO FIX and PROMPT TO FIX lines, open the named source
 emit "${GRAY} the app so the step's assertion passes, reset with ./scripts/module1-demo-reset.sh,${R}"
 emit "${GRAY} and re-run until PASS: 6, FAIL: 0. Do not change the demo steps or the LO.\"${R}"
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module1/clip3_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m1-demo2-weighted-routing.log${R}"
 exit "$FAIL"

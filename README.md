@@ -111,7 +111,7 @@ Start a module's stack, then run its steps from the runbook:
 
 ```bash
 bash module1/scripts/demo_up.sh     # readiness check → starts FastAPI + Redis + PostgreSQL, waits healthy, opens tmux
-# ... run the Step 1–6 commands from module1/demo/clip2-adapter-layer.md ...
+# ... run the Step 1–6 commands from module1/demo/m1-demo1-provider-adapter-layer.md ...
 bash module1/scripts/demo_down.sh   # tears the stack down
 ```
 
@@ -297,10 +297,10 @@ endpoints (prompt versioning, model validation, canary, readiness) are listed in
 ├── module1/                     Module 1: Scaling GenAI Traffic (routing)
 │   ├── README.md                module index → 6 clips (2 presentation, 4 demo)
 │   ├── demo/                     one runbook per demo clip
-│   │   ├── clip2-adapter-layer.md      adapter layer ✅
-│   │   ├── clip3-weighted-routing.md   weighted routing ✅
-│   │   ├── clip5-payload-routing.md    payload routing & overrides ✅
-│   │   └── clip6-routing-receipts.md   receipts/counters disposition ✅
+│   │   ├── m1-demo1-provider-adapter-layer.md            adapter layer ✅
+│   │   ├── m1-demo2-weighted-routing.md                  weighted routing ✅
+│   │   ├── m1-demo3-payload-routing-and-overrides.md     payload routing & overrides ✅
+│   │   └── m1-demo4-routing-receipts-and-disposition.md  receipts/counters disposition ✅
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability
 │   ├── README.md                module index → 6 clips

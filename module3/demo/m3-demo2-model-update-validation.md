@@ -236,7 +236,7 @@ bash module3/scripts/clip3_preflight_check.sh
 
 Runs every step above (including the real Pytest suite), captures each command and
 its output, maps each step to EO4b, and writes a readable log to
-`module3/clip3_preflight_log.txt`. Expect `PASS: 6  FAIL: 0`.
+`preflight-logs/m3-demo2-model-update-validation.log`. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 

@@ -253,7 +253,7 @@ bash module1/scripts/clip5_preflight_check.sh
 ```
 
 Runs every step above, asserts EO1c and EO1d, and writes a readable log to
-`module1/clip5_preflight_log.txt`. Expect `PASS: 6  FAIL: 0`.
+`preflight-logs/m1-demo3-payload-routing-and-overrides.log`. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 

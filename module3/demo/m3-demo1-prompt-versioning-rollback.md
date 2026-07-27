@@ -242,7 +242,7 @@ bash module3/scripts/clip2_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-TO4 / EO4a, and writes a readable log to `module3/clip2_preflight_log.txt`. Expect
+TO4 / EO4a, and writes a readable log to `preflight-logs/m3-demo1-prompt-versioning-rollback.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup

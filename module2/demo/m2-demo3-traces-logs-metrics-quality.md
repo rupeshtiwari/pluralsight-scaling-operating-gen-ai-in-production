@@ -277,7 +277,7 @@ bash module2/scripts/clip5_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-EO3a–e, and writes a readable log to `module2/clip5_preflight_log.txt`. Expect
+EO3a–e, and writes a readable log to `preflight-logs/m2-demo3-traces-logs-metrics-quality.log`. Expect
 `PASS: 7  FAIL: 0`.
 
 ## Cleanup

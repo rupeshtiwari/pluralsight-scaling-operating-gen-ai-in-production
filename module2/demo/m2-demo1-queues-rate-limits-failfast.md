@@ -288,7 +288,7 @@ bash module2/scripts/clip2_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to TO2
-and EO2a/b/e, and writes a readable log to `module2/clip2_preflight_log.txt`. It runs
+and EO2a/b/e, and writes a readable log to `preflight-logs/m2-demo1-queues-rate-limits-failfast.log`. It runs
 the real k6 spike when k6 is installed and otherwise drives the same atomic path with
 a concurrent-`curl` burst, so the validated outcome matches the live demo. Expect
 `PASS: 7  FAIL: 0`.

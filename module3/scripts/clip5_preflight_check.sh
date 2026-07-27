@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 3 · Demo — Prove canary promotion, hold, and rollback decisions
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/clip5-canary-release.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/m3-demo3-canary-promotion-rollback.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO4c), and writes a readable log.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module3/clip5_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m3-demo3-canary-promotion-rollback.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -163,5 +163,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module3/clip5_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m3-demo3-canary-promotion-rollback.log${R}"
 exit "$FAIL"

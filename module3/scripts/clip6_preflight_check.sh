@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 3 · Demo — Run readiness audit and finalize operational runbook proof
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/clip6-readiness-audit.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/m3-demo4-readiness-audit-runbook.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO4d, TO5, EO5a-d), and writes a readable log.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module3/clip6_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m3-demo4-readiness-audit-runbook.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -163,5 +163,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module3/clip6_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m3-demo4-readiness-audit-runbook.log${R}"
 exit "$FAIL"

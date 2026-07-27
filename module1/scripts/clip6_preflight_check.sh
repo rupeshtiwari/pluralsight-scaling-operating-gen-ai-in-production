@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Demo — Validate routing receipts, counters, and final disposition
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip6-routing-receipts.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/m1-demo4-routing-receipts-and-disposition.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO1, EO1a-d), and writes a readable log for a reviewer.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module1/clip6_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m1-demo4-routing-receipts-and-disposition.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -163,5 +163,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module1/clip6_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m1-demo4-routing-receipts-and-disposition.log${R}"
 exit "$FAIL"

@@ -236,7 +236,7 @@ bash module3/scripts/clip5_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4c,
-and writes a readable log to `module3/clip5_preflight_log.txt`. Expect `PASS: 6  FAIL:
+and writes a readable log to `preflight-logs/m3-demo3-canary-promotion-rollback.log`. Expect `PASS: 6  FAIL:
 0`.
 
 ## Cleanup

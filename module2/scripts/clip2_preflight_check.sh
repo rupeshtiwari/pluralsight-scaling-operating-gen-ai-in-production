@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Prove queues, rate limits, and fail-fast behavior
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip2-queues-rate-limits.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/m2-demo1-queues-rate-limits-failfast.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO2, EO2a/b/e), and writes a readable log for a reviewer.
 #
@@ -16,7 +16,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module2/clip2_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m2-demo1-queues-rate-limits-failfast.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -204,5 +204,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module2/clip2_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo1-queues-rate-limits-failfast.log${R}"
 exit "$FAIL"

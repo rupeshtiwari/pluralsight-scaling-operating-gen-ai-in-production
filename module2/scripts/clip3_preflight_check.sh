@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Prove circuit breaker fallback and retry backoff
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip3-circuit-breaker.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/m2-demo2-circuit-breaker-fallback-retry.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO2c, EO2d, EO2e), and writes a readable log for a reviewer.
 #
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/module2/clip3_preflight_log.txt"
+LOG="$ROOT/preflight-logs/m2-demo2-circuit-breaker-fallback-retry.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -149,5 +149,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}module2/clip3_preflight_log.txt${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo2-circuit-breaker-fallback-retry.log${R}"
 exit "$FAIL"

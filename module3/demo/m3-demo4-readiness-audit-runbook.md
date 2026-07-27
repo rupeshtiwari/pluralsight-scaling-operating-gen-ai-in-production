@@ -245,7 +245,7 @@ bash module3/scripts/clip6_preflight_check.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4d /
-TO5 / EO5a–d, and writes a readable log to `module3/clip6_preflight_log.txt`. Expect
+TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo4-readiness-audit-runbook.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup

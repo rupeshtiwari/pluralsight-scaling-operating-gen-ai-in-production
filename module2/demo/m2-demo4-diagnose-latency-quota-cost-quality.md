@@ -291,7 +291,7 @@ bash module2/scripts/clip6_preflight_check.sh
 
 Runs every step above, captures each command and its output, maps each step to
 TO2 / EO2e / TO3 / EO3a–e, and writes a readable log to
-`module2/clip6_preflight_log.txt`. Expect `PASS: 7  FAIL: 0`.
+`preflight-logs/m2-demo4-diagnose-latency-quota-cost-quality.log`. Expect `PASS: 7  FAIL: 0`.
 
 ## Cleanup
 

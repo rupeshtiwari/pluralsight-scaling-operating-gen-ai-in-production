@@ -257,7 +257,7 @@ bash module1/scripts/preflight_check.sh
 
 Runs every step above, captures each command and its output, maps each step to
 its LO, and writes the log to
-[`module1/preflight_log.txt`](../preflight_log.txt) so you can confirm alignment
+[`preflight-logs/m1-demo1-provider-adapter-layer.log`](../../preflight-logs/m1-demo1-provider-adapter-layer.log) so you can confirm alignment
 with the outline. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup

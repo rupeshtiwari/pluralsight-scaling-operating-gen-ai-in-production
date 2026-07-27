@@ -252,7 +252,7 @@ bash module1/scripts/clip6_preflight_check.sh
 ```
 
 Runs every step above, asserts TO1 and EO1a–d, and writes a readable log to
-`module1/clip6_preflight_log.txt`. Expect `PASS: 5  FAIL: 0`.
+`preflight-logs/m1-demo4-routing-receipts-and-disposition.log`. Expect `PASS: 5  FAIL: 0`.
 
 ## Cleanup
 
