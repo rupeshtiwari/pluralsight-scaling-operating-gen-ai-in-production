@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Prove traces, logs, metrics, and quality sampling
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip5.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip5-observability.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO3a-e), and writes a readable log for a reviewer.
 #

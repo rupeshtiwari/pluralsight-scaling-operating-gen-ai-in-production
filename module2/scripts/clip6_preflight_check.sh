@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Diagnose latency, quota pressure, cost drift, and quality
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip6.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip6-incident-diagnosis.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO2, EO2e, TO3, EO3a-e), and writes a readable log.
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 3 · Demo — Validate model updates against quality baselines
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/clip3.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/clip3-model-validation.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO4b), and writes a readable log.
 #

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Demo — Payload-Based Routing & Deterministic Overrides
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip5.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip5-payload-routing.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO1c, EO1d), and writes a readable log for a reviewer.
 #

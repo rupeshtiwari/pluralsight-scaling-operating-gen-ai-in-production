@@ -48,6 +48,6 @@ fi
 
 echo
 echo "${LIME}✔ Ready.${R} Next:"
-echo "  ${BLUE}1.${R} Follow the steps in ${LGRN}module3/demo/clip2.md${R} (run them from ${LGRN}${ROOT}${R})"
+echo "  ${BLUE}1.${R} Follow the steps in ${LGRN}module3/demo/clip2-prompt-versioning.md${R} (run them from ${LGRN}${ROOT}${R})"
 echo "  ${BLUE}2.${R} Reset any time with ${LGRN}./scripts/module3-demo-reset.sh${R}"
 echo "  ${BLUE}3.${R} When finished, stop everything with ${LGRN}bash module3/scripts/demo_down.sh${R}"

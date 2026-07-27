@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 1 · Demo — Validate routing receipts, counters, and final disposition
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip6.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module1/demo/clip6-routing-receipts.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (TO1, EO1a-d), and writes a readable log for a reviewer.
 #

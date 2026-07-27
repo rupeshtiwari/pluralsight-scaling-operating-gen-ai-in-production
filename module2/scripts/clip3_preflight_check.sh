@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Prove circuit breaker fallback and retry backoff
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip3.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/clip3-circuit-breaker.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO2c, EO2d, EO2e), and writes a readable log for a reviewer.
 #

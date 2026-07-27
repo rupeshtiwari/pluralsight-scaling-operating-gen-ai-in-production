@@ -7,10 +7,10 @@ routing for multi-model GenAI service architectures. · **30 minutes**
 
 | # | Title | Length | Learning objectives | Runbook |
 |---|-------|--------|---------------------|---------|
-| 2 | Build the FastAPI provider adapter layer | 6 min | TO1, EO1a | [demo/clip2.md](demo/clip2.md) ✅ |
-| 3 | Prove weighted routing across model tiers | 6 min | EO1b | [demo/clip3.md](demo/clip3.md) ✅ |
-| 5 | Prove payload-based routing and deterministic overrides | 6 min | EO1c, EO1d | [demo/clip5.md](demo/clip5.md) ✅ |
-| 6 | Validate routing receipts, counters, and final disposition | 6 min | TO1, EO1a–d | [demo/clip6.md](demo/clip6.md) ✅ |
+| 2 | Build the FastAPI provider adapter layer | 6 min | TO1, EO1a | [demo/clip2-adapter-layer.md](demo/clip2-adapter-layer.md) ✅ |
+| 3 | Prove weighted routing across model tiers | 6 min | EO1b | [demo/clip3-weighted-routing.md](demo/clip3-weighted-routing.md) ✅ |
+| 5 | Prove payload-based routing and deterministic overrides | 6 min | EO1c, EO1d | [demo/clip5-payload-routing.md](demo/clip5-payload-routing.md) ✅ |
+| 6 | Validate routing receipts, counters, and final disposition | 6 min | TO1, EO1a–d | [demo/clip6-routing-receipts.md](demo/clip6-routing-receipts.md) ✅ |
 
 ## Learning Objectives
 
@@ -25,7 +25,7 @@ routing for multi-model GenAI service architectures. · **30 minutes**
 
 ```bash
 bash module1/scripts/demo_up.sh      # readiness check + start FastAPI/Redis/PostgreSQL (auto-starts Docker)
-# follow demo/clip2.md, demo/clip3.md, or demo/clip5.md
+# follow demo/clip2-adapter-layer.md, demo/clip3-weighted-routing.md, or demo/clip5-payload-routing.md
 bash module1/scripts/demo_down.sh    # stop the stack when finished
 ```
 
