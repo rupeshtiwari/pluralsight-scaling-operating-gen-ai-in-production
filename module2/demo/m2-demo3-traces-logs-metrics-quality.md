@@ -12,14 +12,14 @@ it wrong. A service that cannot observe latency, cost, and output quality togeth
 is a service you operate by hope. How do you make one request fully observable, and
 turn raw signals into an alert an operator can act on?
 
-**What you will see:** Seven moments that turn a black box into an operable system —
+**What you will see:** Five moments that turn a black box into an operable system —
 one request's end-to-end trace across ingress, queue, routing, provider call, retry,
 fallback, and response; the structured log that carries its full field set; the
 Prometheus metrics for latency, availability, queue depth, fallback and retry rate,
 and cost; output quality sampling that separates a successful response from a
-trustworthy one; the SLO rules that fire an alert when a dimension breaches; a slow
-request diagnosed straight from its span timings; and one record that ties cost and
-quality to the operator's action.
+trustworthy one and the SLO rule that fires an alert on the quality breach; and a
+slow request diagnosed straight from its span timings, with one record that ties
+cost and quality to the operator's action.
 
 **What you walk away with:** Full observability for the AI service — distributed
 tracing across the layers (EO3a), a structured logging schema (EO3b), production
@@ -33,10 +33,8 @@ diagnose a real incident from trace and log evidence (EO3e).
 | 1 | EO3a | One trace spans ingress → queue → routing → provider call → retry → fallback → response |
 | 2 | EO3b | A structured log carries request id, model, route reason, tokens, cost, latency, status |
 | 3 | EO3d | Prometheus metrics quantify latency, availability, queue depth, fallback, retry, cost |
-| 4 | EO3c | Quality sampling grades a representative subset with schema, policy, and reviewer reasons |
-| 5 | EO3d | SLO rules cover latency, availability, and output quality, and fire on a breach |
-| 6 | EO3e | A slow request's nested span timings pinpoint the provider as the root cause |
-| 7 | EO3e | One record correlates tokens, cost, quality status, and the operator action |
+| 4 | EO3c, EO3d | Quality sampling grades a representative subset, and the quality SLO fires an alert on the breach |
+| 5 | EO3e | A slow request's nested timings pinpoint the provider, and one record ties cost and quality to the operator action |
 
 ## What this demo proves — and each step is unique
 
@@ -45,10 +43,8 @@ diagnose a real incident from trace and log evidence (EO3e).
 | 1 | `/observe/trace` | Where a request spends its time, stage by stage |
 | 2 | `/observe/logs` | The durable field set behind every request |
 | 3 | `/observe/metrics` | The aggregate health signals over a window |
-| 4 | `/observe/quality` | A 200 response can still fail quality |
-| 5 | `/observe/slo` | Metrics become a go / no-go alert |
-| 6 | `/observe/diagnose` | Nested timings isolate the latency source |
-| 7 | `/observe/correlate` | Cost and quality tie to one operator action |
+| 4 | `/observe/quality` + `/observe/slo` | A 200 can still fail quality, and that breach fires an alert |
+| 5 | `/observe/diagnose` + `/observe/correlate` | Nested timings isolate the source, tied to one operator action |
 
 ## Prerequisites
 
@@ -172,103 +168,71 @@ next steps will show why a perfect availability number can still hide a broken
 service. `fallback rate` and `retry rate` at 15 percent tell you the primary provider
 is struggling under the surface, even though every caller got an answer.
 
-### Step 4: Sample output quality on live responses
+### Step 4: Sample output quality and confirm the SLO alert
 
-**Goal:** Run automated quality checks on a representative subset and read the pass
-rate against the quality bar.
+**Goal:** Run automated quality checks on a representative subset, then evaluate the
+service objectives and read the alert the quality breach fires.
 
 ```bash
 curl -s http://localhost:8000/observe/quality | python3 scripts/fmt.py --type quality \
-  --title "Sample output quality on live responses" \
+  --title "Sample output quality and confirm the SLO alert" \
   --why "Automated checks on a representative subset — a successful response can still fail quality"
+curl -s http://localhost:8000/observe/slo | python3 scripts/fmt.py --type slo \
+  --title "Sample output quality and confirm the SLO alert" \
+  --why "Latency, availability, and output quality each get an objective — the quality breach fires an alert"
 ```
 
-**Expected output:** ★ `policy: output_quality_sampling`, ★ the `schema`, ★ `pass
-rate: 60.0% (3/5)` against ★ `quality bar 0.85`, then a per-sample table with `score`,
-`status`, and the `reviewer reason`.
+**Expected output:** first the sample — ★ `policy: output_quality_sampling`, ★ `pass
+rate: 60.0% (3/5)` against ★ `quality bar 0.85`, with a per-sample `score` / `status`
+/ `reviewer reason`; then the SLO — ★ `disposition: ALERT`, three rows: `availability`
+`100 >= 99` `ok`, `latency_p95` `2112 <= 2500` `ok`, `quality_pass_rate` `60 >= 90`
+`breach` `page`.
 
 **What the learner should notice:** This is the step that keeps you honest. Every one
 of these responses returned a successful `200`, and yet two of the five **failed
-quality**. Read the reviewer reasons: one *hallucinated a policy number*, another
-*contradicts its source*. Those are not crashes; they are confident, wrong answers
-that no latency or availability metric will ever catch. A 60 percent pass rate on a
-0.85 bar is a serious signal — in production you sample a small, representative slice
-of live traffic exactly like this, precisely because you cannot review everything and
-you must not fly blind on trust. Availability tells you the service answered; quality
-sampling tells you whether the answer was worth sending.
+quality** — one *hallucinated a policy number*, another *contradicts its source*.
+Those are not crashes; they are confident, wrong answers no latency or availability
+metric will ever catch. Then watch what the SLO does with that: an objective without
+an alert is a wish, so each dimension gets a threshold and a severity. Availability
+and p95 latency are both green — if you only watched those two, you would sleep
+soundly. But the quality pass rate of 60 percent is far below its 90 percent
+objective, so the rule fires with severity `page`. That is the whole point of a
+quality SLO — it pages a human when the service is *up and confidently wrong*, the one
+failure mode your infrastructure dashboards are blind to.
 
-### Step 5: Confirm the SLO alert rules
+### Step 5: Diagnose the slow request and correlate the operator action
 
-**Goal:** Evaluate the service objectives across latency, availability, and output
-quality, and read the alert a breach fires.
-
-```bash
-curl -s http://localhost:8000/observe/slo | python3 scripts/fmt.py --type slo \
-  --title "Confirm the SLO alert rules" \
-  --why "Latency, availability, and output quality each get an objective — a breach fires an alert"
-```
-
-**Expected output:** ★ `disposition: ALERT`, then three rows — `availability` `100 >=
-99` `ok`, `latency_p95` `2112 <= 2500` `ok`, and `quality_pass_rate` `60 >= 90`
-`breach` `page`.
-
-**What the learner should notice:** An objective without an alert is a wish, so each
-dimension gets a threshold and a severity. Two of your three objectives are green:
-availability holds above 99 percent and the p95 latency sits under its 2500
-millisecond budget. If you only watched those two, you would sleep soundly. The third
-tells the truth. The quality pass rate of 60 percent is far below its 90 percent
-objective, so the rule fires with severity `page`. This is the whole point of a
-quality SLO — it pages a human when the service is *up and confidently wrong*, the
-one failure mode your infrastructure dashboards are blind to.
-
-### Step 6: Diagnose the slow request from its trace
-
-**Goal:** Open a slow request's trace and use its nested span timings to find the
-exact stage that owns the latency.
+**Goal:** Use a slow request's nested span timings to find the stage that owns the
+latency, then read one record that ties its tokens, cost, and quality to the operator
+action.
 
 ```bash
 curl -s http://localhost:8000/observe/diagnose | python3 scripts/fmt.py --type diagnose \
-  --title "Diagnose the slow request from its trace" \
+  --title "Diagnose the slow request and correlate the operator action" \
   --why "Nested span timings point at the exact stage that owns the latency"
-```
-
-**Expected output:** ★ a `trace id`, ★ `total: 2112 ms`, the span timeline, then
-★ `slowest span: provider_call — 2100ms (99.4%)`, ★ `provider status: degraded_slow`,
-★ `root cause: provider latency, not queueing or retry`.
-
-**What the learner should notice:** This is how you close an incident in under a
-minute instead of an hour. The request took 2112 milliseconds, and the trace ends the
-guesswork immediately: `provider_call` alone is 2100 of those milliseconds, which is
-99.4 percent of the total. The queue, the routing, and the retry logic are all
-innocent. Without a trace, a team burns an afternoon blaming its own code; with one,
-you point straight at the provider, match the span to its `degraded_slow` status, and
-open a ticket with the vendor holding real evidence. Nested timings turn "it's slow"
-into "the provider is slow, here is the proof."
-
-### Step 7: Correlate cost, quality, and the operator action
-
-**Goal:** Read one record that ties a request's tokens and cost to its quality verdict
-and the action an operator took.
-
-```bash
 curl -s http://localhost:8000/observe/correlate | python3 scripts/fmt.py --type correlate \
-  --title "Correlate cost, quality, and the operator action" \
+  --title "Diagnose the slow request and correlate the operator action" \
   --why "One record ties tokens and cost to the quality verdict and what the operator did about it"
 ```
 
-**Expected output:** ★ a `request id`, ★ `total tokens: 50`, ★ `cost: $0.0150`,
-★ `quality status: fail (score 0.55)`, ★ `operator action: sampled, flagged for
-review, excluded from training set`.
+**Expected output:** first the diagnosis — ★ `total: 2112 ms`, ★ `slowest span:
+provider_call — 2100ms (99.4%)`, ★ `provider status: degraded_slow`, ★ `root cause:
+provider latency, not queueing or retry`; then the correlation — ★ `total tokens:
+50`, ★ `cost: $0.0150`, ★ `quality status: fail (score 0.55)`, ★ `operator action:
+sampled, flagged for review, excluded from training set`.
 
-**What the learner should notice:** Observability only pays off when the signals
-connect to a decision. This one record does exactly that: it takes a single request,
-shows the 50 tokens and 1.5 cents you spent producing the answer, states plainly that
-the answer failed quality with a score of 0.55, and records what the operator did — it
-was sampled, flagged for review, and kept out of any training set so a bad answer
-never teaches the next model. That last field is the difference between a metric and
-an operation. You are not just measuring cost and quality; you are turning a failed
-response into a tracked action, which is what production ownership actually looks
-like.
+**What the learner should notice:** This is how you close an incident in under a
+minute instead of an hour. The request took 2112 milliseconds, and the trace ends the
+guesswork: `provider_call` alone is 2100 of those milliseconds — 99.4 percent — while
+the queue, routing, and retry are all innocent. You point straight at the provider,
+match the span to its `degraded_slow` status, and open a vendor ticket holding real
+evidence. Then the correlation closes the loop: one record shows the 50 tokens and 1.5
+cents you spent, states plainly that the answer failed quality at 0.55, and records
+what the operator did — sampled, flagged for review, and kept out of any training set
+so a bad answer never teaches the next model. That last field is the difference
+between a metric and an operation: you are not just measuring cost and quality, you
+are turning a failed response into a tracked action, which is what production
+ownership actually looks like.
 
 ## Preflight check
 
@@ -278,7 +242,7 @@ bash module2/scripts/m2-demo3-traces-logs-metrics-quality.preflight.sh
 
 Runs every step above, captures each command and its output, maps each step to
 EO3a–e, and writes a readable log to `preflight-logs/m2-demo3-traces-logs-metrics-quality.log`. Expect
-`PASS: 7  FAIL: 0`.
+`PASS: 5  FAIL: 0`.
 
 ## Cleanup
 

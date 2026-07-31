@@ -100,68 +100,44 @@ else
     "GET /observe/metrics must show p50=712, p95=2112, availability=100, fallback=15, retry=15, queue=4; GET /metrics must expose genai_request_latency_ms. Fix app/observability/observe.py."
 fi
 
-# STEP 4 — output quality sampling
-step_head "4" "Sample output quality on live responses" \
-  "A representative subset must be graded — a successful response can still fail quality." \
-  "pass rate 60% (3/5) against a 0.85 bar, with reviewer reasons for each fail."
+# STEP 4 — output quality sampling + the SLO alert it fires
+step_head "4" "Sample output quality and confirm the SLO alert" \
+  "A representative subset must be graded (a 200 can still fail quality), and the quality SLO must fire an alert on the breach." \
+  "pass rate 60% (3/5) on a 0.85 bar with reviewer reasons; disposition ALERT, quality pass rate breach at severity page."
 show_cmd "curl -s \$API_BASE/observe/quality | python3 scripts/fmt.py --type quality"
-RAW="$(curl -s "$API_BASE/observe/quality")"
-emit "$(printf '%s' "$RAW" | $FMT --type quality 2>&1)"
-if echo "$RAW" | jq -e '.pass_rate_pct==60.0 and .passed==3 and .failed==2 and .quality_bar==0.85 and ([.samples[].quality_status]|(index("pass") and index("fail"))) and (.samples|all(has("reviewer_reason")))' >/dev/null 2>&1; then
-  verdict 0 "quality sampling grades a subset 3 pass / 2 fail with reviewer reasons — a 200 can still fail quality" "" ""
-  LO+=("Step 4: production output quality sampling on a representative subset (EO3c)")
-else
-  verdict 1 "quality sampling did not grade the subset as expected" \
-    "Check the samples and QUALITY_BAR in app/observability/observe.py." \
-    "GET /observe/quality must show pass_rate=60, passed=3, failed=2, bar=0.85, samples spanning pass and fail with reviewer_reason. Fix app/observability/observe.py."
-fi
-
-# STEP 5 — SLO alert rules
-step_head "5" "Confirm the SLO alert rules" \
-  "Latency, availability, and output quality must each have an objective that fires on a breach." \
-  "disposition ALERT: availability ok, latency ok, quality pass rate breach with severity page."
+QL="$(curl -s "$API_BASE/observe/quality")"
+emit "$(printf '%s' "$QL" | $FMT --type quality 2>&1)"
 show_cmd "curl -s \$API_BASE/observe/slo | python3 scripts/fmt.py --type slo"
-RAW="$(curl -s "$API_BASE/observe/slo")"
-emit "$(printf '%s' "$RAW" | $FMT --type slo 2>&1)"
-if echo "$RAW" | jq -e '.disposition=="ALERT" and ([.slos[].dimension]|(index("latency") and index("availability") and index("output quality"))) and (.slos[]|select(.dimension=="output quality").status)=="breach" and (.slos[]|select(.dimension=="output quality").severity)=="page"' >/dev/null 2>&1; then
-  verdict 0 "SLO rules cover latency, availability, and output quality; the quality breach fires severity page" "" ""
-  LO+=("Step 5: SLOs for latency, availability, and output quality, with alerting (EO3d)")
+SL="$(curl -s "$API_BASE/observe/slo")"
+emit "$(printf '%s' "$SL" | $FMT --type slo 2>&1)"
+if echo "$QL" | jq -e '.pass_rate_pct==60.0 and .passed==3 and .failed==2 and .quality_bar==0.85 and ([.samples[].quality_status]|(index("pass") and index("fail"))) and (.samples|all(has("reviewer_reason")))' >/dev/null 2>&1 \
+  && echo "$SL" | jq -e '.disposition=="ALERT" and ([.slos[].dimension]|(index("latency") and index("availability") and index("output quality"))) and (.slos[]|select(.dimension=="output quality").status)=="breach" and (.slos[]|select(.dimension=="output quality").severity)=="page"' >/dev/null 2>&1; then
+  verdict 0 "quality grades 3 pass / 2 fail on a 0.85 bar, and the quality SLO fires an ALERT at severity page" "" ""
+  LO+=("Step 4: output quality sampling on a representative subset, with an SLO alert on the breach (EO3c, EO3d)")
 else
-  verdict 1 "SLO evaluation or alerting is wrong" \
-    "Check the SLO thresholds and _slo evaluation in app/observability/observe.py." \
-    "GET /observe/slo must return disposition=ALERT with dimensions latency, availability, output quality, and the quality breach at severity page. Fix app/observability/observe.py."
+  verdict 1 "quality sampling or the SLO alert is wrong" \
+    "Check the samples/QUALITY_BAR and the SLO thresholds in app/observability/observe.py." \
+    "GET /observe/quality must show pass_rate=60, 3 pass/2 fail, bar 0.85 with reviewer_reason; GET /observe/slo must return disposition ALERT with the quality breach at severity page. Fix app/observability/observe.py."
 fi
 
-# STEP 6 — diagnose the slow request
-step_head "6" "Diagnose the slow request from its trace" \
-  "Nested span timings must point at the exact stage that owns the latency." \
-  "provider_call is 2100ms of 2112ms (99.4%); root cause is provider latency, not queueing or retry."
+# STEP 5 — diagnose the slow request + correlate cost / quality / operator action
+step_head "5" "Diagnose the slow request and correlate the operator action" \
+  "Nested span timings must pin the latency on the provider, and one record must tie tokens, cost, and quality to the operator action." \
+  "provider_call is 2100ms of 2112ms (99.4%), root cause provider latency; a failed request with tokens, cost, quality score, and the recorded operator action."
 show_cmd "curl -s \$API_BASE/observe/diagnose | python3 scripts/fmt.py --type diagnose"
-RAW="$(curl -s "$API_BASE/observe/diagnose")"
-emit "$(printf '%s' "$RAW" | $FMT --type diagnose 2>&1)"
-if echo "$RAW" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>90 and (.provider_status=="degraded_slow") and (.root_cause|test("provider"))' >/dev/null 2>&1; then
-  verdict 0 "the slow trace pins the latency on provider_call (over 90% of the total) — not queueing or retry" "" ""
-  LO+=("Step 6: use observability data to diagnose a performance incident (EO3e)")
-else
-  verdict 1 "the diagnosis did not isolate the latency source" \
-    "Check the diagnose block and the slow trace in app/observability/observe.py." \
-    "GET /observe/diagnose must show slowest_span=provider_call with share>90%, provider_status degraded_slow, root cause provider latency. Fix app/observability/observe.py."
-fi
-
-# STEP 7 — correlate cost, quality, and operator action
-step_head "7" "Correlate cost, quality, and the operator action" \
-  "One record must tie tokens and cost to the quality verdict and the operator action." \
-  "a failed request with its token count, cost, quality score, and the recorded operator action."
+DG="$(curl -s "$API_BASE/observe/diagnose")"
+emit "$(printf '%s' "$DG" | $FMT --type diagnose 2>&1)"
 show_cmd "curl -s \$API_BASE/observe/correlate | python3 scripts/fmt.py --type correlate"
-RAW="$(curl -s "$API_BASE/observe/correlate")"
-emit "$(printf '%s' "$RAW" | $FMT --type correlate 2>&1)"
-if echo "$RAW" | jq -e '.quality_status=="fail" and (.total_tokens>0) and (.cost_usd>0) and (.operator_action|length>0) and has("request_id")' >/dev/null 2>&1; then
-  verdict 0 "one record correlates tokens, cost, the quality verdict, and the operator action" "" ""
-  LO+=("Step 7: structured evidence connects cost, quality, and the operator action (EO3e)")
+CR="$(curl -s "$API_BASE/observe/correlate")"
+emit "$(printf '%s' "$CR" | $FMT --type correlate 2>&1)"
+if echo "$DG" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>90 and (.provider_status=="degraded_slow") and (.root_cause|test("provider"))' >/dev/null 2>&1 \
+  && echo "$CR" | jq -e '.quality_status=="fail" and (.total_tokens>0) and (.cost_usd>0) and (.operator_action|length>0) and has("request_id")' >/dev/null 2>&1; then
+  verdict 0 "the slow trace pins provider_call (>90%), and one record correlates tokens, cost, quality, and the operator action" "" ""
+  LO+=("Step 5: use observability data to diagnose an incident and connect it to the operator action (EO3e)")
 else
-  verdict 1 "the correlation record is incomplete" \
-    "Check the correlate block in app/observability/observe.py." \
-    "GET /observe/correlate must return request_id, total_tokens, cost_usd, quality_status=fail, and operator_action. Fix app/observability/observe.py."
+  verdict 1 "the diagnosis or the correlation did not hold" \
+    "Check the diagnose and correlate blocks in app/observability/observe.py." \
+    "GET /observe/diagnose must show slowest_span=provider_call share>90% degraded_slow; GET /observe/correlate must return request_id, total_tokens, cost_usd, quality_status=fail, operator_action. Fix app/observability/observe.py."
 fi
 
 # COVERAGE + SUMMARY

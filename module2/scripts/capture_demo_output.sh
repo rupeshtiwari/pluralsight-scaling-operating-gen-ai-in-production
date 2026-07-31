@@ -115,16 +115,16 @@ run "Step 2 — Inspect the structured logs" \
 run "Step 3 — Read the Prometheus service metrics" \
   "curl -s \$API_BASE/observe/metrics | python3 scripts/fmt.py --type metrics" \
   "curl -s $API_BASE/observe/metrics" metrics
-run "Step 4 — Sample output quality on live responses" \
+run "Step 4 — Sample output quality and confirm the SLO alert" \
   "curl -s \$API_BASE/observe/quality | python3 scripts/fmt.py --type quality" \
   "curl -s $API_BASE/observe/quality" quality
-run "Step 5 — Confirm the SLO alert rules" \
+run "Step 4 (cont) — the SLO alert the quality breach fires" \
   "curl -s \$API_BASE/observe/slo | python3 scripts/fmt.py --type slo" \
   "curl -s $API_BASE/observe/slo" slo
-run "Step 6 — Diagnose the slow request from its trace" \
+run "Step 5 — Diagnose the slow request and correlate the operator action" \
   "curl -s \$API_BASE/observe/diagnose | python3 scripts/fmt.py --type diagnose" \
   "curl -s $API_BASE/observe/diagnose" diagnose
-run "Step 7 — Correlate cost, quality, and the operator action" \
+run "Step 5 (cont) — correlate cost, quality, and the operator action" \
   "curl -s \$API_BASE/observe/correlate | python3 scripts/fmt.py --type correlate" \
   "curl -s $API_BASE/observe/correlate" correlate
 
