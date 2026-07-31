@@ -12,13 +12,13 @@ correctly, even when hundreds of requests arrive at the same instant and race ea
 other. How do you prove, under real concurrent load, that the service absorbs the
 burst, respects its limits, and sheds the overflow instead of falling over?
 
-**What you will see:** Seven moments that turn "we handle load" into "we handle load
+**What you will see:** Five moments that turn "we handle load" into "we handle load
 provably, under real traffic" — a live **k6** spike and its HTTP outcome
-distribution; the actual queued request IDs in Redis; the rate-limit window sitting
-at its threshold; the same burst shedding at a different point on every provider key;
-one request that overflows the full queue and comes back as a clean HTTP 429 with a
-`Retry-After`; the durable receipts that tell every disposition apart; and a single
-request ID correlated across the structured log and the PostgreSQL receipt.
+distribution; the actual queued request IDs in Redis; the rate-limit window at its
+threshold and the same burst shedding differently on every provider key; one request
+that overflows the full queue and comes back as a clean HTTP 429 with a
+`Retry-After`; and the durable receipts that tell every disposition apart, with a
+single request ID correlated across the structured log and the PostgreSQL receipt.
 
 **What you walk away with:** A resilient front door for the AI service — a request
 queue with a configurable rate limit that absorbs spikes without exhausting a
@@ -33,11 +33,9 @@ model failures, latency spikes, and quota exhaustion are separate scenarios.
 |------|----------------|----------------|
 | 1 | TO2, EO2a, EO2e | Real concurrent k6 load is admitted, queued, or shed with no failures |
 | 2 | EO2a | The queue holds actual request IDs — real parked work, not a counter |
-| 3 | EO2a | The rate limit caps immediate admits per window and gates the queue |
-| 4 | EO2a | Limits are keyed per provider, tier, and request class — each sheds differently |
-| 5 | EO2b | A full queue rejects with HTTP 429, `Retry-After`, and a durable receipt |
-| 6 | EO2b | Accepted, delayed, and rejected are distinguishable durable receipts |
-| 7 | EO2b, EO2e | One request ID reconciles across the structured log and the receipt |
+| 3 | EO2a | Limits cap admits per window and are keyed per provider, tier, and request class |
+| 4 | EO2b | A full queue rejects with HTTP 429, `Retry-After`, and a durable receipt |
+| 5 | EO2b, EO2e | Accepted, delayed, and rejected are distinct receipts; one ID traced across log and receipt |
 
 ## What this demo proves — and each step is unique
 
@@ -45,11 +43,9 @@ model failures, latency spikes, and quota exhaustion are separate scenarios.
 |------|---------|-----------------------------------|
 | 1 | `k6 run clip2_spike.js` | Real concurrent traffic splits into 200s and 429s with zero failures |
 | 2 | `LRANGE resilience:queue:*` | The backlog is a real list of queued request IDs |
-| 3 | `/resilience/rate-limit` | The admitted count sits at the limit, with its window duration |
-| 4 | `/resilience/matrix` | The limit is per provider / tier / class — each sheds at its own point |
-| 5 | `/load/submit` | One request over a full queue fails fast with 429 + `Retry-After` |
-| 6 | `/resilience/dispositions` | Every disposition is a distinct receipt; rejected cost is zero |
-| 7 | `/resilience/admission-logs` | One request ID ties the log and the receipt together |
+| 3 | `/resilience/rate-limit` + `/resilience/matrix` | The limit sits at threshold, keyed per provider / tier / class |
+| 4 | `/load/submit` | One request over a full queue fails fast with 429 + `Retry-After` |
+| 5 | `/resilience/dispositions` + `/resilience/admission-logs` | Every disposition is a distinct receipt, traced across log and receipt |
 
 ## Prerequisites
 
@@ -150,57 +146,43 @@ a capacity of `10`, so the queue is `FULL` — which is exactly why the next req
 over the line will be rejected. This is the running backlog an operator watches:
 when depth climbs toward capacity, the service is about to start shedding.
 
-### Step 3: Compare the rate-limit count against its threshold
+### Step 3: Compare rate limits by provider, tier, and request class
 
-**Goal:** Read the rate-limit window and see the admitted count at the configured
-limit — with the window duration that makes the limit meaningful.
+**Goal:** Read the rate-limit window at its threshold, then send the *same* burst at
+every provider key and watch each shed at a different point because each has its own
+configured limit.
 
 ```bash
 curl -s http://localhost:8000/resilience/rate-limit | python3 scripts/fmt.py --type ratelimit \
-  --title "Compare the rate-limit count against its threshold" \
-  --why "The admitted count vs the configured limit and window — the gate that decides accept-now or queue"
-```
-
-**Expected output:** ★ `limiter key: balanced-ai:balanced:interactive`,
-★ `admitted: 6 / 6 AT LIMIT`, ★ `window: 6 requests per 10s`.
-
-**What the learner should notice:** The rate limit is the *first* gate, separate
-from the queue. The window admitted exactly **6**, which is the configured limit, so
-it reads `AT LIMIT` — that is why the seventh request onward went to the queue rather
-than straight through. And a limit is only meaningful with its **window**: `6 per
-10s` is a throughput budget you can reason about and reproduce, where a bare `6`
-cannot be. The `limiter key` — `balanced-ai:balanced:interactive` — is the exact
-composite the limiter buckets on, which the next step compares across providers.
-
-### Step 4: Compare policies by provider, tier, and request class
-
-**Goal:** Send the *same* burst size at every provider key and watch each shed at a
-different point, because each has its own configured limit.
-
-```bash
+  --title "Compare rate limits by provider, tier, and request class" \
+  --why "The admitted count vs its configured limit and window — the gate that decides accept-now or queue"
 curl -s "http://localhost:8000/resilience/matrix?count=20" | python3 scripts/fmt.py --type matrix \
-  --title "Compare policies by provider, tier, and request class" \
+  --title "Compare rate limits by provider, tier, and request class" \
   --why "The same burst against every provider key — each has its own limit, so each sheds at a different point"
 ```
 
-**Expected output:** ★ `burst size: 20`, then a row per key — `econo-ai` (low_cost,
-batch, 10/20) accepts 10 / delays 10 / rejects 0; `balanced-ai` (balanced,
-interactive, 6/10) accepts 6 / delays 10 / rejects 4; `premium-ai` (premium,
-premium, 3/4) accepts 3 / delays 4 / rejects 13.
+**Expected output:** first the window — ★ `limiter key:
+balanced-ai:balanced:interactive`, ★ `admitted: 6 / 6 AT LIMIT`, ★ `window: 6
+requests per 10s`; then the matrix — a row per key: `econo-ai` (low_cost, batch,
+10/20) accepts 10 / delays 10 / rejects 0; `balanced-ai` (balanced, interactive,
+6/10) accepts 6 / delays 10 / rejects 4; `premium-ai` (premium, premium, 3/4)
+accepts 3 / delays 4 / rejects 13.
 
-**What the learner should notice:** The rate limit is not one global number — it is
-keyed **per provider, tier, and request class**, and this matrix proves it by
-showing the provider identity, not just the model. The identical 20-request burst
-lands three different ways because each provider key has its own budget: the shared
-`econo-ai` provider has generous limits and absorbs the burst whole; the dedicated
-`balanced-ai` provider sheds a few; the reserved `premium-ai` provider sheds most.
-That last one is deliberate, not a bug — a reserved provider's capacity is scarce
-and expensive, so it is **intentionally bounded** to a small budget. You protect a
-reserved reservation by admitting only what it is provisioned for and shedding a
-bulk spike early, rather than letting one burst exhaust the quota everyone else
-depends on. Same policy, three keys, three outcomes.
+**What the learner should notice:** The rate limit is the *first* gate, separate from
+the queue, and it is only meaningful with its **window**: `6 per 10s` is a throughput
+budget you can reason about, where a bare `6` cannot be. The window admitted exactly
+**6** — the configured limit — so it reads `AT LIMIT`, which is why the seventh
+request onward went to the queue. But the limit is not one global number: it is keyed
+**per provider, tier, and request class**, and the matrix proves it. The identical
+20-request burst lands three different ways because each provider key has its own
+budget — the shared `econo-ai` absorbs it whole, the dedicated `balanced-ai` sheds a
+few, the reserved `premium-ai` sheds most. That last one is deliberate: a reserved
+provider's capacity is scarce and expensive, so it is **intentionally bounded** to a
+small budget, and you protect the reservation by shedding a bulk spike early rather
+than letting one burst exhaust the quota everyone else depends on. Same policy, three
+keys, three outcomes.
 
-### Step 5: Exceed the queue and prove the fail-fast 429
+### Step 4: Exceed the queue and prove the fail-fast 429
 
 **Goal:** With the queue full from Step 1, submit one more request and show the
 caller gets a clean HTTP 429 with a `Retry-After` — plus a durable rejected receipt.
@@ -227,59 +209,39 @@ pileup worse. And the reject is **not invisible** — `receipt_persisted: true` 
 durable receipt was written, so a shed request is auditable. Refusing work you
 cannot serve, quickly and politely, is how you keep the work you *can* serve fast.
 
-### Step 6: Distinguish every request's fate in the receipts
+### Step 5: Distinguish and correlate every request's fate
 
-**Goal:** Query PostgreSQL receipts grouped by disposition and confirm every
-accepted, delayed, and rejected request is a distinct, durable record.
+**Goal:** Query PostgreSQL receipts grouped by disposition, confirm every accepted,
+delayed, and rejected request is a distinct durable record, then correlate one
+request ID across the structured log and the receipt.
 
 ```bash
 curl -s http://localhost:8000/resilience/dispositions | python3 scripts/fmt.py --type dispositions \
-  --title "Distinguish every request's fate in the receipts" \
+  --title "Distinguish and correlate every request's fate" \
   --why "Straight from PostgreSQL: accepted, delayed, and rejected — each a durable, distinguishable record"
-```
-
-**Expected output:** ★ `total requests: 21`, then ★ `accepted: 6`, ★ `delayed: 10`,
-★ `rejected: 5`, and sample receipts whose `est tokens` and `est cost` columns show
-served requests carrying an estimate while rejected ones show `0` and `$0.000000`.
-
-**What the learner should notice:** This is the durable ledger behind the live
-counters. The total is **21** — the 20 from the spike plus the one you failed fast in
-Step 5, which is why `rejected` reads **5**. Read the columns carefully: they are
-labelled **`est tokens`** and **`est cost`** on purpose. An accepted or delayed
-request carries an *estimate* for capacity planning; the **actual** provider cost is
-still zero until the request executes, because a queued request may yet expire, be
-cancelled, or be rerouted. A **rejected** request shows `0` estimate because it never
-reaches the model at all. That distinction — estimate versus incurred, and served
-versus shed — is what lets an operator account for cost and traffic honestly.
-
-### Step 7: Correlate one request across logs and receipts
-
-**Goal:** Inspect the structured admission logs, one per disposition, and correlate a
-single request ID across the log stream and the PostgreSQL receipt.
-
-```bash
-docker compose logs api --since 5m --no-log-prefix \
-  | grep '"event":"admission_decision"' | tail -n 200 > /tmp/admission.log
 curl -s http://localhost:8000/resilience/admission-logs | python3 scripts/fmt.py --type admission-logs \
-  --title "Correlate one request across logs and receipts" \
+  --title "Distinguish and correlate every request's fate" \
   --why "Structured admission logs distinguish every disposition, and one request ID ties the caller, the log, and the receipt together"
 ```
 
-**Expected output:** one structured log per disposition (`accepted`, `delayed`,
-`rejected`, each with request ID, queue depth, rate-limit count, HTTP status, and
-reason), then the correlation — ★ `request_id`, ★ `in structured log: true`,
-★ `in PostgreSQL receipt: true`, ★ `dispositions match: true`.
+**Expected output:** first the ledger — ★ `total requests: 21`, ★ `accepted: 6`,
+★ `delayed: 10`, ★ `rejected: 5`, with `est tokens` / `est cost` showing served
+requests carrying an estimate while rejected ones show `0` and `$0.000000`; then a
+structured log per disposition and the correlation — ★ `request_id`, ★ `in
+structured log: true`, ★ `in PostgreSQL receipt: true`, ★ `dispositions match: true`.
 
-**What the learner should notice:** Receipts prove *what* happened; structured logs
-prove it *as it happened*, in the operator's live stream. Each log line is a complete
-admission decision — the request ID, which provider key it hit, the queue depth and
-rate-limit count at that instant, the disposition, and the HTTP status — so you can
-tell an accepted, delayed, and rejected request apart at a glance. The payoff is the
-correlation: take one rejected request ID and it appears in **three** places — the
-caller's 429 response, the structured log, and the durable PostgreSQL receipt — all
-agreeing on the same outcome. That three-way trace is what turns "the request was
-rejected" into production-grade evidence an operator can stand behind in an incident
-review.
+**What the learner should notice:** This is the durable ledger behind the live
+counters, and its proof it is trustworthy. The total is **21** — the 20 from the
+spike plus the one you failed fast in Step 4, which is why `rejected` reads **5**.
+Read the columns carefully: an accepted or delayed request carries an **`est cost`**
+*estimate* for capacity planning, but the actual provider cost stays zero until it
+executes; a **rejected** request shows `0` because it never reaches the model. That
+distinction — estimate versus incurred, served versus shed — is what lets an operator
+account for cost honestly. Then comes the correlation: receipts prove *what* happened,
+structured logs prove it *as it happened*, and one rejected request ID appears in
+**three** places — the caller's 429, the structured log, and the durable receipt —
+all agreeing. That three-way trace is what turns "the request was rejected" into
+production-grade evidence an operator can stand behind in an incident review.
 
 ## Preflight check
 
@@ -291,7 +253,7 @@ Runs every step above, captures each command and its output, maps each step to T
 and EO2a/b/e, and writes a readable log to `preflight-logs/m2-demo1-queues-rate-limits-failfast.log`. It runs
 the real k6 spike when k6 is installed and otherwise drives the same atomic path with
 a concurrent-`curl` burst, so the validated outcome matches the live demo. Expect
-`PASS: 7  FAIL: 0`.
+`PASS: 5  FAIL: 0`.
 
 ## Cleanup
 

@@ -62,19 +62,19 @@ run "Step 1 — Run the k6 spike and read the HTTP outcomes" \
 run "Step 2 — Inspect the real queue in Redis" \
   "docker compose exec -T redis redis-cli --json LRANGE resilience:queue:balanced-std 0 -1 | python3 scripts/fmt.py --type queue-list" \
   'redis_query --json LRANGE resilience:queue:balanced-std 0 -1' queue-list
-run "Step 3 — Compare the rate-limit count against its threshold" \
+run "Step 3 — Compare rate limits by provider, tier, and request class" \
   "curl -s \$API_BASE/resilience/rate-limit | python3 scripts/fmt.py --type ratelimit" \
   "curl -s $API_BASE/resilience/rate-limit" ratelimit
-run "Step 4 — Compare policies by provider, tier, and request class" \
+run "Step 3 (cont) — the same burst across every provider key" \
   "curl -s \$API_BASE/resilience/matrix?count=20 | python3 scripts/fmt.py --type matrix" \
   "curl -s $API_BASE/resilience/matrix?count=20" matrix
-run "Step 5 — Exceed the queue and prove the fail-fast 429" \
+run "Step 4 — Exceed the queue and prove the fail-fast 429" \
   "curl -s -X POST \$API_BASE/load/submit -d '{\"model\":\"balanced-std\"}' -w '...429...' | python3 scripts/fmt.py --type failfast" \
   "curl -s -X POST $API_BASE/load/submit -H 'Content-Type: application/json' -d '{\"model\":\"balanced-std\"}' -w '\n{\"http_status\": %{http_code}}'" failfast
-run "Step 6 — Distinguish every request's fate in the receipts" \
+run "Step 5 — Distinguish and correlate every request's fate" \
   "curl -s \$API_BASE/resilience/dispositions | python3 scripts/fmt.py --type dispositions" \
   "curl -s $API_BASE/resilience/dispositions" dispositions
-run "Step 7 — Correlate one request across logs and receipts" \
+run "Step 5 (cont) — correlate one request across log and receipt" \
   "curl -s \$API_BASE/resilience/admission-logs | python3 scripts/fmt.py --type admission-logs" \
   "curl -s $API_BASE/resilience/admission-logs" admission-logs
 
