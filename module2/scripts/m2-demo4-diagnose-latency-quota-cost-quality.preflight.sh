@@ -51,40 +51,28 @@ emit "${GRAY}triggering the controlled incident (one provider fault, four alerts
 curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 curl -s -X POST "$API_BASE/incident/run" >/dev/null 2>&1
 
-# STEP 1 — alert timeline
-step_head "1" "Read the alert timeline" \
-  "A simulated incident must surface an ordered alert timeline with a clear first bad signal." \
-  "four alerts in fire order; latency fires first, quality pages last."
+# STEP 1 — trigger the incident: alert timeline + operator dashboard
+step_head "1" "Read the alert timeline and open the dashboard" \
+  "A simulated incident must surface an ordered alert timeline with a clear first bad signal, and a dashboard showing all four dimensions breached." \
+  "four alerts in fire order (latency first, quality pages last); four dashboard panels all red, baseline vs current vs objective."
 show_cmd "curl -s -X POST \$API_BASE/incident/run >/dev/null; curl -s \$API_BASE/incident/alerts | python3 scripts/fmt.py --type incident-alerts"
-RAW="$(curl -s "$API_BASE/incident/alerts")"
-emit "$(printf '%s' "$RAW" | $FMT --type incident-alerts 2>&1)"
-if echo "$RAW" | jq -e '(.alerts|length==4) and (.first_signal=="LatencyP95AboveObjective") and ([.alerts[].dimension]|(index("latency") and index("quota") and index("cost") and index("output_quality"))) and ((.alerts[]|select(.dimension=="output_quality").severity)=="page")' >/dev/null 2>&1; then
-  verdict 0 "four alerts fire in order; latency is the first signal and the quality breach pages" "" ""
-  LO+=("Step 1: a simulated incident surfaces an ordered alert timeline (EO2e, EO3d)")
-else
-  verdict 1 "the alert timeline is wrong" \
-    "Check the alerts block in app/incident/diagnose.py." \
-    "GET /incident/alerts after /incident/run must return 4 alerts, first_signal LatencyP95AboveObjective, dimensions latency/quota/cost/output_quality, quality severity page. Fix app/incident/diagnose.py."
-fi
-
-# STEP 2 — operator dashboard
-step_head "2" "Open the operator dashboard" \
-  "The four dimensions must show baseline versus current against each objective, all breached." \
-  "latency p95, quota saturation, cost per request, quality pass rate — every panel red."
+AL="$(curl -s "$API_BASE/incident/alerts")"
+emit "$(printf '%s' "$AL" | $FMT --type incident-alerts 2>&1)"
 show_cmd "curl -s \$API_BASE/incident/dashboard | python3 scripts/fmt.py --type incident-dashboard"
-RAW="$(curl -s "$API_BASE/incident/dashboard")"
-emit "$(printf '%s' "$RAW" | $FMT --type incident-dashboard 2>&1)"
-if echo "$RAW" | jq -e '(.panels|length==4) and (.breached==4) and (.panels|all(.status=="breach")) and ([.panels[].dimension]|(index("latency") and index("quota") and index("cost") and index("output_quality")))' >/dev/null 2>&1; then
-  verdict 0 "the dashboard shows all four dimensions breached, each baseline vs current vs objective" "" ""
-  LO+=("Step 2: an operator dashboard quantifies latency, quota, cost, and quality (TO3, EO3d)")
+DB="$(curl -s "$API_BASE/incident/dashboard")"
+emit "$(printf '%s' "$DB" | $FMT --type incident-dashboard 2>&1)"
+if echo "$AL" | jq -e '(.alerts|length==4) and (.first_signal=="LatencyP95AboveObjective") and ([.alerts[].dimension]|(index("latency") and index("quota") and index("cost") and index("output_quality"))) and ((.alerts[]|select(.dimension=="output_quality").severity)=="page")' >/dev/null 2>&1 \
+  && echo "$DB" | jq -e '(.panels|length==4) and (.breached==4) and (.panels|all(.status=="breach")) and ([.panels[].dimension]|(index("latency") and index("quota") and index("cost") and index("output_quality")))' >/dev/null 2>&1; then
+  verdict 0 "four alerts fire in order (latency first, quality pages), and the dashboard shows all four dimensions breached" "" ""
+  LO+=("Step 1: a simulated incident surfaces an ordered alert timeline and an operator dashboard (EO2e, TO3, EO3d)")
 else
-  verdict 1 "the dashboard panels are wrong" \
-    "Check the dashboard block in app/incident/diagnose.py." \
-    "GET /incident/dashboard must return 4 panels, breached=4, dimensions latency/quota/cost/output_quality, each status breach. Fix app/incident/diagnose.py."
+  verdict 1 "the alert timeline or the dashboard is wrong" \
+    "Check the alerts and dashboard blocks in app/incident/diagnose.py." \
+    "GET /incident/alerts must return 4 alerts, first_signal LatencyP95AboveObjective, quality severity page; GET /incident/dashboard must return 4 breached panels. Fix app/incident/diagnose.py."
 fi
 
-# STEP 3 — isolate latency from the trace
-step_head "3" "Isolate the latency from one trace" \
+# STEP 2 — isolate latency from the trace
+step_head "2" "Isolate the latency from one trace" \
   "The trace must clear queueing, retry, and fallback and pin the latency on the provider call." \
   "provider_call owns ~83% of the trace; queue, retry, fallback are innocent."
 show_cmd "curl -s \$API_BASE/incident/isolate | python3 scripts/fmt.py --type incident-isolate"
@@ -99,8 +87,8 @@ else
     "GET /incident/isolate must show slowest_span=provider_call (>80%), provider balanced-ai degraded_slow, provider_call verdict root cause, others innocent, 32-char trace id. Fix app/incident/diagnose.py."
 fi
 
-# STEP 4 — quota pressure and shed
-step_head "4" "Prove the quota pressure and the shed" \
+# STEP 3 — quota pressure and shed
+step_head "3" "Prove the quota pressure and the shed" \
   "Admission control must shed the excess load with a 429 and a Retry-After, protecting the provider." \
   "40 submitted, 34 accepted, 6 rejected with Retry-After; provider quota_exceeded."
 show_cmd "curl -s \$API_BASE/incident/quota | python3 scripts/fmt.py --type incident-quota"
@@ -115,40 +103,28 @@ else
     "GET /incident/quota must show submitted=40, accepted=34, rejected_429=6, provider_status quota_exceeded, retry_after 10, shed_working true. Fix app/incident/diagnose.py."
 fi
 
-# STEP 5 — cost drift to its cause
-step_head "5" "Trace the cost drift to its cause" \
-  "The cost increase must reconcile exactly to named drivers on the degraded provider." \
-  "\$0.0120 -> \$0.0210 per request (+75%), the delta split into retries and fallback overhead."
+# STEP 4 — connect model identity, tokens, cost, and quality (cost drift + quality regression)
+step_head "4" "Connect the cost drift and the quality regression to the provider" \
+  "Logs and receipts must tie model identity, tokens, and cost to the drift, and sampling must confirm the quality regression — both on the same degraded provider." \
+  "\$0.0120 -> \$0.0210 per request (+75%) reconciled to retries + fallback; pass rate 68% (17/25) vs 92% baseline, clustered on balanced-std."
 show_cmd "curl -s \$API_BASE/incident/cost | python3 scripts/fmt.py --type incident-cost"
-RAW="$(curl -s "$API_BASE/incident/cost")"
-emit "$(printf '%s' "$RAW" | $FMT --type incident-cost 2>&1)"
-if echo "$RAW" | jq -e '.reconciles==true and .drift_pct==75.0 and (.current_per_request_usd>.objective_per_request_usd) and (.drivers|length>=2) and (.drivers|all(has("add_per_request_usd")))' >/dev/null 2>&1; then
-  verdict 0 "the cost drift reconciles to the cent: retries + fallback overhead account for the full delta" "" ""
-  LO+=("Step 5: cost drift ties to model identity, tokens, and retries (EO3b)")
-else
-  verdict 1 "the cost drift does not reconcile" \
-    "Check the cost block and the driver figures in app/incident/diagnose.py." \
-    "GET /incident/cost must show reconciles=true, drift_pct=75, current above objective, and drivers each with add_per_request_usd summing to the delta. Fix app/incident/diagnose.py."
-fi
-
-# STEP 6 — quality regression
-step_head "6" "Confirm the quality regression from sampling" \
-  "Sampling must confirm the pass rate dropped below objective, with failures clustered on the provider." \
-  "pass rate 68% (17/25) vs 92% baseline; grouped reasons cluster on balanced-std."
+CO="$(curl -s "$API_BASE/incident/cost")"
+emit "$(printf '%s' "$CO" | $FMT --type incident-cost 2>&1)"
 show_cmd "curl -s \$API_BASE/incident/quality | python3 scripts/fmt.py --type incident-quality"
-RAW="$(curl -s "$API_BASE/incident/quality")"
-emit "$(printf '%s' "$RAW" | $FMT --type incident-quality 2>&1)"
-if echo "$RAW" | jq -e '.pass_rate_pct==68.0 and .passed==17 and .failed==8 and (.pass_rate_pct<.objective_pass_rate_pct) and (.baseline_pass_rate_pct==92.0) and (.failure_reasons|length>=2) and (.cluster|test("balanced-std"))' >/dev/null 2>&1; then
-  verdict 0 "sampling confirms 68% vs 92% baseline, below the 90% objective, failures clustered on the provider" "" ""
-  LO+=("Step 6: output quality sampling confirms the regression (EO3c)")
+QR="$(curl -s "$API_BASE/incident/quality")"
+emit "$(printf '%s' "$QR" | $FMT --type incident-quality 2>&1)"
+if echo "$CO" | jq -e '.reconciles==true and .drift_pct==75.0 and (.current_per_request_usd>.objective_per_request_usd) and (.drivers|length>=2) and (.drivers|all(has("add_per_request_usd")))' >/dev/null 2>&1 \
+  && echo "$QR" | jq -e '.pass_rate_pct==68.0 and .passed==17 and .failed==8 and (.pass_rate_pct<.objective_pass_rate_pct) and (.baseline_pass_rate_pct==92.0) and (.failure_reasons|length>=2) and (.cluster|test("balanced-std"))' >/dev/null 2>&1; then
+  verdict 0 "cost drift reconciles to retries + fallback, and quality sampling confirms 68% vs 92% — both on balanced-std" "" ""
+  LO+=("Step 4: connect model identity, tokens, cost, and quality to the degraded provider (EO3b, EO3c)")
 else
-  verdict 1 "the quality regression sample is wrong" \
-    "Check the quality block in app/incident/diagnose.py." \
-    "GET /incident/quality must show pass_rate 68, passed 17, failed 8, baseline 92, objective 90, grouped failure_reasons, cluster balanced-std. Fix app/incident/diagnose.py."
+  verdict 1 "the cost drift or the quality regression is wrong" \
+    "Check the cost and quality blocks in app/incident/diagnose.py." \
+    "GET /incident/cost must show reconciles=true, drift 75, current above objective, >=2 drivers; GET /incident/quality must show pass_rate 68, 17/8, baseline 92, cluster balanced-std. Fix app/incident/diagnose.py."
 fi
 
-# STEP 7 — root cause and coordinated action
-step_head "7" "Choose the operator action from the evidence" \
+# STEP 5 — root cause and coordinated action
+step_head "5" "Choose the operator action from the evidence" \
   "Four alerts must resolve to one root cause and a coordinated, evidence-based action per dimension." \
   "root cause: one degraded provider; a decision for latency, quota, cost, and quality; disposition ACT."
 show_cmd "curl -s \$API_BASE/incident/action | python3 scripts/fmt.py --type incident-action"
@@ -156,7 +132,7 @@ RAW="$(curl -s "$API_BASE/incident/action")"
 emit "$(printf '%s' "$RAW" | $FMT --type incident-action 2>&1)"
 if echo "$RAW" | jq -e '(.root_cause|test("balanced-ai")) and (.disposition=="ACT") and (.decisions|length==4) and ([.decisions[].dimension]|(index("latency") and index("quota") and index("cost") and index("output_quality"))) and (.decisions|all(has("evidence") and has("action") and has("expected_effect")))' >/dev/null 2>&1; then
   verdict 0 "four symptoms resolve to one root cause; each dimension gets an evidence-based action" "" ""
-  LO+=("Step 7: observability data drives a root-cause, evidence-based decision (EO3e, TO2)")
+  LO+=("Step 5: observability data drives a root-cause, evidence-based decision (EO3e, TO2)")
 else
   verdict 1 "the root-cause action is incomplete" \
     "Check the action block in app/incident/diagnose.py." \

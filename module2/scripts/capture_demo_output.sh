@@ -134,25 +134,25 @@ rec "MODULE 2 · CLIP 6 — DEMO CAPTURE (diagnose latency, quota, cost, quality
 curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 curl -s -X POST "$API_BASE/incident/run" >/dev/null 2>&1
 
-run "Step 1 — Read the alert timeline" \
+run "Step 1 — Read the alert timeline and open the dashboard" \
   "curl -s -X POST \$API_BASE/incident/run >/dev/null; curl -s \$API_BASE/incident/alerts | python3 scripts/fmt.py --type incident-alerts" \
   "curl -s $API_BASE/incident/alerts" incident-alerts
-run "Step 2 — Open the operator dashboard" \
+run "Step 1 (cont) — the operator dashboard, all four dimensions red" \
   "curl -s \$API_BASE/incident/dashboard | python3 scripts/fmt.py --type incident-dashboard" \
   "curl -s $API_BASE/incident/dashboard" incident-dashboard
-run "Step 3 — Isolate the latency from one trace" \
+run "Step 2 — Isolate the latency from one trace" \
   "curl -s \$API_BASE/incident/isolate | python3 scripts/fmt.py --type incident-isolate" \
   "curl -s $API_BASE/incident/isolate" incident-isolate
-run "Step 4 — Prove the quota pressure and the shed" \
+run "Step 3 — Prove the quota pressure and the shed" \
   "curl -s \$API_BASE/incident/quota | python3 scripts/fmt.py --type incident-quota" \
   "curl -s $API_BASE/incident/quota" incident-quota
-run "Step 5 — Trace the cost drift to its cause" \
+run "Step 4 — Connect the cost drift and the quality regression to the provider" \
   "curl -s \$API_BASE/incident/cost | python3 scripts/fmt.py --type incident-cost" \
   "curl -s $API_BASE/incident/cost" incident-cost
-run "Step 6 — Confirm the quality regression from sampling" \
+run "Step 4 (cont) — the quality regression clustered on the provider" \
   "curl -s \$API_BASE/incident/quality | python3 scripts/fmt.py --type incident-quality" \
   "curl -s $API_BASE/incident/quality" incident-quality
-run "Step 7 — Choose the operator action from the evidence" \
+run "Step 5 — Choose the operator action from the evidence" \
   "curl -s \$API_BASE/incident/action | python3 scripts/fmt.py --type incident-action" \
   "curl -s $API_BASE/incident/action" incident-action
 

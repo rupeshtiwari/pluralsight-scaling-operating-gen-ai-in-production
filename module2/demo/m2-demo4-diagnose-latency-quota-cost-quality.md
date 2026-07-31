@@ -14,14 +14,14 @@ from the first bad signal down to the single root cause, on evidence, and act on
 the cause instead of chasing each symptom. How do you diagnose an incident with
 four red dimensions and resolve it with one decision?
 
-**What you will see:** Seven moves that take a four-alarm incident down to one root
-cause — the alert timeline that shows which signal fired first; the operator
-dashboard with all four dimensions red against their objectives; the single trace
-that clears queueing, retry, and fallback and pins the latency on the provider;
-the admission control that sheds the quota pressure with a 429 and a Retry-After;
-the cost drift reconciled to the cent against its real drivers; the quality
-sampling that confirms the regression and shows where it clusters; and the
-root-cause decision that assigns one evidence-based action to each dimension.
+**What you will see:** Five moves that take a four-alarm incident down to one root
+cause — the alert timeline and operator dashboard that show which signal fired first
+with all four dimensions red against their objectives; the single trace that clears
+queueing, retry, and fallback and pins the latency on the provider; the admission
+control that sheds the quota pressure with a 429 and a Retry-After; the cost drift
+reconciled to its real drivers alongside the quality sampling that confirms the
+regression, both on the same provider; and the root-cause decision that assigns one
+evidence-based action to each dimension.
 
 **What you walk away with:** The ability to diagnose a production incident from
 observability data (EO3e) — reading a simulated failure (EO2e) across tracing
@@ -33,25 +33,21 @@ failover, load shedding, and retry limits.
 
 | Step | LO sub-element | What proves it |
 |------|----------------|----------------|
-| 1 | EO2e, EO3d | A simulated incident surfaces an ordered alert timeline with a clear first signal |
-| 2 | TO3, EO3d | An operator dashboard quantifies latency, quota, cost, and quality against objectives |
-| 3 | EO3a, EO3e | One trace clears queueing, retry, and fallback and pins the latency on the provider |
-| 4 | TO2, EO2e | Admission control sheds the quota pressure with a 429 and a Retry-After |
-| 5 | EO3b | The cost drift reconciles to named drivers on the degraded provider |
-| 6 | EO3c | Quality sampling confirms the regression and shows it clusters on the provider |
-| 7 | EO3e, TO2 | Four symptoms resolve to one root cause with an evidence-based action per dimension |
+| 1 | EO2e, TO3, EO3d | A simulated incident surfaces an ordered alert timeline and an operator dashboard, all four dimensions breached |
+| 2 | EO3a, EO3e | One trace clears queueing, retry, and fallback and pins the latency on the provider |
+| 3 | TO2, EO2e | Admission control sheds the quota pressure with a 429 and a Retry-After |
+| 4 | EO3b, EO3c | Cost drift reconciles to named drivers, and quality sampling confirms the regression — both on the provider |
+| 5 | EO3e, TO2 | Four symptoms resolve to one root cause with an evidence-based action per dimension |
 
 ## What this demo proves — and each step is unique
 
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
-| 1 | `/incident/alerts` | Which signal fired first — and why first is not root |
-| 2 | `/incident/dashboard` | Four dimensions, red at once, against their objectives |
-| 3 | `/incident/isolate` | The trace clears the innocent stages and names the culprit |
-| 4 | `/incident/quota` | Load shedding is working, not failing |
-| 5 | `/incident/cost` | The extra dollars reconcile to a cause, not a guess |
-| 6 | `/incident/quality` | The regression clusters — it is not random noise |
-| 7 | `/incident/action` | One root cause, one coordinated decision |
+| 1 | `/incident/alerts` + `/incident/dashboard` | Which signal fired first, and all four dimensions red at once |
+| 2 | `/incident/isolate` | The trace clears the innocent stages and names the culprit |
+| 3 | `/incident/quota` | Load shedding is working, not failing |
+| 4 | `/incident/cost` + `/incident/quality` | The extra dollars and the quality drop trace to one provider |
+| 5 | `/incident/action` | One root cause, one coordinated decision |
 
 ## Prerequisites
 
@@ -97,40 +93,19 @@ Reset before you start:
 
 ## Demo steps
 
-### Step 1: Read the alert timeline
+### Step 1: Read the alert timeline and open the dashboard
 
-**Goal:** Trigger the controlled incident and read the alerts in the order they
-fired, so you know the first bad signal before you touch anything.
+**Goal:** Trigger the controlled incident, read the alerts in the order they fired to
+find the first bad signal, then open the operator dashboard to see all four
+dimensions against their objectives.
 
 ```bash
 curl -s -X POST http://localhost:8000/incident/run >/dev/null
 curl -s http://localhost:8000/incident/alerts | python3 scripts/fmt.py --type incident-alerts \
-  --title "Read the alert timeline" \
+  --title "Read the alert timeline and open the dashboard" \
   --why "Which signal fired first — the first alert is a symptom, not the root cause"
-```
-
-**Expected output:** ★ `first signal: LatencyP95AboveObjective`, then four alerts
-in fire order — `+00:30` latency (`ticket`), `+01:10` quota (`ticket`), `+02:00`
-cost (`ticket`), and `+02:40` output quality (`page`).
-
-**What the learner should notice:** Four alerts in two minutes is the moment an
-incident tempts you into the wrong move — splitting the team to chase all four.
-Read the timeline instead. Latency fired first at thirty seconds, and the quality
-breach — the one that actually pages a human — fired last. The order is a clue,
-not a verdict: the first signal is almost never the root cause, it is just the
-fastest symptom to cross a threshold. A page carries more weight than a ticket, so
-the quality breach is where the customer pain is, but you do not fix four things.
-You find the one fault underneath them.
-
-### Step 2: Open the operator dashboard
-
-**Goal:** Read all four dimensions at once — latency, quota saturation, cost per
-request, and quality pass rate — each baseline against current against its
-objective.
-
-```bash
 curl -s http://localhost:8000/incident/dashboard | python3 scripts/fmt.py --type incident-dashboard \
-  --title "Open the operator dashboard" \
+  --title "Read the alert timeline and open the dashboard" \
   --why "Four dimensions, baseline versus current against each objective — every panel red"
 ```
 
@@ -138,21 +113,26 @@ curl -s http://localhost:8000/incident/dashboard | python3 scripts/fmt.py --type
 > `http://localhost:3000` — the terminal shows the incident snapshot; the browser
 > shows it moving.
 
-**Expected output:** ★ `window requests: 40`, then four breached panels —
-`latency_p95_ms` `950 → 3750` (`<= 2500`), `quota_saturation_pct` `55 → 98`
-(`<= 90`), `cost_per_request_usd` `$0.0120 → $0.0210` (`<= $0.0150`), and
-`quality_pass_rate_pct` `92.0 → 68.0` (`>= 90.0`).
+**Expected output:** first the timeline — ★ `first signal: LatencyP95AboveObjective`,
+four alerts in fire order (`+00:30` latency `ticket`, `+01:10` quota `ticket`,
+`+02:00` cost `ticket`, `+02:40` output quality `page`); then the dashboard —
+★ `window requests: 40` and four breached panels: `latency_p95_ms` `950 → 3750`,
+`quota_saturation_pct` `55 → 98`, `cost_per_request_usd` `$0.0120 → $0.0210`,
+`quality_pass_rate_pct` `92.0 → 68.0`.
 
-**What the learner should notice:** This is the board you actually stare at during
-an incident, and every panel is red — which is exactly why raw dashboards panic
-people. The value of the baseline column is that it turns each number into a
-*movement*: latency nearly quadrupled, quota went from comfortable to nearly
-exhausted, cost drifted up by three quarters, and quality fell twenty-four points.
-Four dimensions moving together, in the same window, is itself the biggest clue in
-the whole incident. Independent problems do not politely arrive at once. When
-everything breaks at the same instant, suspect one shared cause — and go find it.
+**What the learner should notice:** Four alerts in two minutes is the moment an
+incident tempts you into the wrong move — splitting the team to chase all four. Read
+the timeline instead: latency fired first at thirty seconds, and the quality breach —
+the one that actually pages a human — fired last. The first signal is almost never
+the root cause, it is just the fastest symptom to cross a threshold. Then the
+dashboard turns each alert into a *movement*: latency nearly quadrupled, quota went
+from comfortable to nearly exhausted, cost drifted up three quarters, quality fell
+twenty-four points. Four dimensions moving together, in the same window, is itself
+the biggest clue in the incident — independent problems do not politely arrive at
+once. When everything breaks at the same instant, suspect one shared cause, and go
+find it.
 
-### Step 3: Isolate the latency from one trace
+### Step 2: Isolate the latency from one trace
 
 **Goal:** Open one slow request's trace and use the span timings to clear the
 innocent stages and name the one that owns the latency.
@@ -178,7 +158,7 @@ single trace just exonerated both. One degraded provider, `balanced-ai`, owns th
 incident's latency. That is the root cause the four alerts were all pointing at,
 and now you can prove it instead of suspecting it.
 
-### Step 4: Prove the quota pressure and the shed
+### Step 3: Prove the quota pressure and the shed
 
 **Goal:** Read the admission-control accounting for the same window and confirm the
 quota pressure was shed, not dropped on the floor.
@@ -204,59 +184,40 @@ entirely. A rejected request with a `Retry-After` is a promise kept; a provider
 crashed under unshed load is an outage. Load shedding is a feature you are watching
 succeed, and it buys you the time to fix the real fault.
 
-### Step 5: Trace the cost drift to its cause
+### Step 4: Connect the cost drift and the quality regression to the provider
 
-**Goal:** Take the cost increase and reconcile it, to the cent, against the drivers
-that actually produced it.
+**Goal:** Reconcile the cost increase, to the cent, against the drivers that produced
+it, then read the quality sampling — and see both land on the same degraded provider.
 
 ```bash
 curl -s http://localhost:8000/incident/cost | python3 scripts/fmt.py --type incident-cost \
-  --title "Trace the cost drift to its cause" \
+  --title "Connect the cost drift and the quality regression to the provider" \
   --why "The extra dollars tie to retries and failover on the degraded provider — reconciled to the cent"
-```
-
-**Expected output:** ★ `baseline: $0.0120 / request`, ★ `current: $0.0210 /
-request` (`+75.0%`), ★ `objective: $0.0150 / request`, then the two drivers —
-`retries on balanced-std` `+$0.0063` and `fallback overhead` `+$0.0027` — and ★
-`reconciles to current: true`.
-
-**What the learner should notice:** Cost drift is where teams wave their hands and
-say "traffic must be up." Do not. Reconcile it. The baseline was one-point-two
-cents a request; it is now two-point-one, a seventy-five percent jump. The two
-drivers add up to exactly the gap, and neither of them is more traffic — they are
-both the *same degraded provider*. The slow primary gets retried before it fails
-over, and every retry pays for a second call on the balanced tier at thirty cents
-per thousand tokens; the failover itself adds one more call. This is why model
-identity belongs in your cost telemetry: the dollars did not leak, they went
-somewhere specific, and that somewhere is `balanced-ai` again.
-
-### Step 6: Confirm the quality regression from sampling
-
-**Goal:** Read the output-quality sampling for the window and confirm the pass rate
-dropped, and see where the failures cluster.
-
-```bash
 curl -s http://localhost:8000/incident/quality | python3 scripts/fmt.py --type incident-quality \
-  --title "Confirm the quality regression from sampling" \
+  --title "Connect the cost drift and the quality regression to the provider" \
   --why "Grouped failure reasons that cluster on the degraded provider — every failure is a confident, wrong 200"
 ```
 
-**Expected output:** ★ `pass rate: 68.0% (17/25)` against `baseline 92.0%,
-objective >= 90%`, then the grouped failure reasons — `hallucinated a policy
-number ×3`, `answer contradicts the source ×3`, `off-format / schema invalid ×2` —
-and ★ `cluster: balanced-std (degraded window)`.
+**Expected output:** first the cost — ★ `baseline: $0.0120 / request`, ★ `current:
+$0.0210 / request` (`+75.0%`), drivers `retries on balanced-std` `+$0.0063` and
+`fallback overhead` `+$0.0027`, ★ `reconciles to current: true`; then the quality —
+★ `pass rate: 68.0% (17/25)` against `baseline 92.0%, objective >= 90%`, grouped
+reasons (`hallucinated a policy number ×3`, `answer contradicts the source ×3`,
+`off-format / schema invalid ×2`), and ★ `cluster: balanced-std (degraded window)`.
 
-**What the learner should notice:** This is the dimension your infrastructure
-dashboards can never see, and it is the one that pages. Every one of these
-twenty-five responses returned a clean `200`; eight of them were wrong anyway —
-hallucinated numbers, answers that contradict their own source, broken formats.
-The pass rate fell from ninety-two to sixty-eight. But the real tell is that the
-failures *cluster*: they are not scattered randomly across the fleet, they land on
-`balanced-std` during its degraded window. Grouping the reasons is what turns a bad
-number into a diagnosis. The same provider that owns the latency and the cost is
-also handing back the bad answers. Three symptoms, one name.
+**What the learner should notice:** Cost drift is where teams wave their hands and
+say "traffic must be up." Do not — reconcile it. The two drivers add up to exactly
+the gap, and neither is more traffic: the slow primary gets retried before it fails
+over, and every retry pays for a second call on the balanced tier; the failover adds
+one more. The dollars did not leak, they went somewhere specific — `balanced-ai`.
+Then the quality sample confirms the dimension your infrastructure dashboards can
+never see: every one of the twenty-five responses returned a clean `200`, yet eight
+were wrong anyway, and the failures *cluster* on `balanced-std` during its degraded
+window rather than scattering at random. The same provider that owns the latency and
+the cost is also handing back the bad answers. Model identity is where the evidence
+converges — three symptoms, one name.
 
-### Step 7: Choose the operator action from the evidence
+### Step 5: Choose the operator action from the evidence
 
 **Goal:** Collapse the four symptoms into one root cause and assign a coordinated,
 evidence-based action to each dimension.
@@ -274,7 +235,7 @@ cost, and sample-and-block the degraded provider for quality — then ★ `dispo
 ACT`.
 
 **What the learner should notice:** This is the payoff, and it is why you did the
-other six steps. Every alert traced back to one degraded provider, so you are not
+other four steps. Every alert traced back to one degraded provider, so you are not
 making four decisions — you are making one, with four coordinated moves. Open the
 circuit and fail `balanced-std` over to a healthy tier, and the latency, the retry
 cost, and the quota pressure all fall together because they shared a cause. Sample
@@ -291,7 +252,7 @@ bash module2/scripts/m2-demo4-diagnose-latency-quota-cost-quality.preflight.sh
 
 Runs every step above, captures each command and its output, maps each step to
 TO2 / EO2e / TO3 / EO3a–e, and writes a readable log to
-`preflight-logs/m2-demo4-diagnose-latency-quota-cost-quality.log`. Expect `PASS: 7  FAIL: 0`.
+`preflight-logs/m2-demo4-diagnose-latency-quota-cost-quality.log`. Expect `PASS: 5  FAIL: 0`.
 
 ## Cleanup
 
