@@ -11,7 +11,7 @@ import json
 import redis
 
 from app.config import settings
-from app.providers.registry import BASE_ADAPTERS, DEFAULT_CONDITION
+from app.providers.registry import BASE_ADAPTERS, DEFAULT_CONDITION, limiter_key
 
 _pool = redis.ConnectionPool(
     host=settings.redis_host, port=settings.redis_port, decode_responses=True
@@ -147,7 +147,7 @@ def reset_mixed() -> None:
 # are read and updated in a single server-side step, so no two racing requests
 # can both slip past a full queue. State lives in real datastore structures:
 #   resilience:admitted:<model>  — INCR counter, the rate-limit window
-#   resilience:queue:<model>     — a real LIST of queued request IDs (the backlog)
+#   resilience:queue:<provider>:<tier>:<class> — a real LIST of queued request IDs
 #   resilience:dispositions      — accepted / delayed / rejected tally (HASH)
 #   resilience:logs              — structured admission-decision log events (LIST)
 
@@ -160,7 +160,9 @@ def _admitted_key(model: str) -> str:
 
 
 def _queue_key(model: str) -> str:
-    return f"resilience:queue:{model}"
+    # Same composite the limiter buckets on (provider:tier:class), so the queue
+    # and the rate-limit counter visibly share one key space — no second token.
+    return f"resilience:queue:{limiter_key(model)}"
 
 
 # Atomic admission: within one Redis execution, admit if under the rate limit,

@@ -716,7 +716,6 @@ def fmt_queue(d: dict) -> str:
     out += sect("queued request IDs (actual work parked in the list)")
     for rid in d.get("queued_request_ids", []):
         out.append(f"  {PINK}★{RESET} {LGRN}{rid}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
@@ -739,7 +738,6 @@ def fmt_queue_list(d: Any) -> str:
     out += sect("queued request IDs (actual work parked in the list)")
     for rid in ids:
         out.append(f"  {PINK}★{RESET} {LGRN}{rid}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
@@ -755,6 +753,12 @@ def fmt_ratelimit(d: dict) -> str:
                   PINK if at else LGRN)
     out += _noted("window", f"{lim} requests per {d.get('window_seconds')}s",
                   "the immediate-admit budget and how long it lasts")
+    if d.get("requests_arrived"):
+        fwd = int(d.get("provider_calls_forwarded", 0))
+        arr = int(d.get("requests_arrived", 0))
+        out += _noted("provider calls forwarded", f"{fwd} of {arr}",
+                      "quota protected" if d.get("quota_protected") else "within quota",
+                      LIME if d.get("quota_protected") else LGRN)
     return "\n".join(out)
 
 
@@ -828,7 +832,7 @@ def fmt_dispositions(d: dict) -> str:
     out += _noted("rejected", disp.get("rejected"), "shed — never ran, zero cost", PINK)
     out += sect("sample receipts  (cost is an estimate; actual is zero until execution)")
     out.append(f"    {BLUE}{'disposition':<13}{'request':<18}{'model':<14}"
-               f"{'est tokens':<12}{'est cost':<12}{'status'}{RESET}")
+               f"{'est tokens':<12}{'est cost'}{RESET}")
     out.append("")
     for r in d.get("samples", []):
         disp_v = str(r.get("disposition"))
@@ -837,7 +841,7 @@ def fmt_dispositions(d: dict) -> str:
         out.append(
             f"  {PINK}★{RESET} {dc}{disp_v:<13}{RESET}{LGRN}{str(r.get('request_id')):<18}"
             f"{str(r.get('selected_model')):<14}{str(r.get('total_tokens')):<12}"
-            f"{cost:<12}{str(r.get('provider_status'))}{RESET}")
+            f"{cost}{RESET}")
         out.append("")
     return "\n".join(out)
 
@@ -849,14 +853,15 @@ def fmt_admission_logs(d: dict) -> str:
         "request ID ties the caller, the log, and the receipt together", width=92)]
     out += sect("one structured log per disposition")
     out.append(f"    {BLUE}{'disposition':<13}{'request':<18}{'queue':<7}"
-               f"{'rate':<6}{'http':<6}{'reason'}{RESET}")
+               f"{'limit':<7}{'http':<6}{'reason'}{RESET}")
     out.append("")
     for e in d.get("samples", []):
         disp_v = str(e.get("disposition"))
         dc = {"accepted": LIME, "delayed": BLUE, "rejected": PINK}.get(disp_v, LGRN)
+        limit_cell = f"{e.get('rate_limit_count')}/{e.get('rate_limit')}"
         out.append(
             f"  {PINK}★{RESET} {dc}{disp_v:<13}{RESET}{LGRN}{str(e.get('request_id')):<18}"
-            f"{str(e.get('queue_depth')):<7}{str(e.get('rate_limit_count')):<6}"
+            f"{str(e.get('queue_depth')):<7}{limit_cell:<7}"
             f"{str(e.get('http_status')):<6}{str(e.get('reason'))}{RESET}")
         out.append("")
     c = d.get("correlate", {})

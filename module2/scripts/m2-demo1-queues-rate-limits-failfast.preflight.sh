@@ -23,6 +23,10 @@ export PGHOST="${PGHOST:-localhost}"; export PGPORT="${PGPORT:-5432}"
 export PGUSER="${PGUSER:-genai}"; export PGDATABASE="${PGDATABASE:-genai}"
 export PGPASSWORD="${PGPASSWORD:-genai}"
 FMT="python3 $ROOT/scripts/fmt.py"
+# Elapsed-time proof: after the spike, hold for SETTLE_SECONDS (the length of the
+# on-camera narration) before reading the state, to prove the admitted count and
+# the queue do NOT roll or drain during the take. Set SETTLE_SECONDS=0 to skip.
+SETTLE_SECONDS="${SETTLE_SECONDS:-60}"
 
 redis_query() {
   local out
@@ -91,56 +95,63 @@ else
     "20 concurrent POST /load/submit must yield accepted=6, delayed=10, rejected=4 (16x200, 4x429), 0 failures. Fix app/db/redis_client.py."
 fi
 
-# STEP 2 — real queue list of request IDs (backlog above zero)
+# Elapsed-time hold — prove the state survives the narration (no rolling window,
+# no draining queue) before the operator reads it in Step 2 and Step 3.
+if [ "$SETTLE_SECONDS" -gt 0 ] 2>/dev/null; then
+  emit "${GRAY}holding ${SETTLE_SECONDS}s (the narration window) to prove admitted + queue do not roll ...${R}"
+  sleep "$SETTLE_SECONDS"
+fi
+
+# STEP 2 — real queue list of request IDs, read on the composite key
 step_head "2" "Inspect the real queue in Redis" \
-  "The queue must hold actual request IDs — real parked work, not only a depth counter — proving the backlog rose above zero." \
-  "10 real request IDs in the Redis LIST, depth 10 at capacity 10."
-show_cmd "docker compose exec -T redis redis-cli --json LRANGE resilience:queue:balanced-std 0 -1 | python3 scripts/fmt.py --type queue-list"
-RAW="$(redis_query --json LRANGE resilience:queue:balanced-std 0 -1)"
-emit "$(printf '%s' "$RAW" | $FMT --type queue-list 2>&1)"
-if echo "$RAW" | jq -e 'length==10 and all(.[]; startswith("req-"))' >/dev/null 2>&1; then
-  verdict 0 "the Redis LIST holds 10 real queued request IDs — genuine parked work, backlog above zero" "" ""
-  LO+=("Step 2: the queue is a real list of request IDs the operator can inspect (EO2a)")
+  "The queue must hold actual request IDs — real parked work, not only a depth counter — on the SAME composite key the limiter buckets on." \
+  "10 real request IDs, depth 10 / 10 FULL, on key resilience:queue:balanced-ai:balanced:interactive."
+show_cmd "curl -s \$API_BASE/resilience/queue?model=balanced-std | python3 scripts/fmt.py --type queue"
+RAW="$(curl -s "$API_BASE/resilience/queue?model=balanced-std")"
+emit "$(printf '%s' "$RAW" | $FMT --type queue 2>&1)"
+if echo "$RAW" | jq -e '.depth==10 and .capacity==10 and .full==true and (.queued_request_ids|length==10) and (.queued_request_ids|all(startswith("req-"))) and (.queue_key=="resilience:queue:balanced-ai:balanced:interactive")' >/dev/null 2>&1; then
+  verdict 0 "the queue holds 10 real request IDs at depth 10/10 FULL, on the composite key it shares with the limiter" "" ""
+  LO+=("Step 2: the queue is a real list of request IDs, keyed exactly like the limiter (EO2a)")
 else
-  verdict 1 "the queue does not hold 10 real request IDs" \
-    "Check the RPUSH in the admission Lua (app/db/redis_client.py) and queue_ids()." \
-    "LRANGE resilience:queue:balanced-std after the spike must return 10 req- IDs. Fix app/db/redis_client.py."
+  verdict 1 "the queue is not full with 10 real IDs on the composite key" \
+    "Check queue_ids()/_queue_key() in app/db/redis_client.py and /resilience/queue in app/main.py." \
+    "GET /resilience/queue?model=balanced-std after the spike must show depth 10/10, full true, 10 req- IDs, queue_key resilience:queue:balanced-ai:balanced:interactive. Fix app/db/redis_client.py."
 fi
 
 # STEP 3 — rate limits at threshold, keyed per provider / tier / request class
 step_head "3" "Compare rate limits by provider, tier, and request class" \
-  "The admitted count must sit at the configured limit, and the SAME burst must shed differently per provider key." \
-  "balanced admitted 6/6 AT LIMIT (6 per 10s); the 20-burst rejects 0 / 4 / 13 across econo-ai / balanced-ai / premium-ai."
+  "The admitted count must sit at the configured limit, forward only that many calls to the provider, and the SAME burst must shed differently per provider key." \
+  "balanced admitted 6/6 AT LIMIT (6 per 60s), provider calls forwarded 6 of 20 quota protected; the 20-burst rejects 0 / 4 / 13 across econo-ai / balanced-ai / premium-ai."
 show_cmd "curl -s \$API_BASE/resilience/rate-limit | python3 scripts/fmt.py --type ratelimit"
 RL="$(curl -s "$API_BASE/resilience/rate-limit")"
 emit "$(printf '%s' "$RL" | $FMT --type ratelimit 2>&1)"
 show_cmd "curl -s \$API_BASE/resilience/matrix?count=20 | python3 scripts/fmt.py --type matrix"
 MX="$(curl -s "$API_BASE/resilience/matrix?count=20")"
 emit "$(printf '%s' "$MX" | $FMT --type matrix 2>&1)"
-if echo "$RL" | jq -e '.admitted==6 and .limit==6 and .window_seconds==10 and .at_limit==true and (.limiter_key|test(":"))' >/dev/null 2>&1 \
+if echo "$RL" | jq -e '.admitted==6 and .limit==6 and .window_seconds==60 and .at_limit==true and (.limiter_key|test(":")) and .provider_calls_forwarded==6 and .requests_arrived==20 and .quota_protected==true' >/dev/null 2>&1 \
   && echo "$MX" | jq -e '(.tiers|map(select(.provider=="econo-ai"))[0].rejected)==0 and (.tiers|map(select(.provider=="balanced-ai"))[0].rejected)==4 and (.tiers|map(select(.provider=="premium-ai"))[0].rejected)==13 and (.tiers|all(has("provider") and has("limiter_key")))' >/dev/null 2>&1; then
-  verdict 0 "rate limit shows 6/6 AT LIMIT (6 per 10s), and the same burst sheds 0/4/13 across three named providers" "" ""
-  LO+=("Step 3: limits cap admits per window and are keyed per provider, tier, and request class (EO2a)")
+  verdict 0 "rate limit shows 6/6 AT LIMIT (6 per 60s) forwarding only 6 of 20 to the provider, and the same burst sheds 0/4/13 across three named providers" "" ""
+  LO+=("Step 3: limits cap admits per window, protect provider quota (6 of 20 forwarded), and are keyed per provider, tier, and request class (EO2a)")
 else
-  verdict 1 "the rate-limit window or the per-provider matrix is wrong" \
+  verdict 1 "the rate-limit window, the quota-protection count, or the per-provider matrix is wrong" \
     "Check /resilience/rate-limit, /resilience/matrix, RATE_LIMIT_WINDOW_SECONDS and limiter_key in the registry." \
-    "GET /resilience/rate-limit must show admitted=6/limit=6/window=10/at_limit=true; GET /resilience/matrix?count=20 must show provider+limiter_key per row and rejected 0/4/13. Fix app/main.py."
+    "GET /resilience/rate-limit must show admitted=6/limit=6/window=60/at_limit=true/provider_calls_forwarded=6/requests_arrived=20/quota_protected=true; GET /resilience/matrix?count=20 must show provider+limiter_key per row and rejected 0/4/13. Fix app/main.py."
 fi
 
 # STEP 4 — fail-fast 429 + Retry-After + durable rejected receipt
 step_head "4" "Exceed the queue and prove the fail-fast 429" \
   "One request over a full queue must fail fast with HTTP 429, a Retry-After, and a durable PostgreSQL rejected receipt." \
-  "http 429, disposition rejected, reason 'Queue capacity exceeded', retry_after 10s, receipt_persisted true."
+  "http 429, disposition rejected, reason 'Queue capacity exceeded', retry_after 60s, receipt_persisted true."
 show_cmd "curl -s -X POST \$API_BASE/load/submit -d '{\"model\":\"balanced-std\"}' -w '...429...' | python3 scripts/fmt.py --type failfast"
 RAW="$(curl -s -X POST "$API_BASE/load/submit" -H 'Content-Type: application/json' -d '{"model":"balanced-std"}' -w '\n{"http_status": %{http_code}}')"
 emit "$(printf '%s' "$RAW" | $FMT --type failfast 2>&1)"
-if echo "$RAW" | grep -q '"http_status": 429' && echo "$RAW" | grep -q 'Queue capacity exceeded' && echo "$RAW" | grep -q '"retry_after_seconds":10' && echo "$RAW" | grep -q '"receipt_persisted":true'; then
-  verdict 0 "a full queue rejects with HTTP 429, Retry-After 10s, and a durable rejected receipt" "" ""
+if echo "$RAW" | grep -q '"http_status": 429' && echo "$RAW" | grep -q 'Queue capacity exceeded' && echo "$RAW" | grep -q '"retry_after_seconds":60' && echo "$RAW" | grep -q '"receipt_persisted":true'; then
+  verdict 0 "a full queue rejects with HTTP 429, Retry-After 60s, and a durable rejected receipt" "" ""
   LO+=("Step 4: the fail-fast pattern rejects at capacity with a proper 429 + Retry-After (EO2b)")
 else
   verdict 1 "the overflow request did not fail fast with 429 + Retry-After" \
     "Check load_submit HTTPException(429, headers Retry-After) in app/main.py." \
-    "POST /load/submit on a full queue must return HTTP 429 with retry_after_seconds=10 and receipt_persisted true. Fix app/main.py."
+    "POST /load/submit on a full queue must return HTTP 429 with retry_after_seconds=60 and receipt_persisted true. Fix app/main.py."
 fi
 
 # STEP 5 — distinguish the three fates in receipts, and correlate one across log + receipt

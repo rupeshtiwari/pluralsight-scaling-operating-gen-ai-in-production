@@ -176,15 +176,15 @@ def run_incident() -> dict:
         "drivers": [
             {"driver": "retries on balanced-std",
              "detail": "degraded_slow primary retried before failover — each retry "
-                       "pays for a second provider call at $0.30/1k",
+                       "pays for a second provider call at $0.002/1k",
              "add_per_request_usd": retries_add},
             {"driver": "fallback overhead",
              "detail": "an extra provider call after the failed primary",
              "add_per_request_usd": fallback_add},
         ],
         "reconciles": round(base_pr + retries_add + fallback_add, 4) == curr_pr,
-        "model_rates_per_1k_usd": {"econo-mini": 0.05, "balanced-std": 0.30,
-                                   "premium-max": 1.20},
+        "model_rates_per_1k_usd": {"econo-mini": 0.0005, "balanced-std": 0.002,
+                                   "premium-max": 0.010},
         "note": "the drift is retries and failover on the degraded provider, not "
                 "more traffic — model identity is where the dollars went",
     }

@@ -122,29 +122,35 @@ atomic Redis step keyed on capacity, not by timing.
 
 ### Step 2: Inspect the real queue in Redis
 
-**Goal:** Read the actual queued request IDs directly from the Redis list — proof
-the backlog is real parked work, not just a depth number.
+**Goal:** Read the actual queued request IDs from Redis — proof the backlog is real
+parked work, not just a depth number — on the *same* composite key the limiter
+buckets on, so the queue and the rate limiter are visibly one key space.
 
 ```bash
-docker compose exec -T redis redis-cli --json LRANGE resilience:queue:balanced-std 0 -1 \
-  | python3 scripts/fmt.py --type queue-list \
+curl -s http://localhost:8000/resilience/queue?model=balanced-std \
+  | python3 scripts/fmt.py --type queue \
   --title "Inspect the real queue in Redis" \
   --why "The actual list of queued request IDs — real parked work, not just a depth counter"
 ```
 
-> The demo also exposes this as `GET /resilience/queue` (used by the preflight),
-> which returns the same request IDs plus the depth against capacity.
+> Reads the real Redis LIST at `resilience:queue:balanced-ai:balanced:interactive`
+> and returns the same request IDs plus the depth against capacity. The key is the
+> limiter's composite (`provider:tier:class`), not the model id, so there is one
+> token for this tier on screen, not two.
 
-**Expected output:** ★ `depth: 10 / 10 FULL`, then ten ★ lines, each a real queued
-`request_id` (`req-…`).
+**Expected output:** ★ `queue key: resilience:queue:balanced-ai:balanced:interactive`,
+★ `depth: 10 / 10 FULL`, then ten ★ lines, each a real queued `request_id` (`req-…`).
 
 **What the learner should notice:** The queue is a **real Redis LIST**, and here are
 its contents — ten actual request IDs, parked and waiting for capacity to free up.
 This matters: a depth counter can be faked, but a list of IDs is the real work
-itself, each one dequeuable and traceable to its receipt. The depth is `10` against
-a capacity of `10`, so the queue is `FULL` — which is exactly why the next request
-over the line will be rejected. This is the running backlog an operator watches:
-when depth climbs toward capacity, the service is about to start shedding.
+itself, each one dequeuable and traceable to its receipt. Notice the **key**: it is
+`provider:tier:class` — the exact composite the rate limiter counts on in Step 3 — so
+the queue and the limiter are not two separate things with two names, they are one
+isolation boundary. The depth is `10` against a capacity of `10`, so the queue is
+`FULL` — which is exactly why the next request over the line will be rejected. This
+is the running backlog an operator watches: when depth climbs toward capacity, the
+service is about to start shedding.
 
 ### Step 3: Compare rate limits by provider, tier, and request class
 
@@ -163,24 +169,29 @@ curl -s "http://localhost:8000/resilience/matrix?count=20" | python3 scripts/fmt
 
 **Expected output:** first the window — ★ `limiter key:
 balanced-ai:balanced:interactive`, ★ `admitted: 6 / 6 AT LIMIT`, ★ `window: 6
-requests per 10s`; then the matrix — a row per key: `econo-ai` (low_cost, batch,
-10/20) accepts 10 / delays 10 / rejects 0; `balanced-ai` (balanced, interactive,
-6/10) accepts 6 / delays 10 / rejects 4; `premium-ai` (premium, premium, 3/4)
-accepts 3 / delays 4 / rejects 13.
+requests per 60s`, ★ `provider calls forwarded: 6 of 20 — quota protected`; then the
+matrix — a row per key: `econo-ai` (low_cost, batch, 10/20) accepts 10 / delays 10 /
+rejects 0; `balanced-ai` (balanced, interactive, 6/10) accepts 6 / delays 10 /
+rejects 4; `premium-ai` (premium, premium, 3/4) accepts 3 / delays 4 / rejects 13.
 
 **What the learner should notice:** The rate limit is the *first* gate, separate from
-the queue, and it is only meaningful with its **window**: `6 per 10s` is a throughput
+the queue, and it is only meaningful with its **window**: `6 per 60s` is a throughput
 budget you can reason about, where a bare `6` cannot be. The window admitted exactly
 **6** — the configured limit — so it reads `AT LIMIT`, which is why the seventh
-request onward went to the queue. But the limit is not one global number: it is keyed
-**per provider, tier, and request class**, and the matrix proves it. The identical
-20-request burst lands three different ways because each provider key has its own
-budget — the shared `econo-ai` absorbs it whole, the dedicated `balanced-ai` sheds a
-few, the reserved `premium-ai` sheds most. That last one is deliberate: a reserved
-provider's capacity is scarce and expensive, so it is **intentionally bounded** to a
-small budget, and you protect the reservation by shedding a bulk spike early rather
-than letting one burst exhaust the quota everyone else depends on. Same policy, three
-keys, three outcomes.
+request onward went to the queue. The line that closes the loop is **`provider calls
+forwarded: 6 of 20`**: twenty requests arrived, but the limiter forwarded only six to
+the actual provider and held the other fourteen back — that is the whole point of the
+gate, protecting a provider's quota from a spike. But the limit is not one global
+number: it is keyed **per provider, tier, and request class**, and the matrix proves
+it. Read the matrix as a **policy evaluation, not live state** — it projects the same
+20-request burst through each key's *configured* limit to show where each would shed,
+side by side. The identical burst lands three different ways because each provider key
+has its own budget — the shared `econo-ai` absorbs it whole, the dedicated
+`balanced-ai` sheds a few, the reserved `premium-ai` sheds most. That last one is
+deliberate: a reserved provider's capacity is scarce and expensive, so it is
+**intentionally bounded** to a small budget, and you protect the reservation by
+shedding a bulk spike early rather than letting one burst exhaust the quota everyone
+else depends on. Same policy, three keys, three outcomes.
 
 ### Step 4: Exceed the queue and prove the fail-fast 429
 
@@ -198,14 +209,14 @@ curl -s -X POST http://localhost:8000/load/submit \
 
 **Expected output:** ★ `http status: 429`, ★ `admitted: false`, ★ `disposition:
 rejected`, ★ `reason: Queue capacity exceeded`, ★ `queue: 10 / 10`, ★ `retry_after:
-10s`, a ★ `request_id`, and ★ `receipt_persisted: true`.
+60s`, a ★ `request_id`, and ★ `receipt_persisted: true`.
 
 **What the learner should notice:** This is the fail-fast contract from the
 **caller's** side. The queue is full, so this request is not silently dropped and it
 does not hang — it returns immediately with **HTTP 429** and a machine-readable
-reason. Crucially, it also returns **`Retry-After: 10`**, telling a well-behaved
-client exactly when to try again rather than retrying instantly and making the
-pileup worse. And the reject is **not invisible** — `receipt_persisted: true` means a
+reason. Crucially, it also returns **`Retry-After: 60`** — the same 60-second window
+the limiter counts on — telling a well-behaved client exactly when to try again
+rather than retrying instantly and making the pileup worse. And the reject is **not invisible** — `receipt_persisted: true` means a
 durable receipt was written, so a shed request is auditable. Refusing work you
 cannot serve, quickly and politely, is how you keep the work you *can* serve fast.
 
@@ -216,13 +227,20 @@ delayed, and rejected request is a distinct durable record, then correlate one
 request ID across the structured log and the receipt.
 
 ```bash
+# First screen — the PostgreSQL ledger by disposition
 curl -s http://localhost:8000/resilience/dispositions | python3 scripts/fmt.py --type dispositions \
   --title "Distinguish and correlate every request's fate" \
   --why "Straight from PostgreSQL: accepted, delayed, and rejected — each a durable, distinguishable record"
+
+# clear the pane, then the second screen — the structured log + three-way correlation
+clear
 curl -s http://localhost:8000/resilience/admission-logs | python3 scripts/fmt.py --type admission-logs \
   --title "Distinguish and correlate every request's fate" \
   --why "Structured admission logs distinguish every disposition, and one request ID ties the caller, the log, and the receipt together"
 ```
+
+> Run these as **two screens** — `clear` between them — so each table renders fully
+> in the pane without the first scrolling the second out of view.
 
 **Expected output:** first the ledger — ★ `total requests: 21`, ★ `accepted: 6`,
 ★ `delayed: 10`, ★ `rejected: 5`, with `est tokens` / `est cost` showing served

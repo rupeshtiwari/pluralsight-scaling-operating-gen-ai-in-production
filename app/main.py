@@ -466,7 +466,7 @@ def resilience_queue(model: str = "balanced-std") -> dict:
     depth = redis_client.queue_depth(model)
     return {
         "model": model,
-        "queue_key": f"resilience:queue:{model}",
+        "queue_key": f"resilience:queue:{limiter_key(model)}",
         "queued_request_ids": redis_client.queue_ids(model),
         "depth": depth,
         "capacity": capacity,
@@ -482,6 +482,12 @@ def resilience_rate_limit(model: str = "balanced-std") -> dict:
         raise HTTPException(status_code=404, detail=f"unknown model: {model}")
     limit = RATE_LIMITS[model]["rate_limit"]
     admitted = redis_client.get_admitted(model)
+    # Only admitted requests are forwarded to the provider; queued and rejected
+    # requests never reach it. "arrived" is the whole burst from the disposition
+    # tally, so the limiter's quota protection is a number, not a claim (EO2a).
+    disp = redis_client.disposition_hash()
+    arrived = sum(int(disp.get(k, 0)) for k in ("accepted", "delayed", "rejected"))
+    forwarded = admitted
     return {
         "model": model,
         "limiter_key": limiter_key(model),
@@ -489,6 +495,10 @@ def resilience_rate_limit(model: str = "balanced-std") -> dict:
         "limit": limit,
         "window_seconds": RATE_LIMIT_WINDOW_SECONDS,
         "at_limit": admitted >= limit > 0,
+        "requests_arrived": arrived,
+        "provider_calls_forwarded": forwarded,
+        "provider_calls_blocked": max(0, arrived - forwarded),
+        "quota_protected": arrived > forwarded,
     }
 
 

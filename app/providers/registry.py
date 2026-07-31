@@ -30,7 +30,7 @@ BASE_ADAPTERS: dict[str, BaseAdapter] = {
         tier="low_cost",
         latency_target_ms=400,
         quota_mode="shared",
-        cost_per_1k_usd=0.05,
+        cost_per_1k_usd=0.0005,
         quality_score=0.82,
     ),
     "balanced-std": BaseAdapter(
@@ -38,7 +38,7 @@ BASE_ADAPTERS: dict[str, BaseAdapter] = {
         tier="balanced",
         latency_target_ms=700,
         quota_mode="dedicated",
-        cost_per_1k_usd=0.30,
+        cost_per_1k_usd=0.002,
         quality_score=0.90,
     ),
     "premium-max": BaseAdapter(
@@ -46,7 +46,7 @@ BASE_ADAPTERS: dict[str, BaseAdapter] = {
         tier="premium",
         latency_target_ms=1200,
         quota_mode="reserved",
-        cost_per_1k_usd=1.20,
+        cost_per_1k_usd=0.010,
         quality_score=0.97,
     ),
 }
@@ -226,7 +226,7 @@ ADMISSION_POLICY_NAME = "admission_control"
 # generous limit, a reserved provider a tight one. The request_class names the
 # traffic the key serves. rate_limit is immediate admits per window; the window
 # is how long that budget lasts; queue_capacity is the waiting backlog.
-RATE_LIMIT_WINDOW_SECONDS = 10
+RATE_LIMIT_WINDOW_SECONDS = 60
 
 RATE_LIMITS: dict[str, dict] = {
     "econo-mini":   {"provider": "econo-ai",    "request_class": "batch",
