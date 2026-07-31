@@ -156,12 +156,19 @@ def receipt_by_request_id(request_id: str) -> dict | None:
 def dispositions_detail(limit_each: int = 2) -> list[dict]:
     """A few durable receipts per disposition, tagged so the demo can show
     accepted, delayed, and rejected requests side by side from PostgreSQL."""
+    # accepted/delayed samples are the earliest of each (ORDER BY epoch ASC), but
+    # rejected samples are the LATEST (epoch * -1 => DESC) so the most recent
+    # rejection — the one the operator just watched fail fast — is the sample the
+    # learner sees, matching the request the correlation block traces.
     sql = """
         SELECT disposition, request_id, request_class, selected_model,
                provider_tier, total_tokens, cost_estimate_usd, provider_status
         FROM (
-            SELECT *, row_number() OVER (PARTITION BY disposition
-                                         ORDER BY created_at) AS rn
+            SELECT *, row_number() OVER (
+                PARTITION BY disposition
+                ORDER BY extract(epoch FROM created_at)
+                         * (CASE WHEN disposition = 'rejected' THEN -1 ELSE 1 END)
+            ) AS rn
             FROM receipts WHERE disposition IS NOT NULL
         ) s WHERE rn <= %s
         ORDER BY CASE disposition

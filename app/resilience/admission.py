@@ -85,7 +85,9 @@ def submit_one(model: str, request_class: str | None) -> tuple[str, dict, dict]:
 
     receipt = _receipt(model, "pending", rc)  # request_id first, decision next
     request_id = receipt["request_id"]
-    disposition = redis_client.admit(model, rate, capacity, request_id)
+    # Atomic decision plus the state it was judged against, in one Redis step.
+    disposition, admitted_at, queue_at = redis_client.admit(
+        model, rate, capacity, request_id)
 
     receipt["disposition"] = disposition
     receipt["route_reason"] = f"admission_{disposition}"
@@ -103,9 +105,9 @@ def submit_one(model: str, request_class: str | None) -> tuple[str, dict, dict]:
         "tier": BASE_ADAPTERS[model].tier,
         "request_class": rc,
         "limiter_key": limiter_key(model),
-        "rate_limit_count": redis_client.get_admitted(model),
+        "rate_limit_count": admitted_at,
         "rate_limit": rate,
-        "queue_depth": redis_client.queue_depth(model),
+        "queue_depth": queue_at,
         "queue_capacity": capacity,
         "disposition": disposition,
         "reason": _REASON[disposition],

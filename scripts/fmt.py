@@ -768,7 +768,7 @@ def fmt_matrix(d: dict) -> str:
         "The same burst against every provider key — each has its own limit, so "
         "each sheds at a different point", width=92)]
     out += star("burst size", d.get("burst_size"))
-    out.append(f"    {BLUE}{'provider':<13}{'tier':<10}{'class':<13}{'rate':<6}"
+    out.append(f"    {BLUE}{'provider':<13}{'tier':<10}{'class':<13}{'limit':<6}"
                f"{'queue':<7}{'accepted':<10}{'delayed':<9}{'rejected'}{RESET}")
     out.append("")
     for r in d.get("tiers", []):
@@ -811,8 +811,9 @@ def fmt_failfast(d: Any) -> str:
     out += _noted("queue", f"{detail.get('queue_depth')} / {detail.get('queue_capacity')}",
                   "backlog is full", PINK)
     if detail.get("retry_after_seconds") is not None:
-        out += _noted("retry_after", f"{detail.get('retry_after_seconds')}s",
-                      "the caller is told when to retry", LIME)
+        out += _noted("caller backoff", f"{detail.get('retry_after_seconds')}s",
+                      "queue-full Retry-After — the caller's backoff, not the limiter window",
+                      LIME)
     out += star("request_id", detail.get("request_id"))
     out += _noted("receipt_persisted", detail.get("receipt_persisted"),
                   "the shed is auditable in PostgreSQL", LIME)
@@ -826,14 +827,16 @@ def fmt_dispositions(d: dict) -> str:
         "durable, distinguishable record", width=80)]
     out += star("total requests", d.get("total"))
     disp = d.get("dispositions", {})
+    # Compact block — one line per disposition, no blank between (fits the pane).
     out += sect("by disposition")
-    out += _noted("accepted", disp.get("accepted"), "served now", LIME)
-    out += _noted("delayed", disp.get("delayed"), "queued", BLUE)
-    out += _noted("rejected", disp.get("rejected"), "shed — never ran, zero cost", PINK)
+    out += _noted("accepted", disp.get("accepted"), "served now", LIME)[:1]
+    out += _noted("delayed", disp.get("delayed"), "queued", BLUE)[:1]
+    out += _noted("rejected", disp.get("rejected"), "shed — never ran, zero cost", PINK)[:1]
+    out.append("")
     out += sect("sample receipts  (cost is an estimate; actual is zero until execution)")
     out.append(f"    {BLUE}{'disposition':<13}{'request':<18}{'model':<14}"
                f"{'est tokens':<12}{'est cost'}{RESET}")
-    out.append("")
+    # No blank line between rows — the table stays inside the recording pane.
     for r in d.get("samples", []):
         disp_v = str(r.get("disposition"))
         dc = {"accepted": LIME, "delayed": BLUE, "rejected": PINK}.get(disp_v, LGRN)
@@ -842,7 +845,6 @@ def fmt_dispositions(d: dict) -> str:
             f"  {PINK}★{RESET} {dc}{disp_v:<13}{RESET}{LGRN}{str(r.get('request_id')):<18}"
             f"{str(r.get('selected_model')):<14}{str(r.get('total_tokens')):<12}"
             f"{cost}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
@@ -854,7 +856,7 @@ def fmt_admission_logs(d: dict) -> str:
     out += sect("one structured log per disposition")
     out.append(f"    {BLUE}{'disposition':<13}{'request':<18}{'queue':<7}"
                f"{'limit':<7}{'http':<6}{'reason'}{RESET}")
-    out.append("")
+    # No blank line between rows — keeps the table inside the recording pane.
     for e in d.get("samples", []):
         disp_v = str(e.get("disposition"))
         dc = {"accepted": LIME, "delayed": BLUE, "rejected": PINK}.get(disp_v, LGRN)
@@ -863,17 +865,16 @@ def fmt_admission_logs(d: dict) -> str:
             f"  {PINK}★{RESET} {dc}{disp_v:<13}{RESET}{LGRN}{str(e.get('request_id')):<18}"
             f"{str(e.get('queue_depth')):<7}{limit_cell:<7}"
             f"{str(e.get('http_status')):<6}{str(e.get('reason'))}{RESET}")
-        out.append("")
+    out.append("")
     c = d.get("correlate", {})
-    out += sect("correlation — one rejected request ID, three places")
-    out += star("request_id", c.get("request_id"))
+    out += sect(f"correlation — one rejected request ID ({c.get('request_id')}), three places")
     out += _noted("in structured log", c.get("in_log"), "the operator log stream",
-                  LIME if c.get("in_log") else PINK)
+                  LIME if c.get("in_log") else PINK)[:1]
     out += _noted("in PostgreSQL receipt", c.get("in_receipt"), "the durable ledger",
-                  LIME if c.get("in_receipt") else PINK)
+                  LIME if c.get("in_receipt") else PINK)[:1]
     out += _noted("dispositions match", c.get("match"),
                   "log and receipt agree on the outcome",
-                  LIME if c.get("match") else PINK)
+                  LIME if c.get("match") else PINK)[:1]
     return "\n".join(out)
 
 

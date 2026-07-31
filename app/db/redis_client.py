@@ -166,26 +166,35 @@ def _queue_key(model: str) -> str:
 
 
 # Atomic admission: within one Redis execution, admit if under the rate limit,
-# else enqueue if the queue has room, else reject. Returns the disposition.
+# else enqueue if the queue has room, else reject. Returns, atomically, the
+# disposition PLUS the admitted count and the queue depth AS OBSERVED AT THE
+# DECISION — so the structured log reflects the exact state each request was
+# judged against, not a racy read taken later. An accepted request is admitted
+# only while admitted < rate_limit, which happens before any request is queued,
+# so its observed queue depth is provably 0 — no false queue-jump on screen.
 _ADMIT_LUA = """
 local admitted = tonumber(redis.call('GET', KEYS[1]) or '0')
 if admitted < tonumber(ARGV[1]) then
   redis.call('INCR', KEYS[1])
-  return 'accepted'
+  return {'accepted', admitted + 1, redis.call('LLEN', KEYS[2])}
 end
-if redis.call('LLEN', KEYS[2]) < tonumber(ARGV[2]) then
+local qlen = redis.call('LLEN', KEYS[2])
+if qlen < tonumber(ARGV[2]) then
   redis.call('RPUSH', KEYS[2], ARGV[3])
-  return 'delayed'
+  return {'delayed', admitted, qlen + 1}
 end
-return 'rejected'
+return {'rejected', admitted, qlen}
 """
 
 
-def admit(model: str, rate_limit: int, queue_capacity: int, request_id: str) -> str:
-    """Atomically decide accepted / delayed / rejected for one request."""
-    return client().eval(
+def admit(model: str, rate_limit: int, queue_capacity: int,
+          request_id: str) -> tuple[str, int, int]:
+    """Atomically decide accepted / delayed / rejected for one request. Returns
+    (disposition, admitted_after, queue_depth_at_decision)."""
+    disp, admitted, qdepth = client().eval(
         _ADMIT_LUA, 2, _admitted_key(model), _queue_key(model),
         rate_limit, queue_capacity, request_id)
+    return disp, int(admitted), int(qdepth)
 
 
 def get_admitted(model: str) -> int:

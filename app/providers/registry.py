@@ -226,7 +226,17 @@ ADMISSION_POLICY_NAME = "admission_control"
 # generous limit, a reserved provider a tight one. The request_class names the
 # traffic the key serves. rate_limit is immediate admits per window; the window
 # is how long that budget lasts; queue_capacity is the waiting backlog.
-RATE_LIMIT_WINDOW_SECONDS = 60
+#
+# Two independent numbers do two different jobs, so they are two constants:
+#   RATE_LIMIT_WINDOW_SECONDS — how long the admission budget lasts (limiter side).
+#     Wide enough (5 min) that the window never appears to expire mid-clip while
+#     the operator narrates each step; the admitted counter is reset-only anyway,
+#     so the count is stable on wall-clock time, not racing a TTL.
+#   CALLER_BACKOFF_SECONDS — what a queue-full 429 tells the caller to wait before
+#     retrying. This is the caller's backoff, NOT the limiter window, so it stays
+#     short (60s) and is labelled separately wherever it is shown.
+RATE_LIMIT_WINDOW_SECONDS = 300
+CALLER_BACKOFF_SECONDS = 60
 
 RATE_LIMITS: dict[str, dict] = {
     "econo-mini":   {"provider": "econo-ai",    "request_class": "batch",

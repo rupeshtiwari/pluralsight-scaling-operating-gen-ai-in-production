@@ -33,6 +33,7 @@ from app.providers.registry import (
     CONDITIONS,
     COOLDOWN_PROBES,
     DEFAULT_MODEL,
+    CALLER_BACKOFF_SECONDS,
     FAILURE_CONDITIONS,
     FAILURE_THRESHOLD,
     FALLBACK_ROUTES,
@@ -541,9 +542,11 @@ def load_submit(body: SubmitRequest, response: Response) -> dict:
         "receipt_persisted": True,
     }
     if disposition == "rejected":
-        payload["retry_after_seconds"] = RATE_LIMIT_WINDOW_SECONDS
+        # A queue-full 429 tells the caller when to come back — the caller's
+        # backoff, NOT the limiter's admission window. Two different jobs.
+        payload["retry_after_seconds"] = CALLER_BACKOFF_SECONDS
         raise HTTPException(status_code=429, detail=payload,
-                            headers={"Retry-After": str(RATE_LIMIT_WINDOW_SECONDS)})
+                            headers={"Retry-After": str(CALLER_BACKOFF_SECONDS)})
     response.headers["X-Admission-Disposition"] = disposition
     return payload
 
@@ -569,17 +572,27 @@ def resilience_admission_logs(request_id: str | None = None) -> dict:
     """Structured admission-decision logs, and a correlation that proves one
     request ID appears in the caller response, the log, and the durable receipt."""
     logs = redis_client.get_admission_logs()
-    samples = {}
-    for e in logs:
-        d = e.get("disposition")
-        if d not in samples:
-            samples[d] = e
-    # Correlate: the given request_id, else the most recent rejected one.
+    # Correlate: the given request_id, else the MOST RECENT rejected one — which is
+    # the request the operator just watched fail fast in the fail-fast step, so the
+    # hero chain (429 -> log -> receipt -> correlation) all points at one ID.
     target = request_id
     if not target:
         rejected = [e for e in logs if e.get("disposition") == "rejected"]
         target = rejected[-1]["request_id"] if rejected else (logs[-1]["request_id"] if logs else None)
     log_event = next((e for e in logs if e.get("request_id") == target), None)
+    # One representative row per disposition, chosen so each row is unambiguous:
+    #   accepted — the admit with queue_depth 0 (served immediately, no queue jump)
+    #   delayed  — the first request parked in the queue
+    #   rejected — the SAME request the correlation block traces (the target)
+    accepted_evs = [e for e in logs if e.get("disposition") == "accepted"]
+    delayed_evs = [e for e in logs if e.get("disposition") == "delayed"]
+    sample_rows = []
+    if accepted_evs:
+        sample_rows.append(min(accepted_evs, key=lambda e: e.get("queue_depth", 0)))
+    if delayed_evs:
+        sample_rows.append(delayed_evs[0])
+    if log_event and log_event.get("disposition") == "rejected":
+        sample_rows.append(log_event)
     receipt = postgres.receipt_by_request_id(target) if target else None
     correlate = {
         "request_id": target,
@@ -593,7 +606,7 @@ def resilience_admission_logs(request_id: str | None = None) -> dict:
     return {
         "policy_name": ADMISSION_POLICY_NAME,
         "count": len(logs),
-        "samples": [samples[k] for k in ("accepted", "delayed", "rejected") if k in samples],
+        "samples": sample_rows,
         "correlate": correlate,
     }
 

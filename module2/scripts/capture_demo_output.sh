@@ -60,8 +60,8 @@ run "Step 1 — Run the k6 spike and read the HTTP outcomes" \
   "API_BASE=\$API_BASE k6 run --quiet module2/k6/clip2_spike.js | python3 scripts/fmt.py --type k6-summary" \
   'spike_summary' k6-summary
 run "Step 2 — Inspect the real queue in Redis" \
-  "curl -s \$API_BASE/resilience/queue?model=balanced-std | python3 scripts/fmt.py --type queue" \
-  "curl -s $API_BASE/resilience/queue?model=balanced-std" queue
+  "docker compose exec -T redis redis-cli --json LRANGE resilience:queue:balanced-ai:balanced:interactive 0 -1 | python3 scripts/fmt.py --type queue-list" \
+  'redis_query --json LRANGE resilience:queue:balanced-ai:balanced:interactive 0 -1' queue-list
 run "Step 3 — Compare rate limits by provider, tier, and request class" \
   "curl -s \$API_BASE/resilience/rate-limit | python3 scripts/fmt.py --type ratelimit" \
   "curl -s $API_BASE/resilience/rate-limit" ratelimit

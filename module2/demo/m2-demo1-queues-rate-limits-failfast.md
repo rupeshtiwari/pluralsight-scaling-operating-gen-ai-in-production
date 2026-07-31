@@ -122,32 +122,35 @@ atomic Redis step keyed on capacity, not by timing.
 
 ### Step 2: Inspect the real queue in Redis
 
-**Goal:** Read the actual queued request IDs from Redis — proof the backlog is real
-parked work, not just a depth number — on the *same* composite key the limiter
-buckets on, so the queue and the rate limiter are visibly one key space.
+**Goal:** Read the actual queued request IDs straight from the Redis datastore —
+proof the backlog is real parked work, not a number the service reports about
+itself — at the *same* composite key the limiter buckets on.
 
 ```bash
-curl -s http://localhost:8000/resilience/queue?model=balanced-std \
-  | python3 scripts/fmt.py --type queue \
+docker compose exec -T redis redis-cli --json \
+  LRANGE resilience:queue:balanced-ai:balanced:interactive 0 -1 \
+  | python3 scripts/fmt.py --type queue-list \
   --title "Inspect the real queue in Redis" \
   --why "The actual list of queued request IDs — real parked work, not just a depth counter"
 ```
 
-> Reads the real Redis LIST at `resilience:queue:balanced-ai:balanced:interactive`
-> and returns the same request IDs plus the depth against capacity. The key is the
-> limiter's composite (`provider:tier:class`), not the model id, so there is one
-> token for this tier on screen, not two.
+> The key is the limiter's composite (`provider:tier:class`), not the model id, so
+> the queue and the rate-limit counter live in one key space — one token for this
+> tier on screen, not two. Reading it with `redis-cli` proves the backlog at the
+> datastore level; the demo also exposes `GET /resilience/queue` for the depth
+> against capacity, but the LIST itself is the point.
 
-**Expected output:** ★ `queue key: resilience:queue:balanced-ai:balanced:interactive`,
-★ `depth: 10 / 10 FULL`, then ten ★ lines, each a real queued `request_id` (`req-…`).
+**Expected output:** ★ `queued: 10`, then ten ★ lines, each a real queued
+`request_id` (`req-…`) — the actual contents of the Redis LIST.
 
 **What the learner should notice:** The queue is a **real Redis LIST**, and here are
-its contents — ten actual request IDs, parked and waiting for capacity to free up.
-This matters: a depth counter can be faked, but a list of IDs is the real work
-itself, each one dequeuable and traceable to its receipt. Notice the **key**: it is
+its contents — ten actual request IDs, parked and waiting for capacity to free up,
+read directly from the datastore rather than through the service under test. This
+matters: a depth counter can be faked, but a list of IDs is the real work itself,
+each one dequeuable and traceable to its receipt. Notice the **key**: it is
 `provider:tier:class` — the exact composite the rate limiter counts on in Step 3 — so
 the queue and the limiter are not two separate things with two names, they are one
-isolation boundary. The depth is `10` against a capacity of `10`, so the queue is
+isolation boundary. Ten entries against a capacity of ten means the queue is
 `FULL` — which is exactly why the next request over the line will be rejected. This
 is the running backlog an operator watches: when depth climbs toward capacity, the
 service is about to start shedding.
@@ -169,13 +172,13 @@ curl -s "http://localhost:8000/resilience/matrix?count=20" | python3 scripts/fmt
 
 **Expected output:** first the window — ★ `limiter key:
 balanced-ai:balanced:interactive`, ★ `admitted: 6 / 6 AT LIMIT`, ★ `window: 6
-requests per 60s`, ★ `provider calls forwarded: 6 of 20 — quota protected`; then the
+requests per 300s`, ★ `provider calls forwarded: 6 of 20 — quota protected`; then the
 matrix — a row per key: `econo-ai` (low_cost, batch, 10/20) accepts 10 / delays 10 /
 rejects 0; `balanced-ai` (balanced, interactive, 6/10) accepts 6 / delays 10 /
 rejects 4; `premium-ai` (premium, premium, 3/4) accepts 3 / delays 4 / rejects 13.
 
 **What the learner should notice:** The rate limit is the *first* gate, separate from
-the queue, and it is only meaningful with its **window**: `6 per 60s` is a throughput
+the queue, and it is only meaningful with its **window**: `6 per 300s` is a throughput
 budget you can reason about, where a bare `6` cannot be. The window admitted exactly
 **6** — the configured limit — so it reads `AT LIMIT`, which is why the seventh
 request onward went to the queue. The line that closes the loop is **`provider calls
@@ -208,17 +211,22 @@ curl -s -X POST http://localhost:8000/load/submit \
 ```
 
 **Expected output:** ★ `http status: 429`, ★ `admitted: false`, ★ `disposition:
-rejected`, ★ `reason: Queue capacity exceeded`, ★ `queue: 10 / 10`, ★ `retry_after:
-60s`, a ★ `request_id`, and ★ `receipt_persisted: true`.
+rejected`, ★ `reason: Queue capacity exceeded`, ★ `queue: 10 / 10`, ★ `caller
+backoff: 60s`, a ★ `request_id`, and ★ `receipt_persisted: true`.
 
 **What the learner should notice:** This is the fail-fast contract from the
 **caller's** side. The queue is full, so this request is not silently dropped and it
 does not hang — it returns immediately with **HTTP 429** and a machine-readable
-reason. Crucially, it also returns **`Retry-After: 60`** — the same 60-second window
-the limiter counts on — telling a well-behaved client exactly when to try again
-rather than retrying instantly and making the pileup worse. And the reject is **not invisible** — `receipt_persisted: true` means a
-durable receipt was written, so a shed request is auditable. Refusing work you
-cannot serve, quickly and politely, is how you keep the work you *can* serve fast.
+reason. Crucially, it also returns a **caller backoff** of `60s` in the `Retry-After`
+header, telling a well-behaved client exactly when to try again rather than retrying
+instantly and making the pileup worse. Note that this 60-second backoff is a
+**different number doing a different job** from the 300-second limiter window in
+Step 3: the window governs *admission* — how long the six-admit budget lasts — while
+the caller backoff governs *retry* — when a shed caller should come back. Two
+concerns, two numbers, each labelled for what it is. And the reject is **not
+invisible** — `receipt_persisted: true` means a durable receipt was written, so a
+shed request is auditable. Refusing work you cannot serve, quickly and politely, is
+how you keep the work you *can* serve fast.
 
 ### Step 5: Distinguish and correlate every request's fate
 
