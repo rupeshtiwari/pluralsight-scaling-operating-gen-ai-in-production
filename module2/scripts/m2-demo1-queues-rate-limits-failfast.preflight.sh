@@ -25,7 +25,14 @@ export PGPASSWORD="${PGPASSWORD:-genai}"
 FMT="python3 $ROOT/scripts/fmt.py"
 # Elapsed-time proof: after the spike, hold for SETTLE_SECONDS (the length of the
 # on-camera narration) before reading the state, to prove the admitted count and
-# the queue do NOT roll or drain during the take. Set SETTLE_SECONDS=0 to skip.
+# the queue do NOT roll or drain during the take.
+#
+# This hold is PREFLIGHT-ONLY. It is gated behind PREFLIGHT=1 (set here, in the
+# preflight, and nowhere else) so a live-take driver that reuses these steps can
+# NEVER inherit a 60-second dead terminal on camera — the no-idle-screen rule.
+# During the real take the window holds on wall-clock time while you narrate; the
+# sleep only exists to PROVE that here. Set SETTLE_SECONDS=0 to skip in preflight.
+export PREFLIGHT=1
 SETTLE_SECONDS="${SETTLE_SECONDS:-60}"
 
 redis_query() {
@@ -96,10 +103,12 @@ else
 fi
 
 # Elapsed-time hold — prove the state survives the narration (no rolling window,
-# no draining queue) before the operator reads it in Step 2 and Step 3.
-if [ "$SETTLE_SECONDS" -gt 0 ] 2>/dev/null; then
+# no draining queue) before the operator reads it in Step 2 and Step 3. Gated on
+# PREFLIGHT=1 so it can only ever run here, never on the live take.
+if [ "${PREFLIGHT:-0}" = "1" ] && [ "$SETTLE_SECONDS" -gt 0 ] 2>/dev/null; then
   emit "${GRAY}holding ${SETTLE_SECONDS}s (the narration window) to prove admitted + queue do not roll ...${R}"
   sleep "$SETTLE_SECONDS"
+  emit "${GRAY}... ${SETTLE_SECONDS}s elapsed — state below is read AFTER the hold${R}"
 fi
 
 # STEP 2 — real queue list of request IDs, read on the composite key
