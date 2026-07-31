@@ -23,9 +23,9 @@ export PGUSER="${PGUSER:-genai}"; export PGDATABASE="${PGDATABASE:-genai}"
 export PGPASSWORD="${PGPASSWORD:-genai}"
 FMT="python3 $ROOT/scripts/fmt.py"
 
-PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
-LGRN=$'\033[38;2;64;255;191m'; BLUE=$'\033[38;2;42;236;250m'
-GRAY=$'\033[38;2;191;191;191m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
+PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;2;224;136m'
+LGRN=$'\033[38;2;235;239;245m'; BLUE=$'\033[38;2;0;163;255m'
+GRAY=$'\033[38;2;88;95;162m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
 
 PASS=0; FAIL=0
 declare -a LO=()

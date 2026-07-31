@@ -42,9 +42,9 @@ pg_query() {
 SQL_RECEIPT="SELECT row_to_json(r) FROM (SELECT selected_model,provider_tier,provider_status,prompt_tokens,completion_tokens,total_tokens,cost_estimate_usd,quality_score,policy_name,request_id FROM receipts ORDER BY created_at DESC LIMIT 1) r"
 
 # --- Pluralsight palette ------------------------------------------------------
-PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
-LGRN=$'\033[38;2;64;255;191m'; BLUE=$'\033[38;2;42;236;250m'
-GRAY=$'\033[38;2;191;191;191m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
+PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;2;224;136m'
+LGRN=$'\033[38;2;235;239;245m'; BLUE=$'\033[38;2;0;163;255m'
+GRAY=$'\033[38;2;88;95;162m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
 
 PASS=0; FAIL=0
 declare -a LO_TO1=() LO_EO1a=()

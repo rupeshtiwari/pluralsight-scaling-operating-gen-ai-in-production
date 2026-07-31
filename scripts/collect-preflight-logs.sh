@@ -14,8 +14,8 @@ cd "$ROOT"
 DEST="$ROOT/preflight-logs"
 mkdir -p "$DEST"
 
-LIME=$'\033[38;2;207;255;110m'; GRAY=$'\033[38;2;191;191;191m'
-BLUE=$'\033[38;2;42;236;250m'; R=$'\033[0m'
+LIME=$'\033[38;2;2;224;136m'; GRAY=$'\033[38;2;88;95;162m'
+BLUE=$'\033[38;2;0;163;255m'; R=$'\033[0m'
 
 # legacy loose path  ->  new name in preflight-logs/
 map=(

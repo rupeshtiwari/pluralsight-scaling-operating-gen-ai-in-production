@@ -9,8 +9,8 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 API_BASE="${API_BASE:-http://localhost:8000}"
 SESSION="genai-m1"
-LIME=$'\033[38;2;207;255;110m'; PINK=$'\033[38;2;255;22;117m'
-BLUE=$'\033[38;2;42;236;250m'; LGRN=$'\033[38;2;64;255;191m'; R=$'\033[0m'
+LIME=$'\033[38;2;2;224;136m'; PINK=$'\033[38;2;255;22;117m'
+BLUE=$'\033[38;2;0;163;255m'; LGRN=$'\033[38;2;235;239;245m'; R=$'\033[0m'
 
 cd "$ROOT"
 

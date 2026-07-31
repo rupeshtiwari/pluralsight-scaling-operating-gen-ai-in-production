@@ -38,9 +38,9 @@ redis_query() {
 FIELDS="request_id,policy_name,provider_tier,latency_target_ms,total_tokens,cost_estimate_usd,quality_score"
 SQL_RECEIPTS="SELECT row_to_json(r) FROM ((SELECT 'weighted' AS kind,$FIELDS FROM receipts WHERE route_reason='weighted_distribution' LIMIT 2) UNION ALL (SELECT 'payload' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'complexity_%' LIMIT 2) UNION ALL (SELECT 'override' AS kind,$FIELDS FROM receipts WHERE route_reason LIKE 'override_%' LIMIT 2)) r"
 
-PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;207;255;110m'
-LGRN=$'\033[38;2;64;255;191m'; BLUE=$'\033[38;2;42;236;250m'
-GRAY=$'\033[38;2;191;191;191m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
+PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;2;224;136m'
+LGRN=$'\033[38;2;235;239;245m'; BLUE=$'\033[38;2;0;163;255m'
+GRAY=$'\033[38;2;88;95;162m'; WHITE=$'\033[1;37m'; R=$'\033[0m'
 
 PASS=0; FAIL=0
 declare -a LO=()

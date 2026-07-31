@@ -18,14 +18,16 @@ import sys
 import textwrap
 from typing import Any
 
-# --- Pluralsight brand palette (ANSI true-color) --------------------------
-PINK = "\033[38;2;255;22;117m"    # Transform Pink  - ★ marker / blocked / FAIL
-LIME = "\033[38;2;207;255;110m"   # Lime Green      - healthy / PASS / true
-LGRN = "\033[38;2;64;255;191m"    # Limited Green   - values / numbers / ids
-BLUE = "\033[38;2;42;236;250m"    # Blue            - labels (field names)
-ADA = "\033[38;2;41;130;111m"     # ADA Green       - secondary emphasis
-GRAY = "\033[38;2;191;191;191m"   # Light Gray      - context / dim
-WHITE = "\033[1;37m"              # White bold      - headings
+# --- Pluralsight Author Brand palette (ANSI true-color) -------------------
+# Only official Author Brand colors are used (Slide standards and guidelines).
+# Variable names are kept for stability; each now maps to a named brand colour.
+PINK = "\033[38;2;255;22;117m"    # Transform Pink #FF1675 - ★ marker / blocked / FAIL
+LIME = "\033[38;2;2;224;136m"     # Green          #02E088 - healthy / PASS / true
+LGRN = "\033[38;2;235;239;245m"   # Light gray     #EBEFF5 - values / numbers / ids
+BLUE = "\033[38;2;0;163;255m"     # Blue           #00A3FF - labels (field names)
+ADA = "\033[38;2;119;14;247m"     # Purple         #770EF7 - secondary emphasis / bars
+GRAY = "\033[38;2;88;95;162m"     # Medium gray    #585FA2 - context / dim / notes
+WHITE = "\033[1;37m"              # White bold             - headings
 RESET = "\033[0m"
 
 _GOOD = {"healthy", "ok", "up", "pass", "true", "success", "accepted"}

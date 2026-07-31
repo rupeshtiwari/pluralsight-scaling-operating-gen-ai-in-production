@@ -3,7 +3,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SESSION="genai-m3"
-BLUE=$'\033[38;2;42;236;250m'; LIME=$'\033[38;2;207;255;110m'; R=$'\033[0m'
+BLUE=$'\033[38;2;0;163;255m'; LIME=$'\033[38;2;2;224;136m'; R=$'\033[0m'
 
 tmux kill-session -t "$SESSION" 2>/dev/null && echo "${BLUE}tmux session closed${R}" || true
 cd "$ROOT"
