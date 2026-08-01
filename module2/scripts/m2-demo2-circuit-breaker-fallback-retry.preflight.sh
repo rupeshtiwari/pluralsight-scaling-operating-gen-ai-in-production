@@ -105,17 +105,17 @@ fi
 # STEP 4 — retry backoff, no storm
 step_head "4" "Inspect retry backoff and prove no storm" \
   "Retries must be capped and spaced by exponential backoff, and an open circuit must make zero attempts." \
-  "backoff schedule 0/430/870ms, 12 attempts with the breaker vs 18 without — 6 retries avoided."
+  "backoff base delay doubles 400→800ms; worst-case budget 8 requests × cap 3 = 24, only 12 spent with the breaker — 12 retries avoided."
 show_cmd "curl -s \$API_BASE/resilience/retry-log | python3 scripts/fmt.py --type retry-log"
 RAW="$(curl -s "$API_BASE/resilience/retry-log")"
 emit "$(printf '%s' "$RAW" | $FMT --type retry-log 2>&1)"
-if echo "$RAW" | jq -e '.total_primary_attempts==12 and .attempts_without_breaker==18 and .storm_prevented==true and (.backoff_schedule|length)==3' >/dev/null 2>&1; then
-  verdict 0 "retries capped with backoff; opening the circuit avoided 6 attempts (12 vs 18) — no storm" "" ""
+if echo "$RAW" | jq -e '.total_primary_attempts==12 and .drill_requests==8 and .max_attempts==3 and .attempts_without_breaker==24 and .storm_prevented==true and (.backoff_schedule|length)==3' >/dev/null 2>&1; then
+  verdict 0 "retries capped with doubling backoff; worst case 8×3=24 but only 12 spent — 12 avoided, no storm" "" ""
   LO+=("Step 4: retry logic uses exponential backoff and prevents a retry storm (EO2d)")
 else
   verdict 1 "retry backoff or storm prevention did not hold" \
-    "Check backoff_schedule and total_primary_attempts vs attempts_without_breaker in app/resilience/circuit.py." \
-    "GET /resilience/retry-log must show total_primary_attempts=12, attempts_without_breaker=18, storm_prevented=true. Fix app/resilience/circuit.py."
+    "Check backoff_schedule, drill_requests, max_attempts, total_primary_attempts, attempts_without_breaker in app/resilience/circuit.py." \
+    "GET /resilience/retry-log must show total_primary_attempts=12, drill_requests=8, max_attempts=3, attempts_without_breaker=24 (8×3), storm_prevented=true. Fix app/resilience/circuit.py."
 fi
 
 # STEP 5 — reconcile the three named sources: caller / fallback receipt / retry log
@@ -134,11 +134,17 @@ else
     "GET /resilience/failover-reconcile after a clean drill must return disposition=CONFIRMED with caller, receipt, and retry_log agreeing per role. Fix app/main.py."
 fi
 
-# COVERAGE + SUMMARY
+# COVERAGE + SUMMARY — one line per objective, each with its own evidence marker
 banner "LEARNING OBJECTIVE COVERAGE"
-emit "${WHITE}EO2c, EO2d, EO2e — Trip on failures, fail over to a healthy model, retry${R}"
-emit "${WHITE}       with capped backoff, and reconcile the recovery end to end${R}"
-if [ "${#LO[@]}" -gt 0 ]; then for e in "${LO[@]}"; do emit "  ${LIME}✔${R} ${GRAY}${e}${R}"; done; else emit "  ${PINK}✗ no evidence captured${R}"; fi
+if [ "$FAIL" = "0" ]; then M="${LIME}✔${R}"; else M="${PINK}✗${R}"; fi
+emit "  ${M} ${WHITE}EO2c${R} ${GRAY}circuit breaker trips and fails over to a healthy model${R}"
+emit "      ${GRAY}Step 2 — closed→open→half_open→recovered; Step 3 — 8/8 answered, 6 via fallback, 0 caller errors${R}"
+emit "  ${M} ${WHITE}EO2d${R} ${GRAY}retry logic uses capped exponential backoff, no storm${R}"
+emit "      ${GRAY}Step 4 — cap 3, base delay doubles 400→800ms, 12 of a 24 budget spent, 12 avoided${R}"
+emit "  ${M} ${WHITE}EO2e${R} ${GRAY}slow, error, and quota failures simulated in a controlled environment${R}"
+emit "      ${GRAY}Step 1 — deterministic modes + thresholds; Step 2 — the failure-mode column spans all three${R}"
+emit "  ${M} ${WHITE}all three${R} ${GRAY}reconciled end to end${R}"
+emit "      ${GRAY}Step 5 — caller response, PostgreSQL receipt, and retry log agree → CONFIRMED${R}"
 
 banner "SUMMARY"
 TOTAL=$((PASS+FAIL))

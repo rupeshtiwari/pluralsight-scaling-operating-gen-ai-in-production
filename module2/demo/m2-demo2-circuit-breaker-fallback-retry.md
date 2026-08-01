@@ -124,25 +124,34 @@ run them.
 
 ### Step 2: Walk the circuit through its states
 
-**Goal:** Run one deterministic drill and watch the circuit move through closed,
-open, half-open, and recovered — with the state that handled each request visible.
+**Goal:** Run one deterministic drill and watch the circuit move through its three
+states — closed, open, half-open — and back to closed, with the state that handled
+each request visible.
+
+> **A note on vocabulary.** A circuit breaker has exactly three states: `closed`
+> (the healthy, normal-operation state), `open` (tripped, shedding), and
+> `half_open` (probing). "Recovered" is not a fourth state — it is the *transition*
+> a half-open probe makes back to `closed`. This demo keeps the industry-standard
+> state names in the `circuit` column and shows `recovered` (and the final steady
+> `healthy`) in the `transition` column, so all four ideas from the outline are on
+> screen, each labelled for exactly what it is.
 
 ```bash
 curl -s -X POST http://localhost:8000/resilience/drill >/dev/null
 curl -s http://localhost:8000/resilience/circuit | python3 scripts/fmt.py --type circuit \
   --title "Walk the circuit through its states" \
-  --why "One drill drives the primary from healthy to open to half-open to recovered — every transition visible"
+  --why "One drill drives the primary from closed to open to half-open and back — every state and transition visible"
 ```
 
 **Expected output:** ★ `primary: balanced-std`, ★ `fallback: econo-mini`,
-★ `tripped: true`, ★ `recovered: true`, then an eight-row journey whose `primary
-cond` column spans all three failure modes — `slow`, `error`, `quota` — whose
-`circuit` column shows `closed`, then `open`, then `half_open`, then back to
-`closed`, and whose `transition` column reads `failover`, `trip`, `shed`,
-`probe_failed`, `recovered`, `healthy`.
+★ `tripped: true`, ★ `recovered: true`, then an eight-row journey whose `failure
+mode` column spans all three modes — `slow`, `error`, `quota` — whose `circuit`
+column shows `closed`, then `open`, then `half_open`, then back to `closed`, and
+whose `transition` column reads `failover`, `trip`, `shed`, `probe_failed`,
+`recovered`, `healthy`.
 
 **What the learner should notice:** This is the state machine doing its whole job in
-one pass, against all three deterministic failure modes. Read the `primary cond`
+one pass, against all three deterministic failure modes. Read the `failure mode`
 column: the first three requests hit the primary while it returns a **slow**
 response, then a hard **error**, then a **quota** exhaustion — three different faults,
 each simulated by a provider stub, and each counting equally as a failure. Every one
@@ -194,21 +203,21 @@ curl -s http://localhost:8000/resilience/retry-log | python3 scripts/fmt.py --ty
   --why "Retries are capped and spaced by exponential backoff; once the circuit opens, the primary is not retried at all"
 ```
 
-**Expected output:** ★ `retry cap: 3 attempts`, the backoff schedule (`0ms`,
-`430ms`, `870ms`), then the storm check — ★ `primary attempts WITH breaker: 12`,
-★ `primary attempts WITHOUT breaker: 18`, ★ `retries avoided by opening: 6`.
+**Expected output:** ★ `retry cap: 3 attempts`, the backoff schedule whose **base
+delay doubles** (`0ms`, `400ms`, `800ms`; the `wait` column adds jitter on top),
+then the storm check — ★ `worst-case retry budget: 8 requests x cap 3 = 24`,
+★ `primary attempts WITH breaker: 12`, ★ `retries avoided: 12`.
 
 **What the learner should notice:** Retries are necessary but dangerous, and this is
 how you make them safe. Each failing request is retried at most **3** times, and the
-attempts are spaced by exponential backoff — an immediate try, then roughly 430ms,
-then 870ms — with jitter so many callers do not retry on the same beat. Backoff is
-tuned to LLM latency: waits long enough to matter for a slow inference call, not so
-long the caller gives up. The decisive number is the comparison: without a breaker,
-every one of the failing requests would retry to the cap — **18** primary attempts
-pounding a provider that is already down. With the breaker, once it opens the primary
-gets **zero** further attempts, cutting that to **12**. Those six avoided retries are
-the retry storm that never happened — recovery logic that reduces pressure instead of
-adding to it.
+attempts are spaced by exponential backoff — point at the **base delay** column, not
+the jittered `wait`: it **doubles** each attempt, 400ms then 800ms, with jitter added
+on top so many callers do not retry on the same beat. The decisive number is a
+comparison the learner can do live: there are **8** requests and a cap of **3**, so
+the worst case is **8 × 3 = 24** primary attempts pounding a provider that is already
+down. With the breaker, once it opens the primary gets **zero** further attempts, so
+only **12** are spent — **12 avoided**. That gap is the retry storm that never
+happened: recovery logic that reduces pressure instead of adding to it.
 
 ### Step 5: Reconcile caller response, receipt, and retry log
 

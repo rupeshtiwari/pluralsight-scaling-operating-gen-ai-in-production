@@ -93,6 +93,24 @@ def sect(text: str) -> list[str]:
     return [f"  {WHITE}{text}{RESET}", ""]
 
 
+def require(d: Any, *keys: str) -> None:
+    """Fail LOUD when a demo payload is missing keys the view will render.
+
+    A renderer that silently prints ``None`` for a broken contract is a defect in
+    the harness itself: it turns one root cause into five misleading per-step
+    failures. This raises immediately, naming the missing key(s) and the shape
+    that actually arrived, so a preflight breaks at the exact step with the truth.
+    """
+    if not isinstance(d, dict):
+        raise SystemExit(f"fmt.py: expected a JSON object, got {type(d).__name__}: {d!r:.120}")
+    missing = [k for k in keys if d.get(k) is None]
+    if missing:
+        got = ", ".join(sorted(d.keys())) or "none"
+        raise SystemExit(
+            "fmt.py: payload is missing required key(s): "
+            f"{', '.join(missing)}  |  keys present: {got}")
+
+
 def tokens_line(est: dict) -> str:
     p = est.get("prompt", 0)
     c = est.get("completion", 0)
@@ -884,10 +902,12 @@ _STATE_COLOR = {"closed": LIME, "open": PINK, "half_open": BLUE}
 
 
 def fmt_circuit_config(d: dict) -> str:
+    require(d, "failure_modes", "failure_threshold", "cooldown_probes",
+            "success_threshold", "max_attempts", "fallback_routes", "backoff_schedule")
     out = [header(
         "Load the circuit-breaker configuration",
         "The thresholds that trip and recover the circuit, the fallback routes, "
-        "and the retry backoff schedule", width=80)]
+        "and the retry backoff schedule", width=78)]
     out += _noted("failure modes", ", ".join(d.get("failure_modes", [])),
                   "deterministic provider stubs — no real outage")
     out += sect("thresholds")
@@ -915,10 +935,11 @@ def fmt_circuit_config(d: dict) -> str:
 
 
 def fmt_circuit(d: dict) -> str:
+    require(d, "primary", "fallback", "tripped", "recovered", "timeline")
     out = [header(
         "Walk the circuit through its states",
-        "One drill drives the primary from healthy to open to half-open to "
-        "recovered — every transition visible", width=92)]
+        "One drill drives the primary from closed to open to half-open and back "
+        "— every state and transition visible", width=78)]
     # Compact header block — one line each, no blank between (fits the pane).
     out += star("primary", d.get("primary"))[:1]
     out += star("fallback", d.get("fallback"))[:1]
@@ -928,25 +949,28 @@ def fmt_circuit(d: dict) -> str:
                   LIME if d.get("recovered") else PINK)[:1]
     out.append("")
     out += sect("per-request state journey")
-    out.append(f"    {BLUE}{'seq':<5}{'primary cond':<14}{'circuit':<12}"
-               f"{'transition':<15}{'served by':<15}{'attempts'}{RESET}")
-    # No blank line between rows — the 8-row journey stays inside the pane.
+    # No seq column — row order is implicit; 5 columns keep the table inside the
+    # pane. No blank line between rows so the whole 8-row journey stays on screen.
+    out.append(f"    {BLUE}{'failure mode':<14}{'circuit':<12}"
+               f"{'transition':<15}{'served by':<15}{'tries'}{RESET}")
     for r in d.get("timeline", []):
         cs = _STATE_COLOR.get(str(r.get("circuit")), LGRN)
         cond_c = PINK if r.get("primary_condition") != "healthy" else LIME
         out.append(
-            f"  {PINK}★{RESET} {LGRN}{str(r.get('seq')):<5}{cond_c}"
-            f"{str(r.get('primary_condition')):<14}{cs}{str(r.get('circuit')):<12}"
+            f"  {PINK}★{RESET} {cond_c}{str(r.get('primary_condition')):<14}"
+            f"{cs}{str(r.get('circuit')):<12}"
             f"{LGRN}{str(r.get('transition')):<15}{str(r.get('served_by')):<15}"
             f"{str(r.get('primary_attempts'))}{RESET}")
     return "\n".join(out)
 
 
 def fmt_fallback(d: dict) -> str:
+    require(d, "primary", "fallback", "requests_answered", "total",
+            "caller_errors", "primary_served", "fallback_served")
     out = [header(
         "Prove fallback routing keeps the caller whole",
         "While the primary is unsafe, a healthy alternative serves — so primary "
-        "failures never reach the caller", width=80)]
+        "failures never reach the caller", width=78)]
     out += _noted("primary (failed)", d.get("primary"),
                   "the tier whose provider was unsafe", PINK)[:1]
     out += _noted("fallback (healthy)", d.get("fallback"),
@@ -968,13 +992,16 @@ def fmt_fallback(d: dict) -> str:
 
 
 def fmt_retry_log(d: dict) -> str:
+    require(d, "max_attempts", "backoff_schedule", "total_primary_attempts",
+            "attempts_without_breaker", "drill_requests")
     out = [header(
         "Inspect retry backoff and prove no storm",
         "Retries are capped and spaced by exponential backoff; once the circuit "
-        "opens, the primary is not retried at all", width=82)]
+        "opens, the primary is not retried at all", width=78)]
     out += _noted("retry cap", f"{d.get('max_attempts')} attempts",
-                  "then fail over to the fallback")
-    out += sect("exponential backoff schedule")
+                  "then fail over to the fallback")[:1]
+    out.append("")
+    out += sect("exponential backoff schedule  (base delay doubles each attempt)")
     out.append(f"    {BLUE}{'attempt':<10}{'base delay':<13}{'jitter':<10}{'wait'}{RESET}")
     for s in d.get("backoff_schedule", []):
         out.append(
@@ -983,22 +1010,26 @@ def fmt_retry_log(d: dict) -> str:
             f"{str(s.get('wait_ms'))}ms{RESET}")
     out.append("")
     out += sect("storm prevention")
-    with_b = d.get("total_primary_attempts")
-    without_b = d.get("attempts_without_breaker")
-    avoided = (without_b - with_b) if (isinstance(with_b, int) and isinstance(without_b, int)) else "?"
-    out += _noted("primary attempts WITH breaker", with_b, "capped and short-circuited", LIME)[:1]
-    out += _noted("primary attempts WITHOUT breaker", without_b,
-                  "every failure retried to the cap", PINK)[:1]
-    out += _noted("retries avoided by opening", avoided,
-                  "open state makes zero primary attempts", LIME)[:1]
+    with_b = d["total_primary_attempts"]
+    reqs = d["drill_requests"]
+    cap = d["max_attempts"]
+    budget = d["attempts_without_breaker"]
+    avoided = budget - with_b
+    out += _noted("worst-case retry budget", f"{reqs} requests x cap {cap} = {budget}",
+                  "every request exhausting its retries", PINK)[:1]
+    out += _noted("primary attempts WITH breaker", with_b,
+                  "capped, and zero while the circuit is open", LIME)[:1]
+    out += _noted("retries avoided", f"{avoided}",
+                  f"{budget} - {with_b} — the storm that never happened", LIME)[:1]
     return "\n".join(out)
 
 
 def fmt_failover_reconcile(d: dict) -> str:
+    require(d, "disposition", "counts_agree", "recovered", "receipts_complete", "roles")
     out = [header(
         "Reconcile caller response, receipt, and retry log",
         "CONFIRMED only when the caller response, the PostgreSQL fallback "
-        "receipt, and the retry log agree and the circuit recovered", width=80)]
+        "receipt, and the retry log agree and the circuit recovered", width=78)]
     disp = d.get("disposition")
     # Compact verdict block — one line each, no blank between (fits the pane).
     out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)[:1]

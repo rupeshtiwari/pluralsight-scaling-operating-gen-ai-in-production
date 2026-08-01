@@ -179,8 +179,12 @@ def run_drill() -> dict:
         "recovered": recovered,
         "final_state": state,
         "total_primary_attempts": total_primary_attempts,
-        "attempts_without_breaker": BACKOFF_MAX_ATTEMPTS * sum(
-            1 for c in CIRCUIT_DRILL_SEQUENCE if c != "healthy"),
+        # Worst-case retry budget the learner can derive live from the screen:
+        # every request exhausting the cap = requests x max_attempts. The breaker
+        # spends far fewer, and the gap is the storm it prevented.
+        "drill_requests": len(CIRCUIT_DRILL_SEQUENCE),
+        "max_attempts": BACKOFF_MAX_ATTEMPTS,
+        "attempts_without_breaker": BACKOFF_MAX_ATTEMPTS * len(CIRCUIT_DRILL_SEQUENCE),
         "storm_prevented": True,
         "backoff_schedule": backoff_schedule(),
     }

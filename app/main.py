@@ -685,6 +685,7 @@ def resilience_retry_log() -> dict:
     return {
         "policy_name": CIRCUIT_POLICY_NAME,
         "max_attempts": BACKOFF_MAX_ATTEMPTS,
+        "drill_requests": summary.get("drill_requests"),
         "backoff_schedule": summary.get("backoff_schedule", backoff_schedule()),
         "total_primary_attempts": summary.get("total_primary_attempts"),
         "attempts_without_breaker": summary.get("attempts_without_breaker"),
