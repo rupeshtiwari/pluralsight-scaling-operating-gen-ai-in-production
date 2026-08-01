@@ -248,6 +248,8 @@ def run_observe() -> dict:
     quality = {
         "policy": "output_quality_sampling",
         "sample_size": len(samples),
+        "observed": total,  # the full batch the subset was drawn from (EO3c)
+        "sample_pct": round(100.0 * len(samples) / total, 1),
         "schema": "answer:str, citations:list, confidence:float",
         "passed": passed, "failed": len(samples) - passed,
         "pass_rate_pct": round(100.0 * passed / len(samples), 1),
@@ -275,7 +277,10 @@ def run_observe() -> dict:
     Gauge("genai_quality_pass_rate", "Output quality pass rate (percent)",
           registry=reg).set(quality["pass_rate_pct"])
 
-    # Structured logs for a few representative requests (EO3b).
+    # Structured logs for a few representative requests (EO3b). A request's log
+    # carries a quality verdict ONLY if it was in the sampled subset — otherwise
+    # "not_sampled", so the log never contradicts the sampling story (EO3c).
+    sample_verdict = {s["request_id"]: s["quality_status"] for s in samples}
     logs = [
         _structured_log("req-6b1e9a2c47d0", "balanced-std", "weighted_distribution",
                         {"p": 27, "c": 16}, 0.0081, HEALTHY_MS, "healthy", "pass"),
@@ -284,12 +289,15 @@ def run_observe() -> dict:
         _structured_log("req-2a7c55e1b93f", "balanced-std", "weighted_distribution",
                         {"p": 31, "c": 19}, 0.0150, SLOW_MS, "degraded_slow", "fail"),
     ]
+    for lg in logs:
+        lg["quality_status"] = sample_verdict.get(lg["request_id"], "not_sampled")
 
     # Diagnosis: the slow request's span breakdown pinpoints the latency source.
     slow_total = sum(s["duration_ms"] for s in slow_spans if s["parent"])
     provider_span = next(s for s in slow_spans if s["span"] == "provider_call")
     diagnose = {
         "trace_id": slow_tid,
+        "request_id": "req-2a7c55e1b93f",  # same id as the failing log + correlate
         "total_ms": slow_total,
         "spans": [s for s in slow_spans if s["parent"]],
         "slowest_span": "provider_call",
@@ -308,7 +316,8 @@ def run_observe() -> dict:
     }
 
     _STATE.update({
-        "trace": {"trace_id": fail_tid, "total_ms": sum(s["duration_ms"] for s in fail_spans if s["parent"]),
+        "trace": {"trace_id": fail_tid, "request_id": "req-4f18c0a7d2b9",
+                  "total_ms": sum(s["duration_ms"] for s in fail_spans if s["parent"]),
                   "spans": fail_spans},
         "logs": logs,
         "metrics": metrics,

@@ -53,13 +53,13 @@ curl -s -X POST "$API_BASE/observe/run" >/dev/null 2>&1
 
 # STEP 1 — end-to-end trace
 step_head "1" "Open the end-to-end trace" \
-  "One request must be traceable across every stage of the pipeline." \
-  "a span timeline: ingress, queue, routing, provider_call, retry_backoff, fallback, response."
+  "One request must be traceable across every stage of the pipeline, with both its trace id and its request id on screen so the log can be joined to the trace." \
+  "trace id + request id, then a span timeline: ingress, queue, routing, provider_call, retry_backoff, fallback, response."
 show_cmd "curl -s -X POST \$API_BASE/observe/run >/dev/null; curl -s \$API_BASE/observe/trace | python3 scripts/fmt.py --type trace"
 RAW="$(curl -s "$API_BASE/observe/trace")"
 emit "$(printf '%s' "$RAW" | $FMT --type trace 2>&1)"
-if echo "$RAW" | jq -e '([.spans[].span]|(index("ingress") and index("queue") and index("routing") and index("provider_call") and index("retry_backoff") and index("fallback") and index("response"))) and (.total_ms>0) and (.trace_id|length==32)' >/dev/null 2>&1; then
-  verdict 0 "the trace spans ingress → queue → routing → provider call → retry → fallback → response" "" ""
+if echo "$RAW" | jq -e '([.spans[].span]|(index("ingress") and index("queue") and index("routing") and index("provider_call") and index("retry_backoff") and index("fallback") and index("response"))) and (.total_ms>0) and (.trace_id|length==32) and (.request_id|startswith("req-"))' >/dev/null 2>&1; then
+  verdict 0 "the trace spans ingress → queue → routing → provider call → retry → fallback → response, with a trace id and a request id" "" ""
   LO+=("Step 1: distributed tracing across the application, AI service, and provider layers (EO3a)")
 else
   verdict 1 "the trace does not span every pipeline stage" \
@@ -74,8 +74,8 @@ step_head "2" "Inspect the structured logs" \
 show_cmd "curl -s \$API_BASE/observe/logs | python3 scripts/fmt.py --type obs-logs"
 RAW="$(curl -s "$API_BASE/observe/logs")"
 emit "$(printf '%s' "$RAW" | $FMT --type obs-logs 2>&1)"
-if echo "$RAW" | jq -e '(.logs|length>=3) and (.logs|all(has("request_id") and has("model") and has("route_reason") and has("prompt_tokens") and has("completion_tokens") and has("total_tokens") and has("cost_usd") and has("latency_ms") and has("provider_status") and has("quality_status")))' >/dev/null 2>&1; then
-  verdict 0 "every structured log carries the full field set, tokens broken into prompt/completion/total" "" ""
+if echo "$RAW" | jq -e '(.logs|length>=3) and (.observed>=20) and (.logs|all(has("request_id") and has("model") and has("route_reason") and has("prompt_tokens") and has("completion_tokens") and has("total_tokens") and has("cost_usd") and has("latency_ms") and has("provider_status") and has("quality_status"))) and (.logs|any(.quality_status=="not_sampled")) and (.logs|any(.quality_status=="fail"))' >/dev/null 2>&1; then
+  verdict 0 "every structured log carries the full field set (tokens prompt/completion/total); an unsampled record reads not_sampled, not a false verdict" "" ""
   LO+=("Step 2: a structured logging schema for inputs, model, latency, tokens, and cost (EO3b)")
 else
   verdict 1 "structured logs are missing fields" \
@@ -85,14 +85,18 @@ fi
 
 # STEP 3 — Prometheus metrics
 step_head "3" "Read the Prometheus service metrics" \
-  "Latency, availability, queue depth, fallback rate, retry rate, and cost must be quantified." \
-  "p50 712ms, p95 2112ms, availability 100%, queue depth 4, fallback 15%, retry 15%, cost \$0.1533."
+  "Latency, availability, queue depth, fallback rate, retry rate, and cost must be quantified — and it must be REAL Prometheus exposition, shown on the wire." \
+  "raw exposition lines from /metrics, then p50 712ms, p95 2112ms, availability 100%, queue 4, fallback 15%, retry 15%, cost \$0.1533."
+show_cmd "curl -s \$API_BASE/metrics | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) '"
+EXPO_RAW="$(curl -s "$API_BASE/metrics" | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) ')"
+emit "$(printf '%s' "$EXPO_RAW" | sed 's/^/  /')"
+blank
 show_cmd "curl -s \$API_BASE/observe/metrics | python3 scripts/fmt.py --type metrics"
 RAW="$(curl -s "$API_BASE/observe/metrics")"
 emit "$(printf '%s' "$RAW" | $FMT --type metrics 2>&1)"
-EXPO="$(curl -s "$API_BASE/metrics" | grep -c 'genai_request_latency_ms')"
-if echo "$RAW" | jq -e '.latency_p50_ms==712 and .latency_p95_ms==2112 and .availability_pct==100.0 and .fallback_rate_pct==15.0 and .retry_rate_pct==15.0 and .queue_depth==4' >/dev/null 2>&1 && [ "${EXPO:-0}" -gt 0 ]; then
-  verdict 0 "metrics quantify latency, availability, queue, fallback, retry, and cost — real Prometheus exposition at /metrics" "" ""
+EXPO="$(printf '%s\n' "$EXPO_RAW" | grep -c 'genai_')"
+if echo "$RAW" | jq -e '.latency_p50_ms==712 and .latency_p95_ms==2112 and .availability_pct==100.0 and .fallback_rate_pct==15.0 and .retry_rate_pct==15.0 and .queue_depth==4' >/dev/null 2>&1 && [ "${EXPO:-0}" -ge 3 ]; then
+  verdict 0 "raw /metrics exposition shows genai_* on the wire, and the summary quantifies latency, availability, queue, fallback, retry, and cost" "" ""
   LO+=("Step 3: metrics quantify latency, availability, queue, fallback, retry, and cost (EO3d)")
 else
   verdict 1 "metrics summary or Prometheus exposition is wrong" \
@@ -102,15 +106,15 @@ fi
 
 # STEP 4 — output quality sampling + the SLO alert it fires
 step_head "4" "Sample output quality and confirm the SLO alert" \
-  "A representative subset must be graded (a 200 can still fail quality), and the quality SLO must fire an alert on the breach." \
-  "pass rate 60% (3/5) on a 0.85 bar with reviewer reasons; disposition ALERT, quality pass rate breach at severity page."
+  "A representative subset (5 of 20) must be graded (a 200 can still fail quality), and the quality SLO must fire an alert on the breach." \
+  "sampled 5 of 20 (25%), pass rate 60% (3/5) on a 0.85 per-response bar with reviewer reasons; disposition ALERT, quality breach at severity page."
 show_cmd "curl -s \$API_BASE/observe/quality | python3 scripts/fmt.py --type quality"
 QL="$(curl -s "$API_BASE/observe/quality")"
 emit "$(printf '%s' "$QL" | $FMT --type quality 2>&1)"
 show_cmd "curl -s \$API_BASE/observe/slo | python3 scripts/fmt.py --type slo"
 SL="$(curl -s "$API_BASE/observe/slo")"
 emit "$(printf '%s' "$SL" | $FMT --type slo 2>&1)"
-if echo "$QL" | jq -e '.pass_rate_pct==60.0 and .passed==3 and .failed==2 and .quality_bar==0.85 and ([.samples[].quality_status]|(index("pass") and index("fail"))) and (.samples|all(has("reviewer_reason")))' >/dev/null 2>&1 \
+if echo "$QL" | jq -e '.pass_rate_pct==60.0 and .passed==3 and .failed==2 and .quality_bar==0.85 and .observed==20 and .sample_size==5 and ([.samples[].quality_status]|(index("pass") and index("fail"))) and (.samples|all(has("reviewer_reason")))' >/dev/null 2>&1 \
   && echo "$SL" | jq -e '.disposition=="ALERT" and ([.slos[].dimension]|(index("latency") and index("availability") and index("output quality"))) and (.slos[]|select(.dimension=="output quality").status)=="breach" and (.slos[]|select(.dimension=="output quality").severity)=="page"' >/dev/null 2>&1; then
   verdict 0 "quality grades 3 pass / 2 fail on a 0.85 bar, and the quality SLO fires an ALERT at severity page" "" ""
   LO+=("Step 4: output quality sampling on a representative subset, with an SLO alert on the breach (EO3c, EO3d)")
@@ -134,10 +138,10 @@ emit "$(printf '%s' "$CR" | $FMT --type correlate 2>&1)"
 # record shown in the Step 2 structured logs — one id ties the log to the action.
 HERO="$(printf '%s' "$CR" | jq -r '.request_id')"
 LOGS2="$(curl -s "$API_BASE/observe/logs")"
-if echo "$DG" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>90 and (.provider_status=="degraded_slow") and (.root_cause|test("provider"))' >/dev/null 2>&1 \
+if echo "$DG" | jq -e --arg rid "$HERO" '.slowest_span=="provider_call" and .slowest_share_pct>90 and (.provider_status=="degraded_slow") and (.root_cause|test("provider")) and (.request_id==$rid) and (.trace_id|length==32)' >/dev/null 2>&1 \
   && echo "$CR" | jq -e '.quality_status=="fail" and (.total_tokens>0) and (.cost_usd>0) and (.operator_action|length>0) and has("request_id")' >/dev/null 2>&1 \
   && echo "$LOGS2" | jq -e --arg rid "$HERO" '.logs|any(.request_id==$rid and .quality_status=="fail")' >/dev/null 2>&1; then
-  verdict 0 "the slow trace pins provider_call (>90%), and the failing record ${HERO} from Step 2 is the one correlated to tokens, cost, quality, and the operator action" "" ""
+  verdict 0 "the slow trace prints request id ${HERO} (the join key), pins provider_call (>90%), and that same failing record from Step 2 is correlated to tokens, cost, quality, and the operator action" "" ""
   LO+=("Step 5: use observability data to diagnose an incident and connect one logged request to the operator action (EO3e)")
 else
   verdict 1 "the diagnosis or the correlation did not hold" \

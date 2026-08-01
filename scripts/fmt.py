@@ -1060,29 +1060,32 @@ def fmt_failover_reconcile(d: dict) -> str:
 # --- Observability views (Module 2, Clip 5) -------------------------------
 
 def _span_tree(spans: list, total: int, highlight: str = "provider_call") -> list:
-    # No blank line between spans — the full 7-span tree stays inside the pane.
-    out = [f"    {BLUE}{'span':<16}{'duration':<10}{'share'}{RESET}"]
+    # Child spans only (the root/total is printed separately) so trace and
+    # diagnose render identically — no empty-bar parent row that looks like a bug.
+    # No blank line between spans — the whole tree stays inside the pane.
+    out = [f"    {BLUE}{'span':<16}{'duration':<10}{'share of total'}{RESET}"]
     for s in spans:
+        if s.get("parent") is None:
+            continue
         name = str(s.get("span"))
         dur = int(s.get("duration_ms", 0))
-        is_root = s.get("parent") is None
         share = (dur / total * 100) if total else 0
-        bar = "█" * max(1, round(share / 100 * 18)) if not is_root else ""
-        label = name if is_root else f"  {name}"   # indent children
-        color = PINK if name == highlight else (WHITE if is_root else LGRN)
+        bar = "█" * max(1, round(share / 100 * 18))
+        color = PINK if name == highlight else LGRN
         barcol = PINK if name == highlight else ADA
-        out.append(f"  {PINK}★{RESET} {color}{label:<16}{RESET}"
+        out.append(f"  {PINK}★{RESET} {color}{name:<16}{RESET}"
                    f"{LGRN}{str(dur)+'ms':<10}{RESET}{barcol}{bar}{RESET}")
     return out
 
 
 def fmt_trace(d: dict) -> str:
-    require(d, "trace_id", "total_ms", "spans")
+    require(d, "trace_id", "request_id", "total_ms", "spans")
     out = [header(
         "Open the end-to-end trace",
         "One request across ingress, queue, routing, provider call, retry, "
         "fallback, and response", width=78)]
     out += star("trace id", d.get("trace_id"))[:1]
+    out += star("request id", d.get("request_id"))[:1]
     out += star("total", f"{d.get('total_ms')} ms")[:1]
     out.append("")
     out += sect("span timeline (child spans under the request)")
@@ -1092,13 +1095,19 @@ def fmt_trace(d: dict) -> str:
 
 def fmt_obs_logs(d: dict) -> str:
     require(d, "logs")
+    logs = d.get("logs", [])
+    obs = d.get("observed")
+    shown = f"showing {len(logs)} of {obs}" if obs else f"{len(logs)} records"
     out = [header(
         "Inspect the structured logs",
         "Every request logs one record: request id, model, route reason, "
         "tokens, cost, latency, provider status, and quality", width=78)]
-    out += sect("one structured record per request  (tokens shown prompt/completion/total)")
-    for e in d.get("logs", []):
-        qc = LIME if e.get("quality_status") == "pass" else PINK
+    out += sect(f"one structured record per request  ({shown}, tokens prompt/completion/total)")
+    for e in logs:
+        qs = str(e.get("quality_status"))
+        sampled = qs in ("pass", "fail")
+        qc = LIME if qs == "pass" else (PINK if qs == "fail" else GRAY)
+        qtxt = qs if sampled else "— (not sampled)"
         sc = _status_color(e.get("provider_status", ""))
         toks = f"{e.get('prompt_tokens')}/{e.get('completion_tokens')}/{e.get('total_tokens')}"
         # Two compact lines per record, each under 78 chars so nothing wraps at
@@ -1108,7 +1117,7 @@ def fmt_obs_logs(d: dict) -> str:
         out.append(f"      {BLUE}tok{RESET} {toks}  {BLUE}${RESET}{float(e.get('cost_usd',0)):.4f}  "
                    f"{BLUE}lat{RESET} {e.get('latency_ms')}ms  "
                    f"{sc}{e.get('provider_status')}{RESET}  "
-                   f"{BLUE}qual{RESET} {qc}{e.get('quality_status')}{RESET}")
+                   f"{BLUE}qual{RESET} {qc}{qtxt}{RESET}")
     return "\n".join(out)
 
 
@@ -1139,21 +1148,25 @@ def fmt_quality(d: dict) -> str:
             "quality_bar", "samples")
     below = float(d.get("pass_rate_pct", 100)) < 90.0
     out = [header(
-        "Sample output quality on live responses",
+        "Sample output quality on the batch responses",
         "Automated checks on a representative subset — a successful response "
         "can still fail quality", width=78)]
     out += star("policy", d.get("policy"))[:1]
     out += star("schema", d.get("schema"))[:1]
+    if d.get("observed"):
+        out += _noted("sampled", f"{d.get('sample_size')} of {d.get('observed')} requests "
+                      f"({d.get('sample_pct')}%)", "a representative subset, not every request", BLUE)[:1]
     out += _noted("pass rate", f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
-                  f"quality bar {d.get('quality_bar')}", PINK if below else LIME)[:1]
+                  f"per-response bar {d.get('quality_bar')}", PINK if below else LIME)[:1]
     out.append("")
     out += sect("sampled responses  (score vs the bar, with the reviewer reason)")
     out.append(f"    {BLUE}{'request':<18}{'score':<7}{'status':<7}{'reviewer reason'}{RESET}")
     for s in d.get("samples", []):
         st = str(s.get("quality_status"))
         sc = LIME if st == "pass" else PINK
+        score = f"{float(s.get('quality_score', 0)):.2f}"
         out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('request_id')):<18}"
-                   f"{str(s.get('quality_score')):<7}{sc}{st:<7}{RESET}{GRAY}{s.get('reviewer_reason')}{RESET}")
+                   f"{score:<7}{sc}{st:<7}{RESET}{GRAY}{s.get('reviewer_reason')}{RESET}")
     return "\n".join(out)
 
 
@@ -1180,13 +1193,14 @@ def fmt_slo(d: dict) -> str:
 
 
 def fmt_diagnose(d: dict) -> str:
-    require(d, "trace_id", "total_ms", "spans", "slowest_span", "slowest_ms",
-            "slowest_share_pct", "provider_status", "root_cause")
+    require(d, "trace_id", "request_id", "total_ms", "spans", "slowest_span",
+            "slowest_ms", "slowest_share_pct", "provider_status", "root_cause")
     out = [header(
         "Diagnose the slow request from its trace",
         "Nested span timings point at the exact stage that owns the latency",
         width=78)]
     out += star("trace id", d.get("trace_id"))[:1]
+    out += star("request id", d.get("request_id"))[:1]
     out += star("total", f"{d.get('total_ms')} ms")[:1]
     out.append("")
     out += sect("span timeline  (the slow span highlighted)")

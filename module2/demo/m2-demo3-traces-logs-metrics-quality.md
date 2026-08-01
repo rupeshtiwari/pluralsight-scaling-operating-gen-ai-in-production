@@ -104,9 +104,11 @@ curl -s http://localhost:8000/observe/trace | python3 scripts/fmt.py --type trac
   --why "One request across ingress, queue, routing, provider call, retry, fallback, and response"
 ```
 
-**Expected output:** ★ a `trace id`, ★ `total: 1812 ms`, then the span timeline —
-`ingress`, `queue`, `routing`, `provider_call` (1200ms), `retry_backoff` (200ms),
-`fallback` (400ms), `response` — each with a proportional bar.
+**Expected output:** ★ a `trace id`, ★ a `request id` (`req-4f18c0a7d2b9` — the
+join key that ties this trace to its structured log), ★ `total: 1812 ms`, then the
+child-span timeline — `ingress`, `queue`, `routing`, `provider_call` (1200ms),
+`retry_backoff` (200ms), `fallback` (400ms), `response` — each with a proportional
+bar.
 
 **What the learner should notice:** This is one request, made fully legible. We open
 a **failover** request on purpose, because it exercises *every* stage: it arrived
@@ -153,16 +155,24 @@ logs, quality, and the ledger, is how a real incident is followed end to end.
 watches on a dashboard.
 
 ```bash
+# First, the raw Prometheus exposition on the wire — what a Prometheus server scrapes
+curl -s http://localhost:8000/metrics \
+  | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) '
+# Then the operator summary
 curl -s http://localhost:8000/observe/metrics | python3 scripts/fmt.py --type metrics \
   --title "Read the Prometheus service metrics" \
   --why "Latency, availability, queue depth, fallback rate, retry rate, and cost — the operator's health signals"
 ```
 
-> The raw Prometheus exposition is live at `http://localhost:8000/metrics`, which the
-> Prometheus server scrapes on the `obs` profile.
+> Show the raw exposition first (four `genai_*` lines straight from `/metrics`) so the
+> learner sees the metrics on the wire, then the formatted summary. The full
+> exposition is live at `http://localhost:8000/metrics`, which the Prometheus server
+> scrapes on the `obs` profile.
 
-**Expected output:** ★ `requests observed: 20`, then ★ `p50: 712 ms`, ★ `p95: 2112
-ms`, ★ `availability: 100.0%`, ★ `queue depth: 4`, ★ `fallback rate: 15.0%`,
+**Expected output:** first four raw lines — `genai_fallbacks_total 3.0`,
+`genai_retries_total 3.0`, `genai_queue_depth 4.0`, `genai_quality_pass_rate 60.0` —
+then the summary: ★ `requests observed: 20`, ★ `p50: 712 ms`, ★ `p95: 2112 ms`,
+★ `availability: 100.0%`, ★ `queue depth: 4`, ★ `fallback rate: 15.0%`,
 ★ `retry rate: 15.0%`, ★ `cost estimate: $0.1533`.
 
 **What the learner should notice:** These are real Prometheus metrics, and they turn
@@ -188,11 +198,11 @@ curl -s http://localhost:8000/observe/slo | python3 scripts/fmt.py --type slo \
   --why "Latency, availability, and output quality each get an objective — the quality breach fires an alert"
 ```
 
-**Expected output:** first the sample — ★ `policy: output_quality_sampling`, ★ `pass
-rate: 60.0% (3/5)` against ★ `quality bar 0.85`, with a per-sample `score` / `status`
-/ `reviewer reason`; then the SLO — ★ `disposition: ALERT`, three rows: `availability`
-`100 >= 99` `ok`, `latency_p95` `2112 <= 2500` `ok`, `quality_pass_rate` `60 >= 90`
-`breach` `page`.
+**Expected output:** first the sample — ★ `policy: output_quality_sampling`,
+★ `sampled: 5 of 20 requests (25.0%)`, ★ `pass rate: 60.0% (3/5)` against a
+★ `per-response bar 0.85`, with a per-sample `score` / `status` / `reviewer reason`;
+then the SLO — ★ `disposition: ALERT`, three rows: `availability` `100 >= 99` `ok`,
+`latency` `2112 <= 2500` `ok`, `output quality` `60 >= 90` `breach` `page`.
 
 **What the learner should notice:** This is the step that keeps you honest. Every one
 of these responses returned a successful `200`, and yet two of the five **failed
@@ -221,11 +231,13 @@ curl -s http://localhost:8000/observe/correlate | python3 scripts/fmt.py --type 
   --why "One record ties tokens and cost to the quality verdict and what the operator did about it"
 ```
 
-**Expected output:** first the diagnosis — ★ `total: 2112 ms`, ★ `slowest span:
-provider_call — 2100ms (99.4%)`, ★ `provider status: degraded_slow`, ★ `root cause:
-provider latency, not queueing or retry`; then the correlation — ★ `total tokens:
-50`, ★ `cost: $0.0150`, ★ `quality status: fail (score 0.55)`, ★ `operator action:
-sampled, flagged for review, excluded from training set`.
+**Expected output:** first the diagnosis — ★ `trace id`, ★ `request id:
+req-2a7c55e1b93f` (the same id from the Step 2 log and Step 4 sample), ★ `total: 2112
+ms`, ★ `slowest span: provider_call — 2100ms (99.4%)`, ★ `provider status:
+degraded_slow`, ★ `root cause: provider latency, not queueing or retry`; then the
+correlation — ★ `request id: req-2a7c55e1b93f`, ★ `total tokens: 50`, ★ `cost:
+$0.0150`, ★ `quality status: fail (score 0.55)`, ★ `operator action: sampled, flagged
+for review, excluded from training set`.
 
 **What the learner should notice:** This is how you close an incident in under a
 minute instead of an hour. The diagnosis opens a **slow** request (a different one

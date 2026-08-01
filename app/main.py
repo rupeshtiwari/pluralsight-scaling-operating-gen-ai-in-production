@@ -754,7 +754,8 @@ def observe_trace() -> dict:
 def observe_logs() -> dict:
     """Structured logs carrying request id, model, route reason, tokens, cost,
     latency, provider status, and quality status."""
-    return {"logs": observe.state().get("logs", [])}
+    logs = observe.state().get("logs", [])
+    return {"logs": logs, "observed": observe.state().get("metrics", {}).get("requests")}
 
 
 @app.get("/metrics")
