@@ -120,6 +120,9 @@ def run_incident() -> dict:
     }
 
     # --- Isolate the latency from the trace ------------------------------
+    # "other" folds the tiny ingress/routing/response spans so the column sums to
+    # the printed total exactly (the trace must reconcile, like Clip 5's did).
+    other_ms = total_ms - (by["queue"] + by["retry_backoff"] + by["fallback"] + prov)
     isolate = {
         "trace_id": tid,
         "total_ms": total_ms,
@@ -131,6 +134,8 @@ def run_incident() -> dict:
              "share_pct": share(by["retry_backoff"]), "verdict": "innocent"},
             {"stage": "fallback", "span": "fallback", "ms": by["fallback"],
              "share_pct": share(by["fallback"]), "verdict": "innocent"},
+            {"stage": "other", "span": "other", "ms": other_ms,
+             "share_pct": share(other_ms), "verdict": "innocent"},
             {"stage": "provider call", "span": "provider_call", "ms": prov,
              "share_pct": share(prov), "verdict": "root cause"},
         ],
@@ -138,8 +143,10 @@ def run_incident() -> dict:
         "slowest_ms": prov,
         "slowest_share_pct": share(prov),
         "provider": "balanced-ai",
+        "serving_tier": "balanced-std",
         "provider_status": "degraded_slow",
-        "root_cause": "provider latency on balanced-ai, not queueing, retry, or fallback",
+        "root_cause": "provider balanced-ai, serving tier balanced-std, degraded_slow "
+                      "— not queueing, retry, or fallback",
     }
 
     # --- Quota pressure: admission control sheds load on purpose ---------
@@ -154,7 +161,9 @@ def run_incident() -> dict:
         "accepted": ACCEPTED,
         "rejected_429": REJECTED_429,
         "retry_after_seconds": CALLER_BACKOFF_SECONDS,  # same caller backoff as Clip 2
-        "provider_status": "quota_exceeded",
+        # NOT "exceeded": admission shed 6 before they reached the provider, so the
+        # quota was pressured (98%) but never exhausted — the point of the step.
+        "provider_status": "quota_pressure",
         "quota_utilization_pct": 98,
         "shed_working": True,
         "note": "the 429s are the system shedding load — Retry-After tells the "
@@ -175,11 +184,11 @@ def run_incident() -> dict:
         "baseline_window_usd": round(ACCEPTED * base_pr, 4),
         "current_window_usd": round(ACCEPTED * curr_pr, 4),
         "drivers": [
-            {"driver": "retries on balanced-std",
+            {"driver": "retries on balanced-std", "calc": "3 extra calls x $0.0021",
              "detail": "degraded_slow primary retried before failover — each retry "
-                       "pays for a second provider call at $0.002/1k",
+                       "pays for a second provider call",
              "add_per_request_usd": retries_add},
-            {"driver": "fallback overhead",
+            {"driver": "fallback overhead", "calc": "1 extra call x $0.0027",
              "detail": "an extra provider call after the failed primary",
              "add_per_request_usd": fallback_add},
         ],
@@ -198,6 +207,8 @@ def run_incident() -> dict:
     quality = {
         "policy": "output_quality_sampling",
         "sample_size": sampled,
+        "sampled_from": ACCEPTED,  # the 34 accepted requests the subset was drawn from
+        "sample_pct": round(100.0 * sampled / ACCEPTED, 1),
         "passed": passed,
         "failed": failed,
         "pass_rate_pct": round(100.0 * passed / sampled, 1),
@@ -216,8 +227,8 @@ def run_incident() -> dict:
 
     # --- Root cause + coordinated action --------------------------------
     action = {
-        "root_cause": "balanced-ai (balanced-std) degraded — slow responses then "
-                      "quota exhaustion — one provider fault behind all four alerts",
+        "root_cause": "provider balanced-ai (serving tier balanced-std) degraded — "
+                      "slow responses then quota pressure — one fault behind all four alerts",
         "decisions": [
             {"dimension": "latency",
              "evidence": f"provider_call is {share(prov)}% of a {total_ms}ms trace, "
@@ -226,7 +237,7 @@ def run_incident() -> dict:
              "expected_effect": "p95 back under 2500 ms"},
             {"dimension": "quota",
              "evidence": "balanced-ai at 98% quota; 6 requests shed with Retry-After",
-             "action": "keep the tighter rate limit — it is protecting the provider",
+             "action": "keep admission control shedding at the current limit",
              "expected_effect": "429 shed rate falls as failover drains balanced-ai"},
             {"dimension": "cost",
              "evidence": "+75% per request, driven by retries on balanced-std",

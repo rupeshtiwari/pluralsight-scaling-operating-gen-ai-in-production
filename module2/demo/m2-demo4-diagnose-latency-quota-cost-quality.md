@@ -143,11 +143,13 @@ curl -s http://localhost:8000/incident/isolate | python3 scripts/fmt.py --type i
   --why "Queueing, retry, and fallback are innocent — the degraded provider call owns the time"
 ```
 
-**Expected output:** ★ a `trace id`, ★ `total: 3750 ms`, then the four
-contributors with proportional bars — `queueing` `40ms` (`1.1%`, innocent),
-`retry` `200ms` (`5.3%`, innocent), `fallback` `400ms` (`10.7%`, innocent), and
-`provider call` `3100ms` (`82.7%`, root cause) — then ★ `provider: balanced-ai
-(degraded_slow)` and ★ `root cause: provider latency on balanced-ai`.
+**Expected output:** ★ a `trace id`, ★ `total: 3750 ms`, then five contributors that
+sum to the total — `queueing` `40ms` (`1.1%`), `retry` `200ms` (`5.3%`), `fallback`
+`400ms` (`10.7%`), `other` `10ms` (`0.3%`) all innocent, and `provider call` `3100ms`
+(`82.7%`, root cause) — then ★ `provider: balanced-ai (serving tier balanced-std)
+degraded_slow` and ★ `root cause: provider balanced-ai, serving tier balanced-std`.
+Note the naming: **balanced-ai is the provider; balanced-std is the model tier it
+serves** — quota is enforced at the provider, routing and fallback at the tier.
 
 **What the learner should notice:** This is where the guessing ends. The trace lays
 the request out stage by stage, and the bars do the arguing for you: the provider
@@ -172,7 +174,9 @@ curl -s http://localhost:8000/incident/quota | python3 scripts/fmt.py --type inc
 **Expected output:** ★ `provider: balanced-ai · balanced-std`, ★ `quota
 utilization: 98%`, then the accounting — ★ `submitted: 40`, ★ `accepted: 34`,
 ★ `rejected (429): 6` (shed fast, `caller backoff 60s` — the same Retry-After
-contract as Clip 2), and ★ `provider status: quota_exceeded`.
+contract as Clip 2), and ★ `provider status: quota_pressure`. It reads
+`quota_pressure`, not exceeded — admission shed the 6 before they reached the
+provider, so the quota was pressured but never exhausted. That is the whole point.
 
 **What the learner should notice:** Here is the counterintuitive part of the
 incident: those six 429s are not a failure, they are the system working. The quota
@@ -198,12 +202,13 @@ curl -s http://localhost:8000/incident/quality | python3 scripts/fmt.py --type i
   --why "Grouped failure reasons that cluster on the degraded provider — every failure is a confident, wrong 200"
 ```
 
-**Expected output:** first the cost — ★ `baseline: $0.0120 / request`, ★ `current:
-$0.0210 / request` (`+75.0%`), drivers `retries on balanced-std` `+$0.0063` and
-`fallback overhead` `+$0.0027`, ★ `reconciles to current: true`; then the quality —
-★ `pass rate: 68.0% (17/25)` against `baseline 92.0%, objective >= 90%`, grouped
-reasons (`hallucinated a policy number ×3`, `answer contradicts the source ×3`,
-`off-format / schema invalid ×2`), and ★ `cluster: balanced-std (degraded window)`.
+**Expected output:** first the cost — ★ `baseline: $0.0120 /req`, ★ `current:
+$0.0210 /req` (`+75.0%`), drivers `retries on balanced-std +$0.0063 (3 extra calls
+x $0.0021)` and `fallback overhead +$0.0027 (1 extra call x $0.0027)`, ★ `reconciles
+to current: true`; then the quality — ★ `sampled: 25 of 34 accepted (73.5%)`,
+★ `pass rate: 68.0% (17/25)` against `baseline 92.0%, want >= 90%`, grouped reasons
+(`hallucinated a policy number ×3`, `answer contradicts the source ×3`, `off-format /
+schema invalid ×2`), and ★ `cluster: balanced-std (degraded window)`.
 
 **What the learner should notice:** Cost drift is where teams wave their hands and
 say "traffic must be up." Do not — reconcile it. The two drivers add up to exactly
@@ -228,11 +233,11 @@ curl -s http://localhost:8000/incident/action | python3 scripts/fmt.py --type in
   --why "Four alerts, one provider fault, one evidence-based decision per dimension"
 ```
 
-**Expected output:** ★ `root cause: balanced-ai (balanced-std) degraded`, then four
-decisions, each with its evidence, action, and expected effect — fail over off
-`balanced-std` for latency, keep the tighter rate limit for quota, cap retries for
-cost, and sample-and-block the degraded provider for quality — then ★ `disposition:
-ACT`.
+**Expected output:** ★ `root cause: provider balanced-ai (serving tier balanced-std)
+degraded`, then four decisions, each with its evidence, action, and expected effect —
+fail over off `balanced-std` for latency, keep admission control shedding at the
+current limit for quota, cap retries for cost, and sample-and-block the degraded
+provider for quality — then ★ `disposition: ACT`.
 
 **What the learner should notice:** This is the payoff, and it is why you did the
 other four steps. Every alert traced back to one degraded provider, so you are not

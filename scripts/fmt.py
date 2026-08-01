@@ -1297,7 +1297,7 @@ def fmt_incident_dashboard(d: dict) -> str:
 
 
 def fmt_incident_isolate(d: dict) -> str:
-    require(d, "trace_id", "total_ms", "contributors", "provider",
+    require(d, "trace_id", "total_ms", "contributors", "provider", "serving_tier",
             "provider_status", "root_cause")
     out = [header(
         "Isolate the latency from one trace",
@@ -1317,8 +1317,8 @@ def fmt_incident_isolate(d: dict) -> str:
                    f"{str(c.get('ms'))+'ms':<10}{share:>5.1f}% {RESET}"
                    f" {vc}{c.get('verdict')}{RESET}")
     out.append("")
-    out += _noted("provider", f"{d.get('provider')} ({d.get('provider_status')})",
-                  "the fault mode", PINK)[:1]
+    out += _noted("provider", f"{d.get('provider')} (serving tier {d.get('serving_tier')})",
+                  d.get("provider_status"), PINK)[:1]
     out += star("root cause", d.get("root_cause"), PINK)[:1]
     return "\n".join(out)
 
@@ -1362,10 +1362,11 @@ def fmt_incident_cost(d: dict) -> str:
     out += _noted("objective", f"${float(d.get('objective_per_request_usd',0)):.4f} /req",
                   "the cost budget", BLUE)[:1]
     out.append("")
-    out += sect("where the extra dollars went  (driver: add/req, then why)")
+    out += sect("where the extra dollars went  (driver: add/req = calc, then why)")
     for dr in d.get("drivers", []):
+        calc = f"  {GRAY}({dr.get('calc')}){RESET}" if dr.get("calc") else ""
         out.append(f"  {PINK}★{RESET} {LGRN}{str(dr.get('driver')):<24}"
-                   f"+${float(dr.get('add_per_request_usd',0)):.4f}{RESET}")
+                   f"+${float(dr.get('add_per_request_usd',0)):.4f}{RESET}{calc}")
         out.append(f"      {GRAY}{dr.get('detail')}{RESET}")
     out.append("")
     rc = LIME if d.get("reconciles") else PINK
@@ -1382,6 +1383,9 @@ def fmt_incident_quality(d: dict) -> str:
         "Confirm the quality regression from sampling",
         "Grouped failure reasons that cluster on the degraded provider — every "
         "failure is a confident, wrong 200", width=78)]
+    if d.get("sampled_from"):
+        out += _noted("sampled", f"{d.get('sample_size')} of {d.get('sampled_from')} accepted "
+                      f"({d.get('sample_pct')}%)", "sampled harder during the incident", BLUE)[:1]
     out += _noted("pass rate",
                   f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
                   f"baseline {d.get('baseline_pass_rate_pct')}%, want "

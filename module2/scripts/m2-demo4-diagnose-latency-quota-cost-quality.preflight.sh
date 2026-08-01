@@ -78,8 +78,8 @@ step_head "2" "Isolate the latency from one trace" \
 show_cmd "curl -s \$API_BASE/incident/isolate | python3 scripts/fmt.py --type incident-isolate"
 RAW="$(curl -s "$API_BASE/incident/isolate")"
 emit "$(printf '%s' "$RAW" | $FMT --type incident-isolate 2>&1)"
-if echo "$RAW" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>80 and .provider=="balanced-ai" and .provider_status=="degraded_slow" and ((.contributors[]|select(.span=="provider_call").verdict)=="root cause") and ([.contributors[]|select(.span!="provider_call").verdict]|all(.=="innocent")) and (.trace_id|length==32)' >/dev/null 2>&1; then
-  verdict 0 "the trace clears queueing/retry/fallback and pins the latency on the degraded provider call" "" ""
+if echo "$RAW" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>80 and .provider=="balanced-ai" and .serving_tier=="balanced-std" and .provider_status=="degraded_slow" and ((.contributors[]|select(.span=="provider_call").verdict)=="root cause") and ([.contributors[]|select(.span!="provider_call").verdict]|all(.=="innocent")) and ((.contributors|map(.ms)|add)==.total_ms) and (.trace_id|length==32)' >/dev/null 2>&1; then
+  verdict 0 "the trace column sums to the total, clears queue/retry/fallback/other, and pins the latency on the degraded provider (balanced-ai, tier balanced-std)" "" ""
   LO+=("Step 3: one trace isolates the latency source across the pipeline (EO3a, EO3e)")
 else
   verdict 1 "the isolation did not point at the provider" \
@@ -90,17 +90,17 @@ fi
 # STEP 3 — quota pressure and shed
 step_head "3" "Prove the quota pressure and the shed" \
   "Admission control must shed the excess load with a 429 and a caller backoff, protecting the provider." \
-  "40 submitted = 34 accepted + 6 rejected (caller backoff 60s); provider quota_exceeded at 98% utilization."
+  "40 submitted = 34 accepted + 6 rejected (caller backoff 60s); provider quota_pressure at 98% utilization."
 show_cmd "curl -s \$API_BASE/incident/quota | python3 scripts/fmt.py --type incident-quota"
 RAW="$(curl -s "$API_BASE/incident/quota")"
 emit "$(printf '%s' "$RAW" | $FMT --type incident-quota 2>&1)"
-if echo "$RAW" | jq -e '.submitted==40 and .accepted==34 and .rejected_429==6 and .provider_status=="quota_exceeded" and .retry_after_seconds==60 and (.submitted==(.accepted+.rejected_429)) and (.shed_working==true)' >/dev/null 2>&1; then
+if echo "$RAW" | jq -e '.submitted==40 and .accepted==34 and .rejected_429==6 and .provider_status=="quota_pressure" and .retry_after_seconds==60 and (.submitted==(.accepted+.rejected_429)) and (.shed_working==true)' >/dev/null 2>&1; then
   verdict 0 "40 submitted = 34 accepted + 6 shed with a 60s caller backoff; the provider is held below exhaustion" "" ""
   LO+=("Step 4: admission control sheds quota pressure and protects the provider (TO2, EO2e)")
 else
   verdict 1 "the quota shed accounting is wrong" \
     "Check the quota block in app/incident/diagnose.py." \
-    "GET /incident/quota must show submitted=40, accepted=34, rejected_429=6, provider_status quota_exceeded, retry_after 60, shed_working true. Fix app/incident/diagnose.py."
+    "GET /incident/quota must show submitted=40, accepted=34, rejected_429=6, provider_status quota_pressure, retry_after 60, shed_working true. Fix app/incident/diagnose.py."
 fi
 
 # STEP 4 — connect model identity, tokens, cost, and quality (cost drift + quality regression)
@@ -114,7 +114,7 @@ show_cmd "curl -s \$API_BASE/incident/quality | python3 scripts/fmt.py --type in
 QR="$(curl -s "$API_BASE/incident/quality")"
 emit "$(printf '%s' "$QR" | $FMT --type incident-quality 2>&1)"
 if echo "$CO" | jq -e '.reconciles==true and .drift_pct==75.0 and (.current_per_request_usd>.objective_per_request_usd) and (.drivers|length>=2) and (.drivers|all(has("add_per_request_usd")))' >/dev/null 2>&1 \
-  && echo "$QR" | jq -e '.pass_rate_pct==68.0 and .passed==17 and .failed==8 and (.pass_rate_pct<.objective_pass_rate_pct) and (.baseline_pass_rate_pct==92.0) and (.failure_reasons|length>=2) and (.cluster|test("balanced-std"))' >/dev/null 2>&1; then
+  && echo "$QR" | jq -e '.pass_rate_pct==68.0 and .passed==17 and .failed==8 and .sampled_from==34 and .sample_size==25 and (.pass_rate_pct<.objective_pass_rate_pct) and (.baseline_pass_rate_pct==92.0) and (.failure_reasons|length>=2) and (.cluster|test("balanced-std"))' >/dev/null 2>&1; then
   verdict 0 "cost drift reconciles to retries + fallback, and quality sampling confirms 68% vs 92% — both on balanced-std" "" ""
   LO+=("Step 4: connect model identity, tokens, cost, and quality to the degraded provider (EO3b, EO3c)")
 else
@@ -149,9 +149,9 @@ emit "      ${GRAY}Step 1 — 4 alerts in fire order (latency first, quality pag
 emit "  ${M} ${WHITE}EO3a${R} ${GRAY}distributed tracing isolates the latency source across the pipeline${R}"
 emit "      ${GRAY}Step 2 — one trace clears queue/retry/fallback and pins provider_call on balanced-ai${R}"
 emit "  ${M} ${WHITE}EO3b${R} ${GRAY}logs and receipts tie model identity, tokens, and cost to the drift${R}"
-emit "      ${GRAY}Step 4 — cost \$0.0120→\$0.0210/req (+75%) reconciled to retries + fallback on balanced-ai${R}"
+emit "      ${GRAY}Step 4 — cost \$0.0120→\$0.0210/req (+75%) from retries + fallback on balanced-std (provider balanced-ai)${R}"
 emit "  ${M} ${WHITE}EO3c${R} ${GRAY}output quality sampling confirms the regression${R}"
-emit "      ${GRAY}Step 4 — pass rate 68% (17/25) vs 92% baseline, failures clustered on balanced-std${R}"
+emit "      ${GRAY}Step 4 — pass rate 68% (17/25) vs 92% baseline, clustered on balanced-std (provider balanced-ai)${R}"
 emit "  ${M} ${WHITE}EO3e${R} ${GRAY}observability data drives one root-cause, evidence-based decision${R}"
 emit "      ${GRAY}Step 5 — four symptoms → one degraded provider → an action per dimension, disposition ACT${R}"
 
