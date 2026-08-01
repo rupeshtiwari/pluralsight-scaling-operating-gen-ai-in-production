@@ -130,21 +130,34 @@ emit "$(printf '%s' "$DG" | $FMT --type diagnose 2>&1)"
 show_cmd "curl -s \$API_BASE/observe/correlate | python3 scripts/fmt.py --type correlate"
 CR="$(curl -s "$API_BASE/observe/correlate")"
 emit "$(printf '%s' "$CR" | $FMT --type correlate 2>&1)"
+# Hero thread: the request the operator acts on in Step 5 is the SAME failing
+# record shown in the Step 2 structured logs — one id ties the log to the action.
+HERO="$(printf '%s' "$CR" | jq -r '.request_id')"
+LOGS2="$(curl -s "$API_BASE/observe/logs")"
 if echo "$DG" | jq -e '.slowest_span=="provider_call" and .slowest_share_pct>90 and (.provider_status=="degraded_slow") and (.root_cause|test("provider"))' >/dev/null 2>&1 \
-  && echo "$CR" | jq -e '.quality_status=="fail" and (.total_tokens>0) and (.cost_usd>0) and (.operator_action|length>0) and has("request_id")' >/dev/null 2>&1; then
-  verdict 0 "the slow trace pins provider_call (>90%), and one record correlates tokens, cost, quality, and the operator action" "" ""
-  LO+=("Step 5: use observability data to diagnose an incident and connect it to the operator action (EO3e)")
+  && echo "$CR" | jq -e '.quality_status=="fail" and (.total_tokens>0) and (.cost_usd>0) and (.operator_action|length>0) and has("request_id")' >/dev/null 2>&1 \
+  && echo "$LOGS2" | jq -e --arg rid "$HERO" '.logs|any(.request_id==$rid and .quality_status=="fail")' >/dev/null 2>&1; then
+  verdict 0 "the slow trace pins provider_call (>90%), and the failing record ${HERO} from Step 2 is the one correlated to tokens, cost, quality, and the operator action" "" ""
+  LO+=("Step 5: use observability data to diagnose an incident and connect one logged request to the operator action (EO3e)")
 else
   verdict 1 "the diagnosis or the correlation did not hold" \
     "Check the diagnose and correlate blocks in app/observability/observe.py." \
-    "GET /observe/diagnose must show slowest_span=provider_call share>90% degraded_slow; GET /observe/correlate must return request_id, total_tokens, cost_usd, quality_status=fail, operator_action. Fix app/observability/observe.py."
+    "GET /observe/diagnose must show slowest_span=provider_call share>90% degraded_slow; GET /observe/correlate must return a request_id that also appears in GET /observe/logs as quality_status=fail, with total_tokens, cost_usd, operator_action. Fix app/observability/observe.py."
 fi
 
-# COVERAGE + SUMMARY
+# COVERAGE + SUMMARY — one line per objective, each with its own evidence marker
 banner "LEARNING OBJECTIVE COVERAGE"
-emit "${WHITE}EO3a-e — Trace one request end to end, log its full field set, quantify${R}"
-emit "${WHITE}       the metrics, sample output quality, alert on the SLOs, and diagnose${R}"
-if [ "${#LO[@]}" -gt 0 ]; then for e in "${LO[@]}"; do emit "  ${LIME}✔${R} ${GRAY}${e}${R}"; done; else emit "  ${PINK}✗ no evidence captured${R}"; fi
+if [ "$FAIL" = "0" ]; then M="${LIME}✔${R}"; else M="${PINK}✗${R}"; fi
+emit "  ${M} ${WHITE}EO3a${R} ${GRAY}distributed tracing across application, AI service, and provider${R}"
+emit "      ${GRAY}Step 1 — one trace spans ingress → queue → routing → provider_call → retry → fallback → response${R}"
+emit "  ${M} ${WHITE}EO3b${R} ${GRAY}structured logging schema: model, route reason, tokens, cost, latency, status${R}"
+emit "      ${GRAY}Step 2 — one record per request with the full field set, tokens broken prompt/completion/total${R}"
+emit "  ${M} ${WHITE}EO3c${R} ${GRAY}output quality sampling on a representative subset${R}"
+emit "      ${GRAY}Step 4 — 3 pass / 2 fail on a 0.85 bar with schema, policy, and reviewer reasons${R}"
+emit "  ${M} ${WHITE}EO3d${R} ${GRAY}SLOs over latency, availability, and output quality, with alerting${R}"
+emit "      ${GRAY}Step 3 — Prometheus metrics quantify each dimension; Step 4 — the quality breach fires an ALERT at severity page${R}"
+emit "  ${M} ${WHITE}EO3e${R} ${GRAY}use observability data to diagnose an incident${R}"
+emit "      ${GRAY}Step 5 — nested span timings pin provider_call (99%+); one record ties tokens, cost, quality, and the operator action${R}"
 
 banner "SUMMARY"
 TOTAL=$((PASS+FAIL))

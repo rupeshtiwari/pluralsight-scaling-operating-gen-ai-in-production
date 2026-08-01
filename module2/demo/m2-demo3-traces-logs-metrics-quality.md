@@ -108,14 +108,18 @@ curl -s http://localhost:8000/observe/trace | python3 scripts/fmt.py --type trac
 `ingress`, `queue`, `routing`, `provider_call` (1200ms), `retry_backoff` (200ms),
 `fallback` (400ms), `response` — each with a proportional bar.
 
-**What the learner should notice:** This is one request, made fully legible. The
-spans read like a story: it arrived (`ingress`), waited briefly (`queue`), chose a
-model (`routing`), called the primary (`provider_call`), that call was unsafe so it
-backed off (`retry_backoff`) and failed over (`fallback`), then returned. The bar
+**What the learner should notice:** This is one request, made fully legible. We open
+a **failover** request on purpose, because it exercises *every* stage: it arrived
+(`ingress`), waited briefly (`queue`), chose a model (`routing`), called the primary
+(`provider_call`), that call was unsafe so it backed off (`retry_backoff`) and failed
+over (`fallback`), then returned. A clean request would skip retry and fallback, so
+this exemplar is the one that shows the whole pipeline in a single trace. The bar
 lengths are the lesson — the `provider_call` span dwarfs everything the service
 itself did. This is real OpenTelemetry: the same trace id shows up in Jaeger. When a
 customer reports "slow," this is the first place you look, since it separates *your*
-overhead from the *provider's* time in seconds.
+overhead from the *provider's* time in seconds. (In Step 5 we open a *different*
+request — a slow one — to run a root-cause diagnosis; this one is here to show the
+full seven-stage shape.)
 
 ### Step 2: Inspect the structured logs
 
@@ -128,18 +132,20 @@ curl -s http://localhost:8000/observe/logs | python3 scripts/fmt.py --type obs-l
   --why "One record per request: request id, model, route reason, tokens, cost, latency, provider status, and quality"
 ```
 
-**Expected output:** ★ one record per request, each with `request-id`, `model`,
-`route_reason`, `tokens` shown as `prompt`, `completion`, `total`, `cost`, `latency`,
-`provider status`, and `quality`.
+**Expected output:** ★ one record per request over two compact lines — an identity
+line (`request-id`, `model`, `route_reason`) and a numbers line (`tok`
+prompt/completion/total, `$` cost, `lat` latency, provider status, `qual`). The
+third record is `req-2a7c55e1b93f`: `balanced-std`, `degraded_slow`, quality `fail`.
 
 **What the learner should notice:** A trace shows shape; a structured log shows
 facts, and these are the facts an operator queries at 2am. Every record is one
 line of machine-readable fields, not free text, so you can filter and aggregate them.
-Read the token breakdown as `prompt`, `completion`, `total`, never just a total —
-the split is how you separate input cost from output cost. Look at the third record:
-its `provider status` is `degraded_slow` and its `quality` is `fail`. That single
-line is a whole incident in miniature, and structured fields are what let you find
-the other requests exactly like it.
+Read the token breakdown as `prompt/completion/total`, never just a total — the
+split is how you separate input cost from output cost. Now find the one record that
+matters: the third, **`req-2a7c55e1b93f`**, is `degraded_slow` and quality `fail`.
+Remember that id — it is the same request you will grade in Step 4, diagnose the
+latency of, and tie to an operator action in Step 5. One request ID, threaded across
+logs, quality, and the ledger, is how a real incident is followed end to end.
 
 ### Step 3: Read the Prometheus service metrics
 
@@ -222,12 +228,17 @@ provider latency, not queueing or retry`; then the correlation — ★ `total to
 sampled, flagged for review, excluded from training set`.
 
 **What the learner should notice:** This is how you close an incident in under a
-minute instead of an hour. The request took 2112 milliseconds, and the trace ends the
-guesswork: `provider_call` alone is 2100 of those milliseconds — 99.4 percent — while
-the queue, routing, and retry are all innocent. You point straight at the provider,
-match the span to its `degraded_slow` status, and open a vendor ticket holding real
-evidence. Then the correlation closes the loop: one record shows the 50 tokens and 1.5
-cents you spent, states plainly that the answer failed quality at 0.55, and records
+minute instead of an hour. The diagnosis opens a **slow** request (a different one
+from Step 1's failover trace — this exemplar is clean latency, no retry or fallback
+spans to distract). It took 2112 milliseconds, and the trace ends the guesswork:
+`provider_call` alone is 2100 of those milliseconds — 99.4 percent — while the queue,
+routing, and response are all innocent. You point straight at the provider, match the
+span to its `degraded_slow` status, and open a vendor ticket holding real evidence.
+Then the correlation closes the loop, and notice the **request id: it is
+`req-2a7c55e1b93f`, the exact record you first saw fail in the Step 2 logs and grade
+0.55 in Step 4**. That one id has now been followed across the log, the quality
+sample, and the ledger: one record shows the 50 tokens and 1.5 cents you spent,
+states plainly that the answer failed quality at 0.55, and records
 what the operator did — sampled, flagged for review, and kept out of any training set
 so a bad answer never teaches the next model. That last field is the difference
 between a metric and an operation: you are not just measuring cost and quality, you

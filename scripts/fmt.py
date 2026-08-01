@@ -1060,143 +1060,161 @@ def fmt_failover_reconcile(d: dict) -> str:
 # --- Observability views (Module 2, Clip 5) -------------------------------
 
 def _span_tree(spans: list, total: int, highlight: str = "provider_call") -> list:
-    out = [f"    {BLUE}{'span':<16}{'duration':<11}{'share'}{RESET}", ""]
+    # No blank line between spans — the full 7-span tree stays inside the pane.
+    out = [f"    {BLUE}{'span':<16}{'duration':<10}{'share'}{RESET}"]
     for s in spans:
         name = str(s.get("span"))
         dur = int(s.get("duration_ms", 0))
         is_root = s.get("parent") is None
         share = (dur / total * 100) if total else 0
-        bar = "█" * max(1, round(share / 100 * 24)) if not is_root else ""
+        bar = "█" * max(1, round(share / 100 * 18)) if not is_root else ""
         label = name if is_root else f"  {name}"   # indent children
         color = PINK if name == highlight else (WHITE if is_root else LGRN)
         barcol = PINK if name == highlight else ADA
         out.append(f"  {PINK}★{RESET} {color}{label:<16}{RESET}"
-                   f"{LGRN}{str(dur)+'ms':<11}{RESET}{barcol}{bar}{RESET}")
-        out.append("")
+                   f"{LGRN}{str(dur)+'ms':<10}{RESET}{barcol}{bar}{RESET}")
     return out
 
 
 def fmt_trace(d: dict) -> str:
+    require(d, "trace_id", "total_ms", "spans")
     out = [header(
         "Open the end-to-end trace",
         "One request across ingress, queue, routing, provider call, retry, "
-        "fallback, and response", width=80)]
-    out += star("trace id", d.get("trace_id"))
-    out += star("total", f"{d.get('total_ms')} ms")
+        "fallback, and response", width=78)]
+    out += star("trace id", d.get("trace_id"))[:1]
+    out += star("total", f"{d.get('total_ms')} ms")[:1]
+    out.append("")
     out += sect("span timeline (child spans under the request)")
     out += _span_tree(d.get("spans", []), d.get("total_ms", 1))
     return "\n".join(out)
 
 
 def fmt_obs_logs(d: dict) -> str:
+    require(d, "logs")
     out = [header(
         "Inspect the structured logs",
         "Every request logs one record: request id, model, route reason, "
-        "tokens, cost, latency, provider status, and quality", width=92)]
+        "tokens, cost, latency, provider status, and quality", width=78)]
+    out += sect("one structured record per request  (tokens shown prompt/completion/total)")
     for e in d.get("logs", []):
         qc = LIME if e.get("quality_status") == "pass" else PINK
         sc = _status_color(e.get("provider_status", ""))
+        toks = f"{e.get('prompt_tokens')}/{e.get('completion_tokens')}/{e.get('total_tokens')}"
+        # Two compact lines per record, each under 78 chars so nothing wraps at
+        # recording zoom: identity line, then the numbers line.
         out.append(f"  {PINK}★{RESET} {LGRN}{str(e.get('request_id'))}{RESET}  "
                    f"{LGRN}{str(e.get('model'))}{RESET}  {GRAY}{e.get('route_reason')}{RESET}")
-        out.append(f"      {BLUE}tokens{RESET} prompt={e.get('prompt_tokens')} "
-                   f"completion={e.get('completion_tokens')} total={e.get('total_tokens')}   "
-                   f"{BLUE}cost{RESET} ${float(e.get('cost_usd',0)):.4f}   "
-                   f"{BLUE}latency{RESET} {e.get('latency_ms')}ms   "
-                   f"{BLUE}status{RESET} {sc}{e.get('provider_status')}{RESET}   "
-                   f"{BLUE}quality{RESET} {qc}{e.get('quality_status')}{RESET}")
-        out.append("")
+        out.append(f"      {BLUE}tok{RESET} {toks}  {BLUE}${RESET}{float(e.get('cost_usd',0)):.4f}  "
+                   f"{BLUE}lat{RESET} {e.get('latency_ms')}ms  "
+                   f"{sc}{e.get('provider_status')}{RESET}  "
+                   f"{BLUE}qual{RESET} {qc}{e.get('quality_status')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_metrics(d: dict) -> str:
+    require(d, "requests", "latency_p50_ms", "latency_p95_ms", "availability_pct",
+            "queue_depth", "fallback_rate_pct", "retry_rate_pct", "cost_estimate_usd")
     out = [header(
         "Read the Prometheus service metrics",
         "Latency, availability, queue depth, fallback rate, retry rate, and "
-        "cost — the operator's health signals", width=80)]
-    out += star("requests observed", d.get("requests"))
+        "cost — the operator's health signals", width=78)]
+    out += star("requests observed", d.get("requests"))[:1]
+    out.append("")
     out += sect("latency")
-    out += _noted("p50", f"{d.get('latency_p50_ms')} ms", "typical request", LIME)
-    out += _noted("p95", f"{d.get('latency_p95_ms')} ms", "the slow tail", LGRN)
+    out += _noted("p50", f"{d.get('latency_p50_ms')} ms", "typical request", LIME)[:1]
+    out += _noted("p95", f"{d.get('latency_p95_ms')} ms", "the slow tail", LGRN)[:1]
+    out.append("")
     out += sect("availability & flow")
-    out += _noted("availability", f"{d.get('availability_pct')}%", "requests answered", LIME)
-    out += _noted("queue depth", d.get("queue_depth"), "peak backlog")
-    out += _noted("fallback rate", f"{d.get('fallback_rate_pct')}%", "served by an alternative", BLUE)
-    out += _noted("retry rate", f"{d.get('retry_rate_pct')}%", "attempts that were retried", BLUE)
-    out += _noted("cost estimate", f"${d.get('cost_estimate_usd')}", "for this window")
+    out += _noted("availability", f"{d.get('availability_pct')}%", "requests answered", LIME)[:1]
+    out += _noted("queue depth", d.get("queue_depth"), "peak backlog")[:1]
+    out += _noted("fallback rate", f"{d.get('fallback_rate_pct')}%", "served by an alternative", BLUE)[:1]
+    out += _noted("retry rate", f"{d.get('retry_rate_pct')}%", "attempts that were retried", BLUE)[:1]
+    out += _noted("cost estimate", f"${d.get('cost_estimate_usd')}", "for this window")[:1]
     return "\n".join(out)
 
 
 def fmt_quality(d: dict) -> str:
+    require(d, "policy", "schema", "pass_rate_pct", "passed", "sample_size",
+            "quality_bar", "samples")
     below = float(d.get("pass_rate_pct", 100)) < 90.0
     out = [header(
         "Sample output quality on live responses",
         "Automated checks on a representative subset — a successful response "
-        "can still fail quality", width=88)]
-    out += star("policy", d.get("policy"))
-    out += star("schema", d.get("schema"))
+        "can still fail quality", width=78)]
+    out += star("policy", d.get("policy"))[:1]
+    out += star("schema", d.get("schema"))[:1]
     out += _noted("pass rate", f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
-                  f"quality bar {d.get('quality_bar')}", PINK if below else LIME)
-    out += sect("sampled responses")
-    out.append(f"    {BLUE}{'request':<18}{'score':<8}{'status':<9}{'reviewer reason'}{RESET}")
+                  f"quality bar {d.get('quality_bar')}", PINK if below else LIME)[:1]
     out.append("")
+    out += sect("sampled responses  (score vs the bar, with the reviewer reason)")
+    out.append(f"    {BLUE}{'request':<18}{'score':<7}{'status':<7}{'reviewer reason'}{RESET}")
     for s in d.get("samples", []):
         st = str(s.get("quality_status"))
         sc = LIME if st == "pass" else PINK
         out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('request_id')):<18}"
-                   f"{str(s.get('quality_score')):<8}{sc}{st:<9}{RESET}{GRAY}{s.get('reviewer_reason')}{RESET}")
-        out.append("")
+                   f"{str(s.get('quality_score')):<7}{sc}{st:<7}{RESET}{GRAY}{s.get('reviewer_reason')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_slo(d: dict) -> str:
+    require(d, "disposition", "slos")
     disp = d.get("disposition")
     out = [header(
         "Confirm the SLO alert rules",
         "Latency, availability, and output quality each get an objective — a "
-        "breach fires an alert", width=90)]
-    out += star("disposition", disp, PINK if disp == "ALERT" else LIME)
-    out.append(f"    {BLUE}{'slo':<20}{'dimension':<16}{'value':<10}{'objective':<14}"
-               f"{'status':<9}{'severity'}{RESET}")
+        "breach fires an alert", width=78)]
+    out += star("disposition", disp, PINK if disp == "ALERT" else LIME)[:1]
     out.append("")
+    out += sect("one SLO per dimension  (value vs objective → status, severity)")
+    out.append(f"    {BLUE}{'dimension':<15}{'value':<9}{'objective':<12}"
+               f"{'status':<8}{'severity'}{RESET}")
     for s in d.get("slos", []):
         ok = s.get("status") == "ok"
         stc = LIME if ok else PINK
         obj = f"{s.get('comparator')} {s.get('threshold')}"
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('slo')):<20}"
-                   f"{str(s.get('dimension')):<16}{str(s.get('value')):<10}{obj:<14}"
-                   f"{stc}{str(s.get('status')):<9}{s.get('severity')}{RESET}")
-        out.append("")
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('dimension')):<15}"
+                   f"{str(s.get('value')):<9}{obj:<12}"
+                   f"{stc}{str(s.get('status')):<8}{s.get('severity')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_diagnose(d: dict) -> str:
+    require(d, "trace_id", "total_ms", "spans", "slowest_span", "slowest_ms",
+            "slowest_share_pct", "provider_status", "root_cause")
     out = [header(
         "Diagnose the slow request from its trace",
         "Nested span timings point at the exact stage that owns the latency",
-        width=80)]
-    out += star("trace id", d.get("trace_id"))
-    out += star("total", f"{d.get('total_ms')} ms")
-    out += sect("span timeline")
+        width=78)]
+    out += star("trace id", d.get("trace_id"))[:1]
+    out += star("total", f"{d.get('total_ms')} ms")[:1]
+    out.append("")
+    out += sect("span timeline  (the slow span highlighted)")
     out += _span_tree(d.get("spans", []), d.get("total_ms", 1), d.get("slowest_span", ""))
+    out.append("")
     out += _noted("slowest span", f"{d.get('slowest_span')} — {d.get('slowest_ms')}ms "
-                  f"({d.get('slowest_share_pct')}%)", "owns the latency", PINK)
-    out += _noted("provider status", d.get("provider_status"), "the fault mode", PINK)
-    out += star("root cause", d.get("root_cause"), PINK)
+                  f"({d.get('slowest_share_pct')}%)", "owns the latency", PINK)[:1]
+    out += _noted("provider status", d.get("provider_status"), "the fault mode", PINK)[:1]
+    out += star("root cause", d.get("root_cause"), PINK)[:1]
     return "\n".join(out)
 
 
 def fmt_correlate(d: dict) -> str:
+    require(d, "request_id", "total_tokens", "cost_usd", "quality_status",
+            "quality_score", "operator_action")
     fail = d.get("quality_status") == "fail"
     out = [header(
         "Correlate cost, quality, and the operator action",
         "One structured record ties tokens and cost to the quality verdict and "
-        "what the operator did about it", width=80)]
-    out += star("request id", d.get("request_id"))
-    out += _noted("total tokens", d.get("total_tokens"), "the work that was billed")
-    out += _noted("cost", f"${float(d.get('cost_usd',0)):.4f}", "spent on this response")
+        "what the operator did about it", width=78)]
+    out += star("request id", d.get("request_id"))[:1]
+    out.append("")
+    out += _noted("total tokens", d.get("total_tokens"), "the work that was billed")[:1]
+    out += _noted("cost", f"${float(d.get('cost_usd',0)):.4f}", "spent on this response")[:1]
     out += _noted("quality status", f"{d.get('quality_status')} (score {d.get('quality_score')})",
-                  "trustworthy or not", PINK if fail else LIME)
-    out += star("operator action", d.get("operator_action"))
+                  "trustworthy or not", PINK if fail else LIME)[:1]
+    out.append("")
+    out += star("operator action", d.get("operator_action"))[:1]
     return "\n".join(out)
 
 
