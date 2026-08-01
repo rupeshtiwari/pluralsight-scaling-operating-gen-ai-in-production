@@ -688,6 +688,7 @@ def resilience_retry_log() -> dict:
         "drill_requests": summary.get("drill_requests"),
         "backoff_schedule": summary.get("backoff_schedule", backoff_schedule()),
         "total_primary_attempts": summary.get("total_primary_attempts"),
+        "retry_budget_ceiling": summary.get("retry_budget_ceiling"),
         "attempts_without_breaker": summary.get("attempts_without_breaker"),
         "storm_prevented": summary.get("storm_prevented"),
         "retrylog": redis_client.get_circuit_retrylog(),

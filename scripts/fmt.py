@@ -903,11 +903,11 @@ _STATE_COLOR = {"closed": LIME, "open": PINK, "half_open": BLUE}
 
 def fmt_circuit_config(d: dict) -> str:
     require(d, "failure_modes", "failure_threshold", "cooldown_probes",
-            "success_threshold", "max_attempts", "fallback_routes", "backoff_schedule")
+            "success_threshold", "max_attempts", "fallback_routes")
     out = [header(
         "Load the circuit-breaker configuration",
-        "The thresholds that trip and recover the circuit, the fallback routes, "
-        "and the retry backoff schedule", width=78)]
+        "The failure modes, the thresholds that trip and recover the circuit, "
+        "and the fallback routes", width=78)]
     out += _noted("failure modes", ", ".join(d.get("failure_modes", [])),
                   "deterministic provider stubs — no real outage")
     out += sect("thresholds")
@@ -923,14 +923,9 @@ def fmt_circuit_config(d: dict) -> str:
     out += sect("fallback routes")
     for primary, fb in (d.get("fallback_routes", {}) or {}).items():
         out.append(f"  {PINK}★{RESET} {LGRN}{primary}{RESET} {GRAY}→{RESET} {LIME}{fb}{RESET}")
-    out.append("")
-    out += sect("retry backoff schedule")
-    out.append(f"    {BLUE}{'attempt':<10}{'base delay':<13}{'jitter':<10}{'wait'}{RESET}")
-    for s in d.get("backoff_schedule", []):
-        out.append(
-            f"  {PINK}★{RESET} {LGRN}{str(s.get('attempt')):<10}"
-            f"{str(s.get('base_delay_ms'))+'ms':<13}{str(s.get('jitter_ms'))+'ms':<10}"
-            f"{str(s.get('wait_ms'))}ms{RESET}")
+    # Backoff schedule intentionally lives in Step 4 (retry-log) only — no repeat
+    # of the same three-row table here, so Step 1 stays short and each step owns
+    # a distinct screen.
     return "\n".join(out)
 
 
@@ -954,12 +949,20 @@ def fmt_circuit(d: dict) -> str:
     out.append(f"    {BLUE}{'failure mode':<14}{'circuit':<12}"
                f"{'transition':<15}{'served by':<15}{'tries'}{RESET}")
     for r in d.get("timeline", []):
+        cond = str(r.get("primary_condition"))
+        healthy = cond == "healthy"
+        # A failure mode of "healthy" is a contradiction — show "none" when the
+        # primary did not fault. And the steady closed operation is a "steady"
+        # transition, not "healthy", so the token means one thing per column.
+        mode_cell = "none" if healthy else cond
+        trans = str(r.get("transition"))
+        trans_cell = "steady" if trans == "healthy" else trans
         cs = _STATE_COLOR.get(str(r.get("circuit")), LGRN)
-        cond_c = PINK if r.get("primary_condition") != "healthy" else LIME
+        cond_c = LIME if healthy else PINK
         out.append(
-            f"  {PINK}★{RESET} {cond_c}{str(r.get('primary_condition')):<14}"
+            f"  {PINK}★{RESET} {cond_c}{mode_cell:<14}"
             f"{cs}{str(r.get('circuit')):<12}"
-            f"{LGRN}{str(r.get('transition')):<15}{str(r.get('served_by')):<15}"
+            f"{LGRN}{trans_cell:<15}{str(r.get('served_by')):<15}"
             f"{str(r.get('primary_attempts'))}{RESET}")
     return "\n".join(out)
 
@@ -993,7 +996,7 @@ def fmt_fallback(d: dict) -> str:
 
 def fmt_retry_log(d: dict) -> str:
     require(d, "max_attempts", "backoff_schedule", "total_primary_attempts",
-            "attempts_without_breaker", "drill_requests")
+            "attempts_without_breaker", "retry_budget_ceiling", "drill_requests")
     out = [header(
         "Inspect retry backoff and prove no storm",
         "Retries are capped and spaced by exponential backoff; once the circuit "
@@ -1001,7 +1004,7 @@ def fmt_retry_log(d: dict) -> str:
     out += _noted("retry cap", f"{d.get('max_attempts')} attempts",
                   "then fail over to the fallback")[:1]
     out.append("")
-    out += sect("exponential backoff schedule  (base delay doubles each attempt)")
+    out += sect("exponential backoff  (base delay doubles after the first immediate attempt)")
     out.append(f"    {BLUE}{'attempt':<10}{'base delay':<13}{'jitter':<10}{'wait'}{RESET}")
     for s in d.get("backoff_schedule", []):
         out.append(
@@ -1013,14 +1016,19 @@ def fmt_retry_log(d: dict) -> str:
     with_b = d["total_primary_attempts"]
     reqs = d["drill_requests"]
     cap = d["max_attempts"]
-    budget = d["attempts_without_breaker"]
-    avoided = budget - with_b
-    out += _noted("worst-case retry budget", f"{reqs} requests x cap {cap} = {budget}",
-                  "every request exhausting its retries", PINK)[:1]
+    ceiling = d["retry_budget_ceiling"]
+    without_b = d["attempts_without_breaker"]
+    # Headroom (ceiling) is separate from the real counterfactual (avoided).
+    out += _noted("worst-case retry budget", f"{reqs} requests x cap {cap} = {ceiling}",
+                  "the ceiling if every request exhausted its retries", GRAY)[:1]
     out += _noted("primary attempts WITH breaker", with_b,
                   "capped, and zero while the circuit is open", LIME)[:1]
-    out += _noted("retries avoided", f"{avoided}",
-                  f"{budget} - {with_b} — the storm that never happened", LIME)[:1]
+    out += _noted("retry budget unspent", f"{ceiling - with_b}",
+                  f"{ceiling} - {with_b} — headroom the breaker left on the table", BLUE)[:1]
+    out += _noted("primary attempts WITHOUT breaker", without_b,
+                  "the real counterfactual: each failing request retried to the cap", PINK)[:1]
+    out += _noted("retries avoided by opening", f"{without_b - with_b}",
+                  f"{without_b} - {with_b} — the storm that never happened", LIME)[:1]
     return "\n".join(out)
 
 

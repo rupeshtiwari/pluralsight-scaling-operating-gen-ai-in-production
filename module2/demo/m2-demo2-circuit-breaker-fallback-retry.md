@@ -95,32 +95,31 @@ For a clean, repeatable run, reset **before** you start:
 
 ### Step 1: Load the circuit-breaker configuration
 
-**Goal:** Show the failure modes the breaker defends against and the thresholds,
-fallback routes, and backoff schedule that govern it.
+**Goal:** Show the failure modes the breaker defends against and the thresholds and
+fallback routes that govern it. (The backoff schedule belongs to Step 4 — it is not
+repeated here, so this screen stays short.)
 
 ```bash
 curl -s http://localhost:8000/resilience/circuit-config | python3 scripts/fmt.py --type circuit-config \
   --title "Load the circuit-breaker configuration" \
-  --why "The thresholds that trip and recover the circuit, the fallback routes, and the retry backoff schedule"
+  --why "The failure modes, the thresholds that trip and recover the circuit, and the fallback routes"
 ```
 
 **Expected output:** ★ `failure modes: error, quota, slow`, then the thresholds —
 ★ `failure_threshold: 3`, ★ `cooldown_probes: 1`, ★ `success_threshold: 1`,
-★ `max_attempts: 3` — the fallback routes (`balanced-std → econo-mini`, and the
-others), and a three-row backoff schedule (`0ms`, `430ms`, `870ms`).
+★ `max_attempts: 3` — and the fallback routes (`balanced-std → econo-mini`, and the
+others).
 
 **What the learner should notice:** Every number here is a deliberate operator
 choice, and every failure is simulated. The failure modes — `error`, `quota`,
 `slow` — come from deterministic provider stubs, so the same fault reproduces on
 demand with no real outage and no external call. The `failure_threshold` of 3 is
 the patience budget: three consecutive failures and the breaker trips open. The
-`cooldown_probes` of 1 says how long to wait before testing recovery, and
-`success_threshold` of 1 says one good probe is enough to close it again. The
+`cooldown_probes` of 1 says how many requests are shed before a half-open probe,
+and `success_threshold` of 1 says one good probe is enough to close it again. The
 fallback routes name the healthy alternative for each tier — `balanced-std` fails
-over to `econo-mini`. And the backoff schedule is the retry spacing: a first
-attempt immediately, then waits that double each time with a little jitter so a
-fleet of callers does not retry in lockstep. These are the knobs; the next steps
-run them.
+over to `econo-mini`. These are the knobs; the next steps run them, and Step 4 shows
+the retry spacing.
 
 ### Step 2: Walk the circuit through its states
 
@@ -145,28 +144,33 @@ curl -s http://localhost:8000/resilience/circuit | python3 scripts/fmt.py --type
 
 **Expected output:** ★ `primary: balanced-std`, ★ `fallback: econo-mini`,
 ★ `tripped: true`, ★ `recovered: true`, then an eight-row journey whose `failure
-mode` column spans all three modes — `slow`, `error`, `quota` — whose `circuit`
-column shows `closed`, then `open`, then `half_open`, then back to `closed`, and
-whose `transition` column reads `failover`, `trip`, `shed`, `probe_failed`,
-`recovered`, `healthy`.
+mode` column spans all three modes — `slow`, `error`, `quota` — and reads `none` on
+the two healthy rows; whose `circuit` column shows `closed`, then `open`, then
+`half_open`, then back to `closed`; and whose `transition` column reads `failover`,
+`trip`, `shed`, `probe_failed`, `recovered`, `steady`.
 
 **What the learner should notice:** This is the state machine doing its whole job in
-one pass, against all three deterministic failure modes. Read the `failure mode`
-column: the first three requests hit the primary while it returns a **slow**
+one pass, against all three deterministic failure modes. First, read the two columns
+correctly: the `circuit` column is the state the request **entered** under, and
+`transition` is what happened **after** — so a row that shows `closed` with a
+`trip` transition is not a contradiction, it means the request arrived while the
+circuit was still closed and its failure is what tripped it. Now read the `failure
+mode` column: the first three requests hit the primary while it returns a **slow**
 response, then a hard **error**, then a **quota** exhaustion — three different faults,
 each simulated by a provider stub, and each counting equally as a failure. Every one
 is retried, fails, and **fails over** to the alternative; on the third, the failure
-count reaches the threshold and the circuit **trips** to `open`. What matters is that
-the breaker does not care *which* fault occurred — slow, error, or quota, a failure
-is a failure, and three in a row is enough to stop trusting the provider. While
-`open`, requests are **shed** straight to the fallback with zero primary attempts.
-After the cooldown, one request is handled in `half_open` — a single probe — and
-because the primary is still failing (a `quota` fault this time), the probe fails and
-the circuit reopens. Later, once the primary is healthy again, the next `half_open`
-probe succeeds and the circuit is **recovered** to `closed`. The `circuit` column is
-the key: it shows the exact state each request was handled under, so `half_open` is
-not a hidden internal detail — it is a visible, thresholded step between failing and
-trusting the provider again.
+count reaches the threshold and the circuit **trips** to `open`. The breaker does not
+care *which* fault occurred — slow, error, or quota, a failure is a failure, and
+three in a row is enough to stop trusting the provider. While `open`, requests are
+**shed** straight to the fallback with zero primary attempts. The single most
+important pair of rows is the recovery dance: after the cooldown, one request probes
+in `half_open`, and because the primary is still failing (`quota`), the probe fails
+and the circuit **snaps back to `open`** — a failed probe does not recover the
+circuit, it re-trips it. `cooldown_probes: 1` from Step 1 predicts exactly one `shed`
+row before each probe, and the table delivers. Later, once the primary is healthy
+again, the next `half_open` probe succeeds and the circuit is **recovered** to
+`closed`. That is the whole point of `half_open`: a visible, thresholded step
+between failing and trusting the provider again, never a blind flip back to healthy.
 
 ### Step 3: Prove fallback routing keeps the caller whole
 

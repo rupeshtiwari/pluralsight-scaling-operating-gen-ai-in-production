@@ -179,12 +179,18 @@ def run_drill() -> dict:
         "recovered": recovered,
         "final_state": state,
         "total_primary_attempts": total_primary_attempts,
-        # Worst-case retry budget the learner can derive live from the screen:
-        # every request exhausting the cap = requests x max_attempts. The breaker
-        # spends far fewer, and the gap is the storm it prevented.
+        # Two honest numbers, both derivable from the Step 2 table:
+        #   retry_budget_ceiling — the upper bound if EVERY request exhausted the
+        #     cap: requests x max_attempts. Headroom, not a claim about avoidance.
+        #   attempts_without_breaker — the REAL counterfactual: each failing
+        #     request would retry to the cap, each healthy one costs 1. The gap
+        #     between this and total_primary_attempts is the storm actually avoided.
         "drill_requests": len(CIRCUIT_DRILL_SEQUENCE),
         "max_attempts": BACKOFF_MAX_ATTEMPTS,
-        "attempts_without_breaker": BACKOFF_MAX_ATTEMPTS * len(CIRCUIT_DRILL_SEQUENCE),
+        "retry_budget_ceiling": BACKOFF_MAX_ATTEMPTS * len(CIRCUIT_DRILL_SEQUENCE),
+        "attempts_without_breaker": sum(
+            BACKOFF_MAX_ATTEMPTS if c != "healthy" else 1
+            for c in CIRCUIT_DRILL_SEQUENCE),
         "storm_prevented": True,
         "backoff_schedule": backoff_schedule(),
     }

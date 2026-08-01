@@ -56,23 +56,23 @@ curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 # STEP 1 — config + deterministic failure modes
 step_head "1" "Load the circuit-breaker configuration" \
   "The failure modes must be deterministic stubs and every threshold must be explicit." \
-  "failure modes error/quota/slow, failure_threshold 3, fallback routes, and a 3-row backoff schedule."
+  "failure modes error/quota/slow, failure_threshold 3, cooldown_probes 1, success_threshold 1, and the fallback routes (backoff lives in Step 4)."
 show_cmd "curl -s \$API_BASE/resilience/circuit-config | python3 scripts/fmt.py --type circuit-config"
 RAW="$(curl -s "$API_BASE/resilience/circuit-config")"
 emit "$(printf '%s' "$RAW" | $FMT --type circuit-config 2>&1)"
-if echo "$RAW" | jq -e '(.failure_modes|index("error") and index("quota") and index("slow")) and .failure_threshold==3 and (.backoff_schedule|length)==3 and (.fallback_routes["balanced-std"]=="econo-mini")' >/dev/null 2>&1; then
-  verdict 0 "config exposes deterministic failure modes, thresholds, fallback routes, and backoff schedule" "" ""
+if echo "$RAW" | jq -e '(.failure_modes|index("error") and index("quota") and index("slow")) and .failure_threshold==3 and .cooldown_probes==1 and .success_threshold==1 and (.fallback_routes["balanced-std"]=="econo-mini")' >/dev/null 2>&1; then
+  verdict 0 "config exposes deterministic failure modes and explicit thresholds (3/1/1), with fallback routes" "" ""
   LO+=("Step 1: failure modes are deterministic and thresholds are explicit (EO2e)")
 else
   verdict 1 "circuit config is missing failure modes, thresholds, or routes" \
-    "Check FAILURE_CONDITIONS, FAILURE_THRESHOLD, FALLBACK_ROUTES, backoff_schedule in app/providers/registry.py." \
-    "GET /resilience/circuit-config must list failure_modes error/quota/slow, failure_threshold=3, fallback balanced-std→econo-mini, 3 backoff rows. Fix app/providers/registry.py."
+    "Check FAILURE_CONDITIONS, FAILURE_THRESHOLD, COOLDOWN_PROBES, SUCCESS_THRESHOLD, FALLBACK_ROUTES in app/providers/registry.py." \
+    "GET /resilience/circuit-config must list failure_modes error/quota/slow, failure_threshold=3, cooldown_probes=1, success_threshold=1, fallback balanced-std→econo-mini. Fix app/providers/registry.py."
 fi
 
 # STEP 2 — run drill, walk the states
 step_head "2" "Walk the circuit through its states" \
   "One drill must drive the circuit through closed, open, half-open, recovered — against all three failure modes." \
-  "an 8-row journey whose primary cond spans slow/error/quota and whose circuit column shows closed, open, half_open."
+  "an 8-row journey whose failure-mode column spans slow/error/quota (none when healthy) and whose circuit column shows closed, open, half_open, then back to closed."
 show_cmd "curl -s -X POST \$API_BASE/resilience/drill >/dev/null; curl -s \$API_BASE/resilience/circuit | python3 scripts/fmt.py --type circuit"
 curl -s -X POST "$API_BASE/resilience/drill" >/dev/null
 RAW="$(curl -s "$API_BASE/resilience/circuit")"
@@ -104,18 +104,18 @@ fi
 
 # STEP 4 — retry backoff, no storm
 step_head "4" "Inspect retry backoff and prove no storm" \
-  "Retries must be capped and spaced by exponential backoff, and an open circuit must make zero attempts." \
-  "backoff base delay doubles 400→800ms; worst-case budget 8 requests × cap 3 = 24, only 12 spent with the breaker — 12 retries avoided."
+  "Retries must be capped and spaced by exponential backoff (base delay doubles after the first immediate attempt), and an open circuit must make zero attempts." \
+  "base delay doubles 400→800ms; ceiling 8×3=24; with the breaker 12; the real without-breaker counterfactual is 20 — so 8 retries avoided."
 show_cmd "curl -s \$API_BASE/resilience/retry-log | python3 scripts/fmt.py --type retry-log"
 RAW="$(curl -s "$API_BASE/resilience/retry-log")"
 emit "$(printf '%s' "$RAW" | $FMT --type retry-log 2>&1)"
-if echo "$RAW" | jq -e '.total_primary_attempts==12 and .drill_requests==8 and .max_attempts==3 and .attempts_without_breaker==24 and .storm_prevented==true and (.backoff_schedule|length)==3' >/dev/null 2>&1; then
-  verdict 0 "retries capped with doubling backoff; worst case 8×3=24 but only 12 spent — 12 avoided, no storm" "" ""
-  LO+=("Step 4: retry logic uses exponential backoff and prevents a retry storm (EO2d)")
+if echo "$RAW" | jq -e '.total_primary_attempts==12 and .drill_requests==8 and .max_attempts==3 and .retry_budget_ceiling==24 and .attempts_without_breaker==20 and .storm_prevented==true and (.backoff_schedule|length)==3' >/dev/null 2>&1; then
+  verdict 0 "capped doubling backoff; ceiling 24, only 12 spent with the breaker vs 20 without — 8 real retries avoided, no storm" "" ""
+  LO+=("Step 4: retry logic uses exponential backoff and prevents a retry storm — 8 attempts avoided (EO2d)")
 else
   verdict 1 "retry backoff or storm prevention did not hold" \
-    "Check backoff_schedule, drill_requests, max_attempts, total_primary_attempts, attempts_without_breaker in app/resilience/circuit.py." \
-    "GET /resilience/retry-log must show total_primary_attempts=12, drill_requests=8, max_attempts=3, attempts_without_breaker=24 (8×3), storm_prevented=true. Fix app/resilience/circuit.py."
+    "Check backoff_schedule, drill_requests, max_attempts, total_primary_attempts, retry_budget_ceiling, attempts_without_breaker in app/resilience/circuit.py." \
+    "GET /resilience/retry-log must show total_primary_attempts=12, drill_requests=8, max_attempts=3, retry_budget_ceiling=24, attempts_without_breaker=20 (real counterfactual), storm_prevented=true. Fix app/resilience/circuit.py."
 fi
 
 # STEP 5 — reconcile the three named sources: caller / fallback receipt / retry log
@@ -140,7 +140,7 @@ if [ "$FAIL" = "0" ]; then M="${LIME}✔${R}"; else M="${PINK}✗${R}"; fi
 emit "  ${M} ${WHITE}EO2c${R} ${GRAY}circuit breaker trips and fails over to a healthy model${R}"
 emit "      ${GRAY}Step 2 — closed→open→half_open→recovered; Step 3 — 8/8 answered, 6 via fallback, 0 caller errors${R}"
 emit "  ${M} ${WHITE}EO2d${R} ${GRAY}retry logic uses capped exponential backoff, no storm${R}"
-emit "      ${GRAY}Step 4 — cap 3, base delay doubles 400→800ms, 12 of a 24 budget spent, 12 avoided${R}"
+emit "      ${GRAY}Step 4 — cap 3, base delay doubles 400→800ms, 12 spent vs 20 without the breaker → 8 avoided${R}"
 emit "  ${M} ${WHITE}EO2e${R} ${GRAY}slow, error, and quota failures simulated in a controlled environment${R}"
 emit "      ${GRAY}Step 1 — deterministic modes + thresholds; Step 2 — the failure-mode column spans all three${R}"
 emit "  ${M} ${WHITE}all three${R} ${GRAY}reconciled end to end${R}"
