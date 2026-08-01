@@ -156,8 +156,7 @@ watches on a dashboard.
 
 ```bash
 # First, the raw Prometheus exposition on the wire — what a Prometheus server scrapes
-curl -s http://localhost:8000/metrics \
-  | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) '
+curl -s http://localhost:8000/metrics | grep -E '^genai_(fallbacks|retries|qu)'
 # Then the operator summary
 curl -s http://localhost:8000/observe/metrics | python3 scripts/fmt.py --type metrics \
   --title "Read the Prometheus service metrics" \

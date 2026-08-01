@@ -1059,10 +1059,12 @@ def fmt_failover_reconcile(d: dict) -> str:
 
 # --- Observability views (Module 2, Clip 5) -------------------------------
 
-def _span_tree(spans: list, total: int, highlight: str = "provider_call") -> list:
+def _span_tree(spans: list, total: int, highlight: str = None) -> list:
     # Child spans only (the root/total is printed separately) so trace and
     # diagnose render identically — no empty-bar parent row that looks like a bug.
-    # No blank line between spans — the whole tree stays inside the pane.
+    # The share PERCENT is printed in its own column (the bar has a 1-block
+    # minimum, so it cannot carry the number); the highlighted row is marked with
+    # a distinct glyph so a "highlighted" claim has something to land on.
     out = [f"    {BLUE}{'span':<16}{'duration':<10}{'share of total'}{RESET}"]
     for s in spans:
         if s.get("parent") is None:
@@ -1071,10 +1073,13 @@ def _span_tree(spans: list, total: int, highlight: str = "provider_call") -> lis
         dur = int(s.get("duration_ms", 0))
         share = (dur / total * 100) if total else 0
         bar = "█" * max(1, round(share / 100 * 18))
-        color = PINK if name == highlight else LGRN
-        barcol = PINK if name == highlight else ADA
-        out.append(f"  {PINK}★{RESET} {color}{name:<16}{RESET}"
-                   f"{LGRN}{str(dur)+'ms':<10}{RESET}{barcol}{bar}{RESET}")
+        hot = name == highlight
+        marker = f"{PINK}◀{RESET}" if hot else f"{PINK}★{RESET}"
+        color = PINK if hot else LGRN
+        barcol = PINK if hot else ADA
+        out.append(f"  {marker} {color}{name:<16}{RESET}"
+                   f"{LGRN}{str(dur)+'ms':<10}{RESET}{LGRN}{share:>5.1f}%  {RESET}"
+                   f"{barcol}{bar}{RESET}")
     return out
 
 

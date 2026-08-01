@@ -87,8 +87,8 @@ fi
 step_head "3" "Read the Prometheus service metrics" \
   "Latency, availability, queue depth, fallback rate, retry rate, and cost must be quantified — and it must be REAL Prometheus exposition, shown on the wire." \
   "raw exposition lines from /metrics, then p50 712ms, p95 2112ms, availability 100%, queue 4, fallback 15%, retry 15%, cost \$0.1533."
-show_cmd "curl -s \$API_BASE/metrics | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) '"
-EXPO_RAW="$(curl -s "$API_BASE/metrics" | grep -E '^genai_(fallbacks_total|retries_total|queue_depth|quality_pass_rate) ')"
+show_cmd "curl -s \$API_BASE/metrics | grep -E '^genai_(fallbacks|retries|qu)'"
+EXPO_RAW="$(curl -s "$API_BASE/metrics" | grep -E '^genai_(fallbacks|retries|qu)')"
 emit "$(printf '%s' "$EXPO_RAW" | sed 's/^/  /')"
 blank
 show_cmd "curl -s \$API_BASE/observe/metrics | python3 scripts/fmt.py --type metrics"

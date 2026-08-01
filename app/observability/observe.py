@@ -157,8 +157,14 @@ from prometheus_client import (  # noqa: E402
     Counter,
     Gauge,
     Histogram,
+    disable_created_metrics,
     generate_latest,
 )
+
+# Counters emit a companion `_created` series stamped with wall-clock time. That
+# is both noise on screen and non-deterministic, so turn it off — the exposition
+# stays clean (genai_fallbacks_total, not genai_fallbacks_created) and repeatable.
+disable_created_metrics()
 
 QUALITY_BAR = 0.85            # minimum acceptable output quality score
 SLO_AVAILABILITY = 99.0       # percent
