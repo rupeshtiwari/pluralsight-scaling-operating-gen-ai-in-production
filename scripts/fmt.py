@@ -1250,160 +1250,170 @@ def _cell_value(v: Any, unit: str) -> str:
 
 
 def fmt_incident_alerts(d: dict) -> str:
+    require(d, "alerts", "first_signal")
     out = [header(
         "Read the alert timeline",
         "Which signal fired first — the first alert is a symptom, not the root "
-        "cause", width=86)]
-    out += star("first signal", d.get("first_signal"), PINK)
-    out += sect("alerts in fire order")
+        "cause", width=78)]
+    out += star("first signal", d.get("first_signal"), PINK)[:1]
+    out.append("")
+    out += sect("alerts in fire order  (two lines each: what, then where + why)")
     for a in d.get("alerts", []):
         sev = str(a.get("severity"))
         sc = PINK if sev == "page" else LGRN
-        tag = f"   {PINK}← first bad signal{RESET}" if a.get("first_signal") else ""
+        tag = f"  {PINK}← first{RESET}" if a.get("first_signal") else ""
         out.append(f"  {PINK}★{RESET} {LGRN}{str(a.get('at')):<8}{RESET}"
                    f"{WHITE}{str(a.get('alert'))}{RESET}{tag}")
-        out.append(f"      {BLUE}dimension{RESET} {a.get('dimension')}   "
-                   f"{BLUE}severity{RESET} {sc}{sev}{RESET}   "
+        out.append(f"      {BLUE}{str(a.get('dimension')):<15}{RESET}{sc}{sev:<8}{RESET}"
                    f"{GRAY}{a.get('detail')}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
 def fmt_incident_dashboard(d: dict) -> str:
+    require(d, "window_requests", "panels", "breached")
     out = [header(
         "Open the operator dashboard",
-        "Latency, quota saturation, cost per request, and quality pass rate — "
-        "each baseline versus current against its objective", width=100)]
-    out += star("window requests", d.get("window_requests"))
-    out.append(f"    {BLUE}{'metric':<24}{'dimension':<16}{'baseline':<12}"
-               f"{'current':<12}{'objective':<14}{'status'}{RESET}")
+        "Four dimensions — latency, quota, cost, quality — each baseline vs "
+        "current against its objective", width=78)]
+    out += _noted("window", f"{d.get('window_requests')} requests",
+                  f"{d.get('breached')} of 4 dimensions breached", PINK)[:1]
     out.append("")
+    out += sect("dimension: baseline → current vs objective")
+    out.append(f"    {BLUE}{'dimension':<15}{'baseline':<11}{'current':<11}"
+               f"{'objective':<13}{'status'}{RESET}")
     for p in d.get("panels", []):
         unit = p.get("unit", "")
         breach = p.get("status") == "breach"
         curcol = PINK if breach else LIME
-        stc = PINK if breach else LIME
         base_s = _cell_value(p.get("baseline"), unit)
         cur_s = _cell_value(p.get("current"), unit)
         obj_s = f"{p.get('comparator')} {_cell_value(p.get('objective'), unit)}"
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(p.get('metric')):<24}{RESET}"
-                   f"{GRAY}{str(p.get('dimension')):<16}{RESET}"
-                   f"{GRAY}{base_s:<12}{RESET}{curcol}{cur_s:<12}{RESET}"
-                   f"{BLUE}{obj_s:<14}{RESET}{stc}{p.get('status')}{RESET}")
-        out.append("")
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(p.get('dimension')):<15}{RESET}"
+                   f"{GRAY}{base_s:<11}{RESET}{curcol}{cur_s:<11}{RESET}"
+                   f"{BLUE}{obj_s:<13}{RESET}{curcol}{p.get('status')}{RESET}")
+    out.append("")
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_incident_isolate(d: dict) -> str:
+    require(d, "trace_id", "total_ms", "contributors", "provider",
+            "provider_status", "root_cause")
     out = [header(
         "Isolate the latency from one trace",
         "Queueing, retry, and fallback are innocent — the degraded provider call "
-        "owns the time", width=88)]
-    out += star("trace id", d.get("trace_id"))
-    out += star("total", f"{d.get('total_ms')} ms")
-    out += sect("who owns the time (queueing / retry / fallback / provider)")
-    out.append(f"    {BLUE}{'stage':<16}{'duration':<11}{'share':<9}{'verdict'}{RESET}")
+        "owns the time", width=78)]
+    out += star("trace id", d.get("trace_id"))[:1]
+    out += star("total", f"{d.get('total_ms')} ms")[:1]
     out.append("")
+    out += sect("who owns the time  (queue / retry / fallback / provider)")
+    out.append(f"    {BLUE}{'stage':<14}{'duration':<10}{'share':<8}{'verdict'}{RESET}")
     for c in d.get("contributors", []):
         root = c.get("verdict") == "root cause"
         vc = PINK if root else LIME
-        barcol = PINK if root else ADA
+        marker = f"{PINK}◀{RESET}" if root else f"{PINK}★{RESET}"
         share = float(c.get("share_pct", 0))
-        bar = "█" * max(1, round(share / 100 * 20))
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(c.get('stage')):<16}"
-                   f"{str(c.get('ms'))+'ms':<11}{str(c.get('share_pct'))+'%':<9}{RESET}"
-                   f"{barcol}{bar}{RESET} {vc}{c.get('verdict')}{RESET}")
-        out.append("")
+        out.append(f"  {marker} {LGRN}{str(c.get('stage')):<14}"
+                   f"{str(c.get('ms'))+'ms':<10}{share:>5.1f}% {RESET}"
+                   f" {vc}{c.get('verdict')}{RESET}")
+    out.append("")
     out += _noted("provider", f"{d.get('provider')} ({d.get('provider_status')})",
-                  "the fault mode", PINK)
-    out += star("root cause", d.get("root_cause"), PINK)
+                  "the fault mode", PINK)[:1]
+    out += star("root cause", d.get("root_cause"), PINK)[:1]
     return "\n".join(out)
 
 
 def fmt_incident_quota(d: dict) -> str:
+    require(d, "provider", "tier", "submitted", "accepted", "rejected_429",
+            "retry_after_seconds", "quota_utilization_pct", "provider_status")
     out = [header(
         "Prove the quota pressure and the shed",
         "Admission control sheds excess load with a 429 and a Retry-After, "
-        "protecting the provider behind its quota", width=88)]
+        "protecting the provider behind its quota", width=78)]
     out += _noted("provider", f"{d.get('provider')} · {d.get('tier')}",
-                  f"{d.get('quota_mode')} quota, {d.get('request_class')} class")
-    out += _noted("rate limit", f"{d.get('rate_limit')} per {d.get('window_seconds')}s",
-                  "the operator's shed knob")
-    out += sect("what happened to the burst")
-    out += _noted("submitted", d.get("submitted"), "requests in the window")
-    out += _noted("accepted", d.get("accepted"), "admitted and served", LIME)
-    out += _noted("rejected (429)", d.get("rejected_429"),
-                  f"shed with Retry-After {d.get('retry_after_seconds')}s", PINK)
+                  f"{d.get('quota_mode')} quota, {d.get('request_class')} class")[:1]
     out += _noted("quota utilization", f"{d.get('quota_utilization_pct')}%",
-                  "the provider, held below exhaustion", PINK)
+                  "held just below exhaustion by shedding", PINK)[:1]
+    out.append("")
+    out += sect("what happened to the burst  (submitted = accepted + shed)")
+    out += _noted("submitted", d.get("submitted"), "requests in the incident window")[:1]
+    out += _noted("accepted", d.get("accepted"), "admitted and served", LIME)[:1]
+    out += _noted("rejected (429)", d.get("rejected_429"),
+                  f"shed fast, caller backoff {d.get('retry_after_seconds')}s", PINK)[:1]
+    out.append("")
     out += star("provider status", d.get("provider_status"),
-                _status_color(d.get("provider_status", "")))
+                _status_color(d.get("provider_status", "")))[:1]
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_incident_cost(d: dict) -> str:
+    require(d, "baseline_per_request_usd", "current_per_request_usd",
+            "objective_per_request_usd", "drift_pct", "drivers", "reconciles")
     up = float(d.get("current_per_request_usd", 0)) > float(d.get("baseline_per_request_usd", 0))
     out = [header(
         "Trace the cost drift to its cause",
         "The extra dollars tie to retries and failover on the degraded provider "
-        "— reconciled to the cent, not hand-waved", width=90)]
-    out += _noted("baseline", f"${float(d.get('baseline_per_request_usd',0)):.4f} / request",
-                  "before the incident")
-    out += _noted("current", f"${float(d.get('current_per_request_usd',0)):.4f} / request",
-                  f"+{d.get('drift_pct')}%", PINK if up else LIME)
-    out += _noted("objective", f"${float(d.get('objective_per_request_usd',0)):.4f} / request",
-                  "the cost budget", BLUE)
-    out += sect("where the extra dollars went")
-    out.append(f"    {BLUE}{'driver':<26}{'add / request':<16}{'why'}{RESET}")
+        "— reconciled to the cent, not hand-waved", width=78)]
+    out += _noted("baseline", f"${float(d.get('baseline_per_request_usd',0)):.4f} /req",
+                  "before the incident")[:1]
+    out += _noted("current", f"${float(d.get('current_per_request_usd',0)):.4f} /req",
+                  f"+{d.get('drift_pct')}% over baseline", PINK if up else LIME)[:1]
+    out += _noted("objective", f"${float(d.get('objective_per_request_usd',0)):.4f} /req",
+                  "the cost budget", BLUE)[:1]
     out.append("")
+    out += sect("where the extra dollars went  (driver: add/req, then why)")
     for dr in d.get("drivers", []):
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(dr.get('driver')):<26}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(dr.get('driver')):<24}"
                    f"+${float(dr.get('add_per_request_usd',0)):.4f}{RESET}")
         out.append(f"      {GRAY}{dr.get('detail')}{RESET}")
-        out.append("")
+    out.append("")
     rc = LIME if d.get("reconciles") else PINK
-    out += star("reconciles to current", str(d.get("reconciles")).lower(), rc)
+    out += star("reconciles to current", str(d.get("reconciles")).lower(), rc)[:1]
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_incident_quality(d: dict) -> str:
+    require(d, "pass_rate_pct", "passed", "sample_size", "baseline_pass_rate_pct",
+            "objective_pass_rate_pct", "failure_reasons", "cluster")
     below = float(d.get("pass_rate_pct", 100)) < float(d.get("objective_pass_rate_pct", 90))
     out = [header(
         "Confirm the quality regression from sampling",
         "Grouped failure reasons that cluster on the degraded provider — every "
-        "failure is a confident, wrong 200", width=90)]
+        "failure is a confident, wrong 200", width=78)]
     out += _noted("pass rate",
                   f"{d.get('pass_rate_pct')}%  ({d.get('passed')}/{d.get('sample_size')})",
-                  f"baseline {d.get('baseline_pass_rate_pct')}%, objective "
-                  f">= {d.get('objective_pass_rate_pct')}%", PINK if below else LIME)
+                  f"baseline {d.get('baseline_pass_rate_pct')}%, want "
+                  f">= {d.get('objective_pass_rate_pct')}%", PINK if below else LIME)[:1]
+    out.append("")
     out += sect("failure reasons (grouped)")
     for r in d.get("failure_reasons", []):
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('reason')):<34}{RESET}"
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('reason')):<40}{RESET}"
                    f"{PINK}×{r.get('count')}{RESET}")
-        out.append("")
-    out += _noted("cluster", d.get("cluster"), "not random — the degraded provider", PINK)
+    out.append("")
+    out += _noted("cluster", d.get("cluster"), "not random — the degraded provider", PINK)[:1]
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
 
 def fmt_incident_action(d: dict) -> str:
+    require(d, "root_cause", "decisions", "disposition")
     out = [header(
         "Choose the operator action from the evidence",
         "Four alerts, one provider fault, one evidence-based decision per "
-        "dimension — act on the cause, not each symptom", width=94)]
-    out += star("root cause", d.get("root_cause"), PINK)
-    out += sect("decisions (evidence → action → expected effect)")
+        "dimension — act on the cause, not each symptom", width=78)]
+    out += star("root cause", d.get("root_cause"), PINK)[:1]
+    out.append("")
+    out += sect("decisions  (dimension: evidence / action / expected effect)")
     for dec in d.get("decisions", []):
-        out.append(f"  {PINK}★{RESET} {WHITE}{str(dec.get('dimension'))}{RESET}   "
+        out.append(f"  {PINK}★{RESET} {WHITE}{str(dec.get('dimension'))}{RESET}  "
                    f"{GRAY}{dec.get('evidence')}{RESET}")
-        out.append(f"      {BLUE}action{RESET} {LGRN}{dec.get('action')}{RESET}")
-        out.append(f"      {BLUE}expected{RESET} {ADA}{dec.get('expected_effect')}{RESET}")
-        out.append("")
+        out.append(f"      {BLUE}→ act{RESET} {LGRN}{dec.get('action')}{RESET}")
+        out.append(f"      {BLUE}→ effect{RESET} {ADA}{dec.get('expected_effect')}{RESET}")
+    out.append("")
     disp = d.get("disposition")
-    out += star("disposition", disp, LIME if disp == "ACT" else PINK)
+    out += star("disposition", disp, LIME if disp == "ACT" else PINK)[:1]
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 

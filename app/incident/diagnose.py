@@ -23,6 +23,7 @@ root cause and a coordinated action (EO3e).
 from __future__ import annotations
 
 from app.observability.observe import _build_trace
+from app.providers.registry import CALLER_BACKOFF_SECONDS
 
 # --- The incident trace: one slow request, every stage timed ---------------
 # The primary (balanced-std) is degraded_slow, so provider_call dominates. The
@@ -152,7 +153,7 @@ def run_incident() -> dict:
         "submitted": WINDOW_REQUESTS,
         "accepted": ACCEPTED,
         "rejected_429": REJECTED_429,
-        "retry_after_seconds": 10,
+        "retry_after_seconds": CALLER_BACKOFF_SECONDS,  # same caller backoff as Clip 2
         "provider_status": "quota_exceeded",
         "quota_utilization_pct": 98,
         "shed_working": True,

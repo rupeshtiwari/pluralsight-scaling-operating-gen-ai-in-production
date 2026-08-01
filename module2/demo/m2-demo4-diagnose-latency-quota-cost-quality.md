@@ -116,9 +116,9 @@ curl -s http://localhost:8000/incident/dashboard | python3 scripts/fmt.py --type
 **Expected output:** first the timeline — ★ `first signal: LatencyP95AboveObjective`,
 four alerts in fire order (`+00:30` latency `ticket`, `+01:10` quota `ticket`,
 `+02:00` cost `ticket`, `+02:40` output quality `page`); then the dashboard —
-★ `window requests: 40` and four breached panels: `latency_p95_ms` `950 → 3750`,
-`quota_saturation_pct` `55 → 98`, `cost_per_request_usd` `$0.0120 → $0.0210`,
-`quality_pass_rate_pct` `92.0 → 68.0`.
+★ `window: 40 requests`, `4 of 4 dimensions breached`, and one row per dimension
+(baseline → current vs objective): `latency` `950ms → 3750ms`, `quota`
+`55% → 98%`, `cost` `$0.0120 → $0.0210`, `output_quality` `92.0% → 68.0%`.
 
 **What the learner should notice:** Four alerts in two minutes is the moment an
 incident tempts you into the wrong move — splitting the team to chase all four. Read
@@ -169,10 +169,10 @@ curl -s http://localhost:8000/incident/quota | python3 scripts/fmt.py --type inc
   --why "Admission control sheds excess load with a 429 and a Retry-After, protecting the provider"
 ```
 
-**Expected output:** ★ `provider: balanced-ai · balanced-std`, ★ `rate limit: 6
-per 10s`, then the accounting — ★ `submitted: 40`, ★ `accepted: 34`, ★ `rejected
-(429): 6` (shed with `Retry-After 10s`), ★ `quota utilization: 98%`, and ★
-`provider status: quota_exceeded`.
+**Expected output:** ★ `provider: balanced-ai · balanced-std`, ★ `quota
+utilization: 98%`, then the accounting — ★ `submitted: 40`, ★ `accepted: 34`,
+★ `rejected (429): 6` (shed fast, `caller backoff 60s` — the same Retry-After
+contract as Clip 2), and ★ `provider status: quota_exceeded`.
 
 **What the learner should notice:** Here is the counterintuitive part of the
 incident: those six 429s are not a failure, they are the system working. The quota

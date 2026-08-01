@@ -89,18 +89,18 @@ fi
 
 # STEP 3 — quota pressure and shed
 step_head "3" "Prove the quota pressure and the shed" \
-  "Admission control must shed the excess load with a 429 and a Retry-After, protecting the provider." \
-  "40 submitted, 34 accepted, 6 rejected with Retry-After; provider quota_exceeded."
+  "Admission control must shed the excess load with a 429 and a caller backoff, protecting the provider." \
+  "40 submitted = 34 accepted + 6 rejected (caller backoff 60s); provider quota_exceeded at 98% utilization."
 show_cmd "curl -s \$API_BASE/incident/quota | python3 scripts/fmt.py --type incident-quota"
 RAW="$(curl -s "$API_BASE/incident/quota")"
 emit "$(printf '%s' "$RAW" | $FMT --type incident-quota 2>&1)"
-if echo "$RAW" | jq -e '.submitted==40 and .accepted==34 and .rejected_429==6 and .provider_status=="quota_exceeded" and .retry_after_seconds==10 and (.submitted==(.accepted+.rejected_429)) and (.shed_working==true)' >/dev/null 2>&1; then
-  verdict 0 "40 submitted = 34 accepted + 6 shed with Retry-After; the provider is held below exhaustion" "" ""
+if echo "$RAW" | jq -e '.submitted==40 and .accepted==34 and .rejected_429==6 and .provider_status=="quota_exceeded" and .retry_after_seconds==60 and (.submitted==(.accepted+.rejected_429)) and (.shed_working==true)' >/dev/null 2>&1; then
+  verdict 0 "40 submitted = 34 accepted + 6 shed with a 60s caller backoff; the provider is held below exhaustion" "" ""
   LO+=("Step 4: admission control sheds quota pressure and protects the provider (TO2, EO2e)")
 else
   verdict 1 "the quota shed accounting is wrong" \
     "Check the quota block in app/incident/diagnose.py." \
-    "GET /incident/quota must show submitted=40, accepted=34, rejected_429=6, provider_status quota_exceeded, retry_after 10, shed_working true. Fix app/incident/diagnose.py."
+    "GET /incident/quota must show submitted=40, accepted=34, rejected_429=6, provider_status quota_exceeded, retry_after 60, shed_working true. Fix app/incident/diagnose.py."
 fi
 
 # STEP 4 — connect model identity, tokens, cost, and quality (cost drift + quality regression)
@@ -139,12 +139,21 @@ else
     "GET /incident/action must return root_cause on balanced-ai, disposition ACT, 4 decisions covering latency/quota/cost/output_quality each with evidence, action, expected_effect. Fix app/incident/diagnose.py."
 fi
 
-# COVERAGE + SUMMARY
+# COVERAGE + SUMMARY — one line per objective, each with its own evidence marker
 banner "LEARNING OBJECTIVE COVERAGE"
-emit "${WHITE}TO2, EO2e, TO3, EO3a-e — Read a simulated incident from its alerts and${R}"
-emit "${WHITE}       dashboard, isolate the latency, shed the quota pressure, reconcile the${R}"
-emit "${WHITE}       cost drift, confirm the quality regression, and act on one root cause.${R}"
-if [ "${#LO[@]}" -gt 0 ]; then for e in "${LO[@]}"; do emit "  ${LIME}✔${R} ${GRAY}${e}${R}"; done; else emit "  ${PINK}✗ no evidence captured${R}"; fi
+if [ "$FAIL" = "0" ]; then M="${LIME}✔${R}"; else M="${PINK}✗${R}"; fi
+emit "  ${M} ${WHITE}TO2 / EO2e${R} ${GRAY}resilience under a real incident: admission sheds quota pressure${R}"
+emit "      ${GRAY}Step 3 — 40 submitted = 34 accepted + 6 shed (429, 60s backoff), provider held below exhaustion${R}"
+emit "  ${M} ${WHITE}TO3 / EO3d${R} ${GRAY}the incident is read from alerts, a dashboard, and SLO breaches${R}"
+emit "      ${GRAY}Step 1 — 4 alerts in fire order (latency first, quality pages) and 4 dashboard dimensions red${R}"
+emit "  ${M} ${WHITE}EO3a${R} ${GRAY}distributed tracing isolates the latency source across the pipeline${R}"
+emit "      ${GRAY}Step 2 — one trace clears queue/retry/fallback and pins provider_call on balanced-ai${R}"
+emit "  ${M} ${WHITE}EO3b${R} ${GRAY}logs and receipts tie model identity, tokens, and cost to the drift${R}"
+emit "      ${GRAY}Step 4 — cost \$0.0120→\$0.0210/req (+75%) reconciled to retries + fallback on balanced-ai${R}"
+emit "  ${M} ${WHITE}EO3c${R} ${GRAY}output quality sampling confirms the regression${R}"
+emit "      ${GRAY}Step 4 — pass rate 68% (17/25) vs 92% baseline, failures clustered on balanced-std${R}"
+emit "  ${M} ${WHITE}EO3e${R} ${GRAY}observability data drives one root-cause, evidence-based decision${R}"
+emit "      ${GRAY}Step 5 — four symptoms → one degraded provider → an action per dimension, disposition ACT${R}"
 
 banner "SUMMARY"
 TOTAL=$((PASS+FAIL))
