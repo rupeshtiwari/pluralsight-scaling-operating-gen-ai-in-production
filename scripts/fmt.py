@@ -1330,7 +1330,7 @@ def fmt_incident_quota(d: dict) -> str:
         "Prove the quota pressure and the shed",
         "Admission control sheds excess load with a 429 and a Retry-After, "
         "protecting the provider behind its quota", width=78)]
-    out += _noted("provider", f"{d.get('provider')} · {d.get('tier')}",
+    out += _noted("provider", f"{d.get('provider')} (serving tier {d.get('tier')})",
                   f"{d.get('quota_mode')} quota, {d.get('request_class')} class")[:1]
     out += _noted("quota utilization", f"{d.get('quota_utilization_pct')}%",
                   "held just below exhaustion by shedding", PINK)[:1]

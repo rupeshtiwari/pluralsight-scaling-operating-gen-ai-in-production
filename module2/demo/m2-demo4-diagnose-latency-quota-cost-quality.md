@@ -203,9 +203,10 @@ curl -s http://localhost:8000/incident/quality | python3 scripts/fmt.py --type i
 ```
 
 **Expected output:** first the cost — ★ `baseline: $0.0120 /req`, ★ `current:
-$0.0210 /req` (`+75.0%`), drivers `retries on balanced-std +$0.0063 (3 extra calls
-x $0.0021)` and `fallback overhead +$0.0027 (1 extra call x $0.0027)`, ★ `reconciles
-to current: true`; then the quality — ★ `sampled: 25 of 34 accepted (73.5%)`,
+$0.0210 /req` (`+75.0%`), drivers `retries on balanced-std +$0.0075 (3 extra calls
+x $0.0025)` and `fallback overhead +$0.0015 (1 extra call x $0.0015)` — the retry on
+the expensive tier costs more per call than the fallback to cheap econo-mini —
+★ `reconciles to current: true`; then the quality — ★ `sampled: 25 of 34 accepted (73.5%)`,
 ★ `pass rate: 68.0% (17/25)` against `baseline 92.0%, want >= 90%`, grouped reasons
 (`hallucinated a policy number ×3`, `answer contradicts the source ×3`, `off-format /
 schema invalid ×2`), and ★ `cluster: balanced-std (degraded window)`.

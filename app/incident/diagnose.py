@@ -174,7 +174,10 @@ def run_incident() -> dict:
     # Baseline $0.0120/req climbs to $0.0210/req (+75%). The delta is two named
     # drivers, and they sum exactly to the gap — no hand-waving.
     base_pr, curr_pr = 0.0120, 0.0210
-    retries_add, fallback_add = 0.0063, 0.0027
+    # Retries hit the expensive degraded primary; the fallback lands on the cheap
+    # econo-mini tier — so per call the retry costs MORE than the fallback, matching
+    # the module's routing economics. Both still sum exactly to the +$0.0090 delta.
+    retries_add, fallback_add = 0.0075, 0.0015
     cost = {
         "baseline_per_request_usd": base_pr,
         "current_per_request_usd": curr_pr,
@@ -184,12 +187,12 @@ def run_incident() -> dict:
         "baseline_window_usd": round(ACCEPTED * base_pr, 4),
         "current_window_usd": round(ACCEPTED * curr_pr, 4),
         "drivers": [
-            {"driver": "retries on balanced-std", "calc": "3 extra calls x $0.0021",
+            {"driver": "retries on balanced-std", "calc": "3 extra calls x $0.0025",
              "detail": "degraded_slow primary retried before failover — each retry "
-                       "pays for a second provider call",
+                       "pays for another call on the expensive tier",
              "add_per_request_usd": retries_add},
-            {"driver": "fallback overhead", "calc": "1 extra call x $0.0027",
-             "detail": "an extra provider call after the failed primary",
+            {"driver": "fallback overhead", "calc": "1 extra call x $0.0015",
+             "detail": "one extra call after the failed primary, on cheap econo-mini",
              "add_per_request_usd": fallback_add},
         ],
         "reconciles": round(base_pr + retries_add + fallback_add, 4) == curr_pr,

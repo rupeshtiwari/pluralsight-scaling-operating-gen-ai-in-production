@@ -55,7 +55,8 @@ curl -s -X POST "$API_BASE/incident/run" >/dev/null 2>&1
 step_head "1" "Read the alert timeline and open the dashboard" \
   "A simulated incident must surface an ordered alert timeline with a clear first bad signal, and a dashboard showing all four dimensions breached." \
   "four alerts in fire order (latency first, quality pages last); four dashboard panels all red, baseline vs current vs objective."
-show_cmd "curl -s -X POST \$API_BASE/incident/run >/dev/null; curl -s \$API_BASE/incident/alerts | python3 scripts/fmt.py --type incident-alerts"
+show_cmd "curl -s -X POST \$API_BASE/incident/run >/dev/null"
+show_cmd "curl -s \$API_BASE/incident/alerts | python3 scripts/fmt.py --type incident-alerts"
 AL="$(curl -s "$API_BASE/incident/alerts")"
 emit "$(printf '%s' "$AL" | $FMT --type incident-alerts 2>&1)"
 show_cmd "curl -s \$API_BASE/incident/dashboard | python3 scripts/fmt.py --type incident-dashboard"
