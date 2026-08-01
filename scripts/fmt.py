@@ -892,26 +892,25 @@ def fmt_circuit_config(d: dict) -> str:
                   "deterministic provider stubs — no real outage")
     out += sect("thresholds")
     out += _noted("failure_threshold", d.get("failure_threshold"),
-                  "consecutive failures that trip the circuit open", PINK)
+                  "consecutive failures that trip the circuit open", PINK)[:1]
     out += _noted("cooldown_probes", d.get("cooldown_probes"),
-                  "requests shed before a half-open probe")
+                  "requests shed before a half-open probe")[:1]
     out += _noted("success_threshold", d.get("success_threshold"),
-                  "successful probes that close the circuit", LIME)
+                  "successful probes that close the circuit", LIME)[:1]
     out += _noted("max_attempts", d.get("max_attempts"),
-                  "retry cap, then fail over")
+                  "retry cap, then fail over")[:1]
+    out.append("")
     out += sect("fallback routes")
     for primary, fb in (d.get("fallback_routes", {}) or {}).items():
         out.append(f"  {PINK}★{RESET} {LGRN}{primary}{RESET} {GRAY}→{RESET} {LIME}{fb}{RESET}")
-        out.append("")
+    out.append("")
     out += sect("retry backoff schedule")
     out.append(f"    {BLUE}{'attempt':<10}{'base delay':<13}{'jitter':<10}{'wait'}{RESET}")
-    out.append("")
     for s in d.get("backoff_schedule", []):
         out.append(
             f"  {PINK}★{RESET} {LGRN}{str(s.get('attempt')):<10}"
             f"{str(s.get('base_delay_ms'))+'ms':<13}{str(s.get('jitter_ms'))+'ms':<10}"
             f"{str(s.get('wait_ms'))}ms{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
@@ -920,16 +919,18 @@ def fmt_circuit(d: dict) -> str:
         "Walk the circuit through its states",
         "One drill drives the primary from healthy to open to half-open to "
         "recovered — every transition visible", width=92)]
-    out += star("primary", d.get("primary"))
-    out += star("fallback", d.get("fallback"))
+    # Compact header block — one line each, no blank between (fits the pane).
+    out += star("primary", d.get("primary"))[:1]
+    out += star("fallback", d.get("fallback"))[:1]
     out += _noted("tripped", d.get("tripped"), "the circuit opened under failures",
-                  PINK if d.get("tripped") else LGRN)
+                  PINK if d.get("tripped") else LGRN)[:1]
     out += _noted("recovered", d.get("recovered"), "a half-open probe closed it again",
-                  LIME if d.get("recovered") else PINK)
+                  LIME if d.get("recovered") else PINK)[:1]
+    out.append("")
     out += sect("per-request state journey")
     out.append(f"    {BLUE}{'seq':<5}{'primary cond':<14}{'circuit':<12}"
                f"{'transition':<15}{'served by':<15}{'attempts'}{RESET}")
-    out.append("")
+    # No blank line between rows — the 8-row journey stays inside the pane.
     for r in d.get("timeline", []):
         cs = _STATE_COLOR.get(str(r.get("circuit")), LGRN)
         cond_c = PINK if r.get("primary_condition") != "healthy" else LIME
@@ -938,7 +939,6 @@ def fmt_circuit(d: dict) -> str:
             f"{str(r.get('primary_condition')):<14}{cs}{str(r.get('circuit')):<12}"
             f"{LGRN}{str(r.get('transition')):<15}{str(r.get('served_by')):<15}"
             f"{str(r.get('primary_attempts'))}{RESET}")
-        out.append("")
     return "\n".join(out)
 
 
@@ -948,20 +948,22 @@ def fmt_fallback(d: dict) -> str:
         "While the primary is unsafe, a healthy alternative serves — so primary "
         "failures never reach the caller", width=80)]
     out += _noted("primary (failed)", d.get("primary"),
-                  "the tier whose provider was unsafe", PINK)
+                  "the tier whose provider was unsafe", PINK)[:1]
     out += _noted("fallback (healthy)", d.get("fallback"),
-                  "the alternative that absorbed the traffic", LIME)
+                  "the alternative that absorbed the traffic", LIME)[:1]
+    out.append("")
     out += sect("outcome for the caller")
     out += _noted("requests answered",
                   f"{d.get('requests_answered')} / {d.get('total')}",
-                  "every caller got a response", LIME)
+                  "every caller got a response", LIME)[:1]
     out += _noted("caller errors", d.get("caller_errors"),
-                  "primary failures that reached the caller", LIME)
+                  "primary failures that reached the caller", LIME)[:1]
+    out.append("")
     out += sect("routing split")
     out += _noted("served by primary", d.get("primary_served"),
-                  "handled by the healthy primary")
+                  "handled by the healthy primary")[:1]
     out += _noted("served by fallback", d.get("fallback_served"),
-                  "rerouted while the primary was unsafe", BLUE)
+                  "rerouted while the primary was unsafe", BLUE)[:1]
     return "\n".join(out)
 
 
@@ -974,22 +976,21 @@ def fmt_retry_log(d: dict) -> str:
                   "then fail over to the fallback")
     out += sect("exponential backoff schedule")
     out.append(f"    {BLUE}{'attempt':<10}{'base delay':<13}{'jitter':<10}{'wait'}{RESET}")
-    out.append("")
     for s in d.get("backoff_schedule", []):
         out.append(
             f"  {PINK}★{RESET} {LGRN}{str(s.get('attempt')):<10}"
             f"{str(s.get('base_delay_ms'))+'ms':<13}{str(s.get('jitter_ms'))+'ms':<10}"
             f"{str(s.get('wait_ms'))}ms{RESET}")
-        out.append("")
+    out.append("")
     out += sect("storm prevention")
     with_b = d.get("total_primary_attempts")
     without_b = d.get("attempts_without_breaker")
     avoided = (without_b - with_b) if (isinstance(with_b, int) and isinstance(without_b, int)) else "?"
-    out += _noted("primary attempts WITH breaker", with_b, "capped and short-circuited", LIME)
+    out += _noted("primary attempts WITH breaker", with_b, "capped and short-circuited", LIME)[:1]
     out += _noted("primary attempts WITHOUT breaker", without_b,
-                  "every failure retried to the cap", PINK)
+                  "every failure retried to the cap", PINK)[:1]
     out += _noted("retries avoided by opening", avoided,
-                  "open state makes zero primary attempts", LIME)
+                  "open state makes zero primary attempts", LIME)[:1]
     return "\n".join(out)
 
 
@@ -999,23 +1000,24 @@ def fmt_failover_reconcile(d: dict) -> str:
         "CONFIRMED only when the caller response, the PostgreSQL fallback "
         "receipt, and the retry log agree and the circuit recovered", width=80)]
     disp = d.get("disposition")
-    out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)
+    # Compact verdict block — one line each, no blank between (fits the pane).
+    out += star("disposition", disp, LIME if disp == "CONFIRMED" else PINK)[:1]
     out += star("counts_agree", d.get("counts_agree"),
-                LIME if d.get("counts_agree") else PINK)
+                LIME if d.get("counts_agree") else PINK)[:1]
     out += star("recovered", d.get("recovered"),
-                LIME if d.get("recovered") else PINK)
+                LIME if d.get("recovered") else PINK)[:1]
     out += star("receipts_complete", d.get("receipts_complete"),
-                LIME if d.get("receipts_complete") else PINK)
+                LIME if d.get("receipts_complete") else PINK)[:1]
+    out.append("")
+    out += sect("three sources, per role — caller vs PostgreSQL receipt vs retry log")
     out.append(f"    {BLUE}{'role':<12}{'caller':<9}{'receipt':<10}{'retry log':<11}"
                f"{'agree'}{RESET}")
-    out.append("")
     for role in ("primary", "fallback"):
         t = d.get("roles", {}).get(role, {})
         mark = f"{LIME}✓{RESET}" if t.get("agree") else f"{PINK}✗{RESET}"
         out.append(
             f"  {PINK}★{RESET} {LGRN}{role:<12}{str(t.get('caller')):<9}"
             f"{str(t.get('receipt')):<10}{str(t.get('retry_log')):<11}{RESET}{mark}")
-        out.append("")
     return "\n".join(out)
 
 
