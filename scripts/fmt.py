@@ -903,7 +903,7 @@ _STATE_COLOR = {"closed": LIME, "open": PINK, "half_open": BLUE}
 
 def fmt_circuit_config(d: dict) -> str:
     require(d, "failure_modes", "failure_threshold", "cooldown_probes",
-            "success_threshold", "max_attempts", "fallback_routes")
+            "success_threshold", "fallback_routes")
     out = [header(
         "Load the circuit-breaker configuration",
         "The failure modes, the thresholds that trip and recover the circuit, "
@@ -917,8 +917,6 @@ def fmt_circuit_config(d: dict) -> str:
                   "requests shed before a half-open probe")[:1]
     out += _noted("success_threshold", d.get("success_threshold"),
                   "successful probes that close the circuit", LIME)[:1]
-    out += _noted("max_attempts", d.get("max_attempts"),
-                  "retry cap, then fail over")[:1]
     out.append("")
     out += sect("fallback routes")
     for primary, fb in (d.get("fallback_routes", {}) or {}).items():
@@ -1018,15 +1016,14 @@ def fmt_retry_log(d: dict) -> str:
     cap = d["max_attempts"]
     ceiling = d["retry_budget_ceiling"]
     without_b = d["attempts_without_breaker"]
-    # Headroom (ceiling) is separate from the real counterfactual (avoided).
-    out += _noted("worst-case retry budget", f"{reqs} requests x cap {cap} = {ceiling}",
-                  "the ceiling if every request exhausted its retries", GRAY)[:1]
-    out += _noted("primary attempts WITH breaker", with_b,
-                  "capped, and zero while the circuit is open", LIME)[:1]
-    out += _noted("retry budget unspent", f"{ceiling - with_b}",
-                  f"{ceiling} - {with_b} — headroom the breaker left on the table", BLUE)[:1]
+    # A clean descending story with ONE subtraction: 24 -> 20 -> 12 -> 8, no
+    # repeated values (headroom line dropped — the real counterfactual is stronger).
+    out += _noted("worst-case ceiling", f"{reqs} requests x cap {cap} = {ceiling}",
+                  "if every request exhausted its retries", GRAY)[:1]
     out += _noted("primary attempts WITHOUT breaker", without_b,
                   "the real counterfactual: each failing request retried to the cap", PINK)[:1]
+    out += _noted("primary attempts WITH breaker", with_b,
+                  "capped, and zero while the circuit is open", LIME)[:1]
     out += _noted("retries avoided by opening", f"{without_b - with_b}",
                   f"{without_b} - {with_b} — the storm that never happened", LIME)[:1]
     return "\n".join(out)

@@ -105,10 +105,10 @@ curl -s http://localhost:8000/resilience/circuit-config | python3 scripts/fmt.py
   --why "The failure modes, the thresholds that trip and recover the circuit, and the fallback routes"
 ```
 
-**Expected output:** ★ `failure modes: error, quota, slow`, then the thresholds —
-★ `failure_threshold: 3`, ★ `cooldown_probes: 1`, ★ `success_threshold: 1`,
-★ `max_attempts: 3` — and the fallback routes (`balanced-std → econo-mini`, and the
-others).
+**Expected output:** ★ `failure modes: error, quota, slow`, then the three circuit
+thresholds — ★ `failure_threshold: 3`, ★ `cooldown_probes: 1`,
+★ `success_threshold: 1` — and the fallback routes (`balanced-std → econo-mini`, and
+the others). The retry cap and backoff belong to Step 4, not here.
 
 **What the learner should notice:** Every number here is a deliberate operator
 choice, and every failure is simulated. The failure modes — `error`, `quota`,
@@ -208,20 +208,25 @@ curl -s http://localhost:8000/resilience/retry-log | python3 scripts/fmt.py --ty
 ```
 
 **Expected output:** ★ `retry cap: 3 attempts`, the backoff schedule whose **base
-delay doubles** (`0ms`, `400ms`, `800ms`; the `wait` column adds jitter on top),
-then the storm check — ★ `worst-case retry budget: 8 requests x cap 3 = 24`,
-★ `primary attempts WITH breaker: 12`, ★ `retries avoided: 12`.
+delay doubles after the first immediate attempt** (`0ms`, `400ms`, `800ms`; the
+`wait` column adds jitter on top), then the storm check as a clean descending
+story — ★ `worst-case ceiling: 8 requests x cap 3 = 24`, ★ `primary attempts
+WITHOUT breaker: 20`, ★ `primary attempts WITH breaker: 12`, ★ `retries avoided by
+opening: 8`.
 
 **What the learner should notice:** Retries are necessary but dangerous, and this is
 how you make them safe. Each failing request is retried at most **3** times, and the
 attempts are spaced by exponential backoff — point at the **base delay** column, not
-the jittered `wait`: it **doubles** each attempt, 400ms then 800ms, with jitter added
-on top so many callers do not retry on the same beat. The decisive number is a
-comparison the learner can do live: there are **8** requests and a cap of **3**, so
-the worst case is **8 × 3 = 24** primary attempts pounding a provider that is already
-down. With the breaker, once it opens the primary gets **zero** further attempts, so
-only **12** are spent — **12 avoided**. That gap is the retry storm that never
-happened: recovery logic that reduces pressure instead of adding to it.
+the jittered `wait`: the base **doubles after the first immediate attempt**, 400ms
+then 800ms, with jitter added on top so many callers do not retry on the same beat.
+Then read the storm numbers top to bottom, one subtraction: the ceiling is **8 × 3 =
+24** if every request emptied its retry budget; the **real** without-breaker count is
+**20** (the six failing requests each retry to the cap, the two healthy ones cost one
+attempt); with the breaker only **12** are spent, because once it opens the primary
+gets **zero** further attempts — so **8** retries are genuinely avoided. Note the two
+denominators do not clash: Step 3's `served by primary: 2` counts *requests answered*
+by the primary, while this step's **12** counts *attempts made* against it — served
+versus tried, two honest measures of the same drill.
 
 ### Step 5: Reconcile caller response, receipt, and retry log
 

@@ -143,8 +143,8 @@ emit "  ${M} ${WHITE}EO2d${R} ${GRAY}retry logic uses capped exponential backoff
 emit "      ${GRAY}Step 4 — cap 3, base delay doubles 400→800ms, 12 spent vs 20 without the breaker → 8 avoided${R}"
 emit "  ${M} ${WHITE}EO2e${R} ${GRAY}slow, error, and quota failures simulated in a controlled environment${R}"
 emit "      ${GRAY}Step 1 — deterministic modes + thresholds; Step 2 — the failure-mode column spans all three${R}"
-emit "  ${M} ${WHITE}all three${R} ${GRAY}reconciled end to end${R}"
-emit "      ${GRAY}Step 5 — caller response, PostgreSQL receipt, and retry log agree → CONFIRMED${R}"
+emit "  ${M} ${WHITE}cross-cutting${R} ${GRAY}Step 5 validates EO2c/d/e — not a separate objective${R}"
+emit "      ${GRAY}caller response, PostgreSQL receipt, and retry log agree → CONFIRMED${R}"
 
 banner "SUMMARY"
 TOTAL=$((PASS+FAIL))
