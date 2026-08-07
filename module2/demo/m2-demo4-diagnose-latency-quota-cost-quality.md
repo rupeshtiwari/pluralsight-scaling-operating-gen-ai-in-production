@@ -132,6 +132,35 @@ the biggest clue in the incident — independent problems do not politely arrive
 once. When everything breaks at the same instant, suspect one shared cause, and go
 find it.
 
+### Step 1 · browser follow-up: see the same signals in Grafana
+
+**Goal:** The alert list names *what* fired; open Grafana to see each signal drawn
+against the objective line it has to hold. (Requires the `obs` profile:
+`docker compose --profile obs up -d`.)
+
+```bash
+open http://localhost:3000/d/genai-incident   # Linux: xdg-open · Windows: start
+```
+
+**Expected output:** the provisioned **GenAI incident** dashboard — four panels:
+`Latency p95 (ms)`, `Output quality pass rate (%)`, `Estimated cost (USD,
+cumulative)`, and `Fallbacks & retries (cumulative)`. The **latency** and **quality**
+panels each draw their objective line right across the graph — `2500 ms` and `90%` —
+so a breach reads as the series crossing a line, not a feeling. Cost and
+fallbacks/retries are cumulative trend panels: no single threshold, they corroborate
+the same window climbing.
+
+**What the learner should notice:** This is the alert list turned into evidence. An
+alert says a threshold was crossed; the panel shows *by how much*, and the objective
+line is what turns a number into a verdict — a red value without a line drawn across
+it is decoration. Latency and quality carry their lines because each has one clear
+objective; cost and the fallback-retry panel are the corroborating context, climbing
+in the same window. Four signals moving together in one window is the tell:
+independent problems do not arrive at the same instant — suspect one shared cause,
+which the next steps go and find. (Grafana is the visual companion; the terminal
+dashboard in Step 1 remains the source of truth, with all four dimensions and their
+baseline-vs-objective side by side.)
+
 ### Step 2: Isolate the latency from one trace
 
 **Goal:** Open one slow request's trace and use the span timings to clear the
