@@ -17,7 +17,7 @@
   "graphTooltip": 0,
   "schemaVersion": 39,
   "tags": ["genai", "incident", "module2"],
-  "refresh": "5s",
+  "refresh": "",
   "time": { "from": "now-5m", "to": "now" },
   "timezone": "browser",
   "title": "GenAI incident",

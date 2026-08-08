@@ -140,9 +140,12 @@ quota, then cost and quality. The board replays the incident live and auto-refre
 so the crossings happen on screen; baseline and objective lines are provisioned.
 
 **Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`). The
-incident replays from the moment the `api` starts, so for a clean take
-`docker compose restart api`, wait until quality crosses (~3 minutes), then record —
-the trailing 5-minute window shows the full arc from baseline to all four breached.
+incident replays from the moment the `api` starts, and the board ships with
+auto-refresh **off** so the screen holds still while you narrate. For a clean take:
+`docker compose restart api`, wait ~5 minutes (all four have crossed), then open the
+board — it loads the full arc frozen. To lock it exactly, drag-select the incident
+region on any panel (that pins the time range and keeps it from moving). Hit the
+refresh button or reload to capture a fresh arc for another take.
 
 ```bash
 open http://localhost:3000/d/genai-incident
