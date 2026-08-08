@@ -139,11 +139,15 @@ against the objective line it has to hold. Prometheus scrapes the live incident
 stream every 5s and the board auto-refreshes, so the panels fill and climb on their
 own — the objective lines are provisioned, no setup at the machine.
 
+**Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`); give
+Prometheus about a minute to fill the window before recording.
+
 ```bash
-docker compose --profile obs up -d            # Prometheus + Grafana (idempotent)
-open http://localhost:3000/d/genai-incident   # Linux: xdg-open · Windows: start
-# Give Prometheus ~1 min of scrapes to fill the window before recording.
+open http://localhost:3000/d/genai-incident
 ```
+
+> `open` is macOS. On Linux use `xdg-open http://localhost:3000/d/genai-incident`; on
+> Windows use `start http://localhost:3000/d/genai-incident`.
 
 **Expected output:** the provisioned **GenAI incident** dashboard — four panels:
 `Latency p95 (ms)`, `Output quality pass rate (%)`, `Estimated cost (USD,
