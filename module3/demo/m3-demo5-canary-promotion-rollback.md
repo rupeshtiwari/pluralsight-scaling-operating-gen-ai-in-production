@@ -232,11 +232,11 @@ production was never at risk." That is release management you can defend.
 ## Preflight check
 
 ```bash
-bash module3/scripts/m3-demo3-canary-promotion-rollback.preflight.sh
+bash module3/scripts/m3-demo5-canary-promotion-rollback.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4c,
-and writes a readable log to `preflight-logs/m3-demo3-canary-promotion-rollback.log`. Expect `PASS: 6  FAIL:
+and writes a readable log to `preflight-logs/m3-demo5-canary-promotion-rollback.log`. Expect `PASS: 6  FAIL:
 0`.
 
 ## Cleanup

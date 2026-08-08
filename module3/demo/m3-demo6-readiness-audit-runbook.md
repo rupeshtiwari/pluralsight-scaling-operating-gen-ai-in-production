@@ -241,11 +241,11 @@ exactly how ready it is.
 ## Preflight check
 
 ```bash
-bash module3/scripts/m3-demo4-readiness-audit-runbook.preflight.sh
+bash module3/scripts/m3-demo6-readiness-audit-runbook.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4d /
-TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo4-readiness-audit-runbook.log`. Expect
+TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo6-readiness-audit-runbook.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup

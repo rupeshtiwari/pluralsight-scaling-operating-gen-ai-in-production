@@ -252,12 +252,12 @@ request X, and what did it cost" without re-running anything.
 ## Preflight check
 
 ```bash
-bash module1/scripts/m1-demo1-provider-adapter-layer.preflight.sh
+bash module1/scripts/m1-demo2-provider-adapter-layer.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
 its LO, and writes the log to
-[`preflight-logs/m1-demo1-provider-adapter-layer.log`](../../preflight-logs/m1-demo1-provider-adapter-layer.log) so you can confirm alignment
+[`preflight-logs/m1-demo2-provider-adapter-layer.log`](../../preflight-logs/m1-demo2-provider-adapter-layer.log) so you can confirm alignment
 with the outline. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup

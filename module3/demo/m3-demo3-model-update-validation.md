@@ -231,12 +231,12 @@ is protected by policy, and nothing ships on a hunch.
 ## Preflight check
 
 ```bash
-bash module3/scripts/m3-demo2-model-update-validation.preflight.sh
+bash module3/scripts/m3-demo3-model-update-validation.preflight.sh
 ```
 
 Runs every step above (including the real Pytest suite), captures each command and
 its output, maps each step to EO4b, and writes a readable log to
-`preflight-logs/m3-demo2-model-update-validation.log`. Expect `PASS: 6  FAIL: 0`.
+`preflight-logs/m3-demo3-model-update-validation.log`. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 

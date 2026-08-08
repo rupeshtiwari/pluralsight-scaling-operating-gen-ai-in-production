@@ -238,11 +238,11 @@ or an auditor, that production is exactly where it should be.
 ## Preflight check
 
 ```bash
-bash module3/scripts/m3-demo1-prompt-versioning-rollback.preflight.sh
+bash module3/scripts/m3-demo2-prompt-versioning-rollback.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-TO4 / EO4a, and writes a readable log to `preflight-logs/m3-demo1-prompt-versioning-rollback.log`. Expect
+TO4 / EO4a, and writes a readable log to `preflight-logs/m3-demo2-prompt-versioning-rollback.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup

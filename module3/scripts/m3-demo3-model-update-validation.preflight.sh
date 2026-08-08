@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 3 · Demo — Validate model updates against quality baselines
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/m3-demo2-model-update-validation.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module3/demo/m3-demo3-model-update-validation.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objective (EO4b), and writes a readable log.
 #
-#   bash module3/scripts/m3-demo2-model-update-validation.preflight.sh
+#   bash module3/scripts/m3-demo3-model-update-validation.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PYTEST (the command that runs pytest, default "python3 -m pytest")
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/preflight-logs/m3-demo2-model-update-validation.log"
+LOG="$ROOT/preflight-logs/m3-demo3-model-update-validation.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -166,5 +166,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m3-demo2-model-update-validation.log${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m3-demo3-model-update-validation.log${R}"
 exit "$FAIL"

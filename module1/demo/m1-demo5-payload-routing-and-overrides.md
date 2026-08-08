@@ -249,11 +249,11 @@ change behind a guardrail.
 ## Preflight check
 
 ```bash
-bash module1/scripts/m1-demo3-payload-routing-and-overrides.preflight.sh
+bash module1/scripts/m1-demo5-payload-routing-and-overrides.preflight.sh
 ```
 
 Runs every step above, asserts EO1c and EO1d, and writes a readable log to
-`preflight-logs/m1-demo3-payload-routing-and-overrides.log`. Expect `PASS: 6  FAIL: 0`.
+`preflight-logs/m1-demo5-payload-routing-and-overrides.log`. Expect `PASS: 6  FAIL: 0`.
 
 ## Cleanup
 

@@ -247,11 +247,11 @@ distribution* — provably, not just by assertion.
 ## Preflight check
 
 ```bash
-bash module1/scripts/m1-demo2-weighted-routing.preflight.sh
+bash module1/scripts/m1-demo3-weighted-routing.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-EO1b, and writes a readable log to `preflight-logs/m1-demo2-weighted-routing.log`. Expect
+EO1b, and writes a readable log to `preflight-logs/m1-demo3-weighted-routing.log`. Expect
 `PASS: 6  FAIL: 0`.
 
 ## Cleanup
