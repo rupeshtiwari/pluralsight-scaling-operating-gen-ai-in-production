@@ -760,9 +760,19 @@ def observe_logs() -> dict:
 
 @app.get("/metrics")
 def metrics() -> Response:
-    """Real Prometheus exposition — the endpoint a Prometheus server scrapes."""
+    """Deterministic Prometheus exposition — the one-shot incident snapshot the
+    terminal reads (Clip 5). Stable across scrapes so the demo is repeatable."""
     from prometheus_client import CONTENT_TYPE_LATEST
     return Response(content=observe.metrics_exposition(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/live-metrics")
+def live_metrics() -> Response:
+    """Live Prometheus exposition for Grafana (Clip 6). Each scrape advances the
+    incident window, so the dashboard panels render and climb instead of sitting
+    on a static snapshot. This is the path the Prometheus server scrapes."""
+    from prometheus_client import CONTENT_TYPE_LATEST
+    return Response(content=observe.live_metrics_exposition(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/observe/metrics")

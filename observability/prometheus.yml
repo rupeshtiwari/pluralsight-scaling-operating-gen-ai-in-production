@@ -1,4 +1,4 @@
-# Prometheus (Module 2, Clip 5). Scrapes the FastAPI service's /metrics endpoint
+# Prometheus (Module 2, Clips 5-6). Scrapes the FastAPI service's live metrics
 # and evaluates the SLO alert rules for latency, availability, and output quality.
 global:
   scrape_interval: 5s
@@ -9,6 +9,9 @@ rule_files:
 
 scrape_configs:
   - job_name: genai-service
-    metrics_path: /metrics
+    # /live-metrics advances the incident window on every scrape, so the Grafana
+    # panels render and climb. (/metrics is the terminal's deterministic one-shot
+    # snapshot for Clip 5 — same metric names, held stable across scrapes.)
+    metrics_path: /live-metrics
     static_configs:
       - targets: ["api:8000"]

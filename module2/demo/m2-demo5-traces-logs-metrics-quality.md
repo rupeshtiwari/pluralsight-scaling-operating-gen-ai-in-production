@@ -164,9 +164,10 @@ curl -s http://localhost:8000/observe/metrics | python3 scripts/fmt.py --type me
 ```
 
 > Show the raw exposition first (four `genai_*` lines straight from `/metrics`) so the
-> learner sees the metrics on the wire, then the formatted summary. The full
-> exposition is live at `http://localhost:8000/metrics`, which the Prometheus server
-> scrapes on the `obs` profile.
+> learner sees the metrics on the wire, then the formatted summary. `/metrics` is the
+> deterministic snapshot; the Prometheus server scrapes the same metric names from the
+> live `/live-metrics` endpoint on the `obs` profile (that live stream is what feeds
+> the Grafana dashboard in Clip 6).
 
 **Expected output:** first four raw lines — `genai_fallbacks_total 3.0`,
 `genai_retries_total 3.0`, `genai_queue_depth 4.0`, `genai_quality_pass_rate 60.0` —

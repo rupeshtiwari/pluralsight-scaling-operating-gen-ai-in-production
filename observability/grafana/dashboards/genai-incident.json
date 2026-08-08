@@ -4,7 +4,8 @@
   "graphTooltip": 0,
   "schemaVersion": 39,
   "tags": ["genai", "incident", "module2"],
-  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "5s",
+  "time": { "from": "now-5m", "to": "now" },
   "timezone": "browser",
   "title": "GenAI incident",
   "uid": "genai-incident",
@@ -19,6 +20,11 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "thresholdsStyle": { "mode": "line" }
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -49,6 +55,11 @@
           "unit": "percent",
           "min": 0,
           "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "thresholdsStyle": { "mode": "line" }
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [

@@ -1,6 +1,6 @@
 # SLO alert rules (Module 2, Clip 5). Real Prometheus alerting rules covering the
 # three dimensions from the demo: latency, availability, and output quality. They
-# evaluate against the metrics the service exposes at /metrics.
+# evaluate against the live metric stream Prometheus scrapes (/live-metrics).
 groups:
   - name: genai-slos
     rules:

@@ -135,11 +135,14 @@ find it.
 ### Step 1 · browser follow-up: see the same signals in Grafana
 
 **Goal:** The alert list names *what* fired; open Grafana to see each signal drawn
-against the objective line it has to hold. (Requires the `obs` profile:
-`docker compose --profile obs up -d`.)
+against the objective line it has to hold. Prometheus scrapes the live incident
+stream every 5s and the board auto-refreshes, so the panels fill and climb on their
+own — the objective lines are provisioned, no setup at the machine.
 
 ```bash
+docker compose --profile obs up -d            # Prometheus + Grafana (idempotent)
 open http://localhost:3000/d/genai-incident   # Linux: xdg-open · Windows: start
+# Give Prometheus ~1 min of scrapes to fill the window before recording.
 ```
 
 **Expected output:** the provisioned **GenAI incident** dashboard — four panels:

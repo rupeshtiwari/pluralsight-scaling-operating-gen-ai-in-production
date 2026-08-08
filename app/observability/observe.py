@@ -175,6 +175,60 @@ HEALTHY_MS, FAILOVER_MS, SLOW_MS = 712, 1812, 2112
 _STATE: dict = {}
 
 
+# --- Live scrape metrics for the Grafana incident dashboard (Clip 6) --------
+# The exposition run_observe() builds is a deterministic ONE-SHOT snapshot for
+# the terminal (Clip 5 reads it straight off /metrics). Grafana is different: it
+# reads LIVE data. Prometheus scrapes an endpoint every few seconds, and the
+# panels only render if the series ADVANCES over the window — a static snapshot
+# makes the latency panel's histogram_quantile(rate(...)) collapse to zero and
+# read "No data", and nothing "climbs".
+#
+# So the /live-metrics endpoint serves this persistent registry, seeded to the
+# SAME incident the terminal diagnoses (app/incident/diagnose.py): latency p95
+# well above the 2500 ms objective (~3.7 s), output quality parked at 68% under
+# the 90% objective, and cost / fallbacks / retries climbing in the same window.
+# Each scrape advances the timeline by one incident request.
+_LIVE_REG = CollectorRegistry()
+_LIVE_LATENCY = Histogram(
+    "genai_request_latency_ms", "Request latency (ms)",
+    # Buckets straddle the incident p95 (~3.7 s) so histogram_quantile can place
+    # it above the 2500 ms objective line instead of clamping at a coarse edge.
+    buckets=(500, 1000, 2000, 2500, 3000, 3750, 4000, 5000), registry=_LIVE_REG)
+_LIVE_QUALITY = Gauge(
+    "genai_quality_pass_rate", "Output quality pass rate (percent)", registry=_LIVE_REG)
+_LIVE_COST = Counter("genai_cost_usd_total", "Estimated cost (usd)", registry=_LIVE_REG)
+_LIVE_FALLBACKS = Counter("genai_fallbacks_total", "Fallback routings", registry=_LIVE_REG)
+_LIVE_RETRIES = Counter("genai_retries_total", "Retry attempts", registry=_LIVE_REG)
+# Requests by outcome so the availability SLO rule (observability/alerts.yml)
+# evaluates against real data — the fallback covers every request, so
+# availability holds at 100% and that alert stays green while latency and
+# quality fire. Two breaches, not four problems.
+_LIVE_REQUESTS = Counter("genai_requests_total", "Requests", ["outcome"], registry=_LIVE_REG)
+
+INCIDENT_QUALITY_PASS_PCT = 68.0     # current pass rate — under the 90% objective
+INCIDENT_COST_PER_REQUEST = 0.0210   # current per-request cost, added each scrape
+_LIVE_QUALITY.set(INCIDENT_QUALITY_PASS_PCT)
+
+
+def live_metrics_exposition() -> str:
+    """Serve the LIVE incident exposition Prometheus scrapes for Grafana. Every
+    scrape advances the window by one incident request: latency p95 holds ~3.7 s
+    (above the 2500 ms objective), quality holds at 68% (under the 90%
+    objective), and cost / fallbacks / retries climb — so the four panels move
+    together in one window, the tell the operator acts on."""
+    # p95 above 2500 ms: the degraded primary dominates each batch; one fast
+    # request keeps the low buckets honest.
+    for _ in range(19):
+        _LIVE_LATENCY.observe(3700)
+    _LIVE_LATENCY.observe(950)
+    _LIVE_REQUESTS.labels(outcome="success").inc(20)  # all served — availability 100%
+    _LIVE_COST.inc(INCIDENT_COST_PER_REQUEST)  # one incident request's cost
+    _LIVE_RETRIES.inc(3)                        # 3 extra calls on the degraded primary
+    _LIVE_FALLBACKS.inc(1)                      # one failover to the healthy alternative
+    _LIVE_QUALITY.set(INCIDENT_QUALITY_PASS_PCT)
+    return generate_latest(_LIVE_REG).decode()
+
+
 def _percentile(values: list[int], pct: float) -> int:
     s = sorted(values)
     k = max(0, min(len(s) - 1, round((pct / 100.0) * (len(s) - 1))))
