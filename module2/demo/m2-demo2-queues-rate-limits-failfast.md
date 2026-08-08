@@ -272,11 +272,11 @@ production-grade evidence an operator can stand behind in an incident review.
 ## Preflight check
 
 ```bash
-bash module2/scripts/m2-demo1-queues-rate-limits-failfast.preflight.sh
+bash module2/scripts/m2-demo2-queues-rate-limits-failfast.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to TO2
-and EO2a/b/e, and writes a readable log to `preflight-logs/m2-demo1-queues-rate-limits-failfast.log`. It runs
+and EO2a/b/e, and writes a readable log to `preflight-logs/m2-demo2-queues-rate-limits-failfast.log`. It runs
 the real k6 spike when k6 is installed and otherwise drives the same atomic path with
 a concurrent-`curl` burst, so the validated outcome matches the live demo. Expect
 `PASS: 5  FAIL: 0`.

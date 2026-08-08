@@ -265,11 +265,11 @@ validated end to end, repeatably.
 ## Preflight check
 
 ```bash
-bash module2/scripts/m2-demo2-circuit-breaker-fallback-retry.preflight.sh
+bash module2/scripts/m2-demo3-circuit-breaker-fallback-retry.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-EO2c/d/e, and writes a readable log to `preflight-logs/m2-demo2-circuit-breaker-fallback-retry.log`. Expect
+EO2c/d/e, and writes a readable log to `preflight-logs/m2-demo3-circuit-breaker-fallback-retry.log`. Expect
 `PASS: 5  FAIL: 0`.
 
 ## Cleanup

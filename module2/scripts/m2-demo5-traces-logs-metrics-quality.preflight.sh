@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Module 2 · Demo — Prove traces, logs, metrics, and quality sampling
-# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/m2-demo3-traces-logs-metrics-quality.md,
+# AUTHOR PREFLIGHT: runs every demo step in the SAME order as module2/demo/m2-demo5-traces-logs-metrics-quality.md,
 # captures each command and its on-screen output, asserts the output proves the
 # learning objectives (EO3a-e), and writes a readable log for a reviewer.
 #
-#   bash module2/scripts/m2-demo3-traces-logs-metrics-quality.preflight.sh
+#   bash module2/scripts/m2-demo5-traces-logs-metrics-quality.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE, PGHOST, PGPORT, PGUSER, PGDATABASE, PGPASSWORD
@@ -14,7 +14,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/preflight-logs/m2-demo3-traces-logs-metrics-quality.log"
+LOG="$ROOT/preflight-logs/m2-demo5-traces-logs-metrics-quality.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -172,5 +172,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo3-traces-logs-metrics-quality.log${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo5-traces-logs-metrics-quality.log${R}"
 exit "$FAIL"

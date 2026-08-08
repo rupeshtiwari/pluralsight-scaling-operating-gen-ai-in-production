@@ -259,11 +259,11 @@ ownership actually looks like.
 ## Preflight check
 
 ```bash
-bash module2/scripts/m2-demo3-traces-logs-metrics-quality.preflight.sh
+bash module2/scripts/m2-demo5-traces-logs-metrics-quality.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
-EO3a–e, and writes a readable log to `preflight-logs/m2-demo3-traces-logs-metrics-quality.log`. Expect
+EO3a–e, and writes a readable log to `preflight-logs/m2-demo5-traces-logs-metrics-quality.log`. Expect
 `PASS: 5  FAIL: 0`.
 
 ## Cleanup

@@ -12,10 +12,10 @@ through distributed tracing, structured logging, and output quality monitoring. 
 
 | # | Title | Length | Learning objectives | Runbook |
 |---|-------|--------|---------------------|---------|
-| 2 | Prove queues, rate limits, and fail-fast behavior | 6 min | TO2, EO2a, EO2b, EO2e | [demo/m2-demo1-queues-rate-limits-failfast.md](demo/m2-demo1-queues-rate-limits-failfast.md) ✅ |
-| 3 | Prove circuit breaker fallback and retry backoff | 6 min | EO2c, EO2d, EO2e | [demo/m2-demo2-circuit-breaker-fallback-retry.md](demo/m2-demo2-circuit-breaker-fallback-retry.md) ✅ |
-| 5 | Prove traces, logs, metrics, and quality sampling | 6 min | EO3a–e | [demo/m2-demo3-traces-logs-metrics-quality.md](demo/m2-demo3-traces-logs-metrics-quality.md) ✅ |
-| 6 | Diagnose latency, quota pressure, cost drift, and quality regression | 6 min | TO2, EO2e, TO3, EO3a–e | [demo/m2-demo4-diagnose-latency-quota-cost-quality.md](demo/m2-demo4-diagnose-latency-quota-cost-quality.md) ✅ |
+| 2 | Prove queues, rate limits, and fail-fast behavior | 6 min | TO2, EO2a, EO2b, EO2e | [demo/m2-demo2-queues-rate-limits-failfast.md](demo/m2-demo2-queues-rate-limits-failfast.md) ✅ |
+| 3 | Prove circuit breaker fallback and retry backoff | 6 min | EO2c, EO2d, EO2e | [demo/m2-demo3-circuit-breaker-fallback-retry.md](demo/m2-demo3-circuit-breaker-fallback-retry.md) ✅ |
+| 5 | Prove traces, logs, metrics, and quality sampling | 6 min | EO3a–e | [demo/m2-demo5-traces-logs-metrics-quality.md](demo/m2-demo5-traces-logs-metrics-quality.md) ✅ |
+| 6 | Diagnose latency, quota pressure, cost drift, and quality regression | 6 min | TO2, EO2e, TO3, EO3a–e | [demo/m2-demo6-diagnose-latency-quota-cost-quality.md](demo/m2-demo6-diagnose-latency-quota-cost-quality.md) ✅ |
 
 ## Learning Objectives
 

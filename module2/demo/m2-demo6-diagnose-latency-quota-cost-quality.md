@@ -282,12 +282,12 @@ decision. That is what operating a GenAI service under fire actually looks like.
 ## Preflight check
 
 ```bash
-bash module2/scripts/m2-demo4-diagnose-latency-quota-cost-quality.preflight.sh
+bash module2/scripts/m2-demo6-diagnose-latency-quota-cost-quality.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to
 TO2 / EO2e / TO3 / EO3a–e, and writes a readable log to
-`preflight-logs/m2-demo4-diagnose-latency-quota-cost-quality.log`. Expect `PASS: 5  FAIL: 0`.
+`preflight-logs/m2-demo6-diagnose-latency-quota-cost-quality.log`. Expect `PASS: 5  FAIL: 0`.
 
 ## Cleanup
 

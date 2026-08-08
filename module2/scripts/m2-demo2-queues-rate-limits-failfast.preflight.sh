@@ -2,10 +2,10 @@
 # =============================================================================
 # Module 2 · Demo — Prove queues, rate limits, and fail-fast behavior
 # AUTHOR PREFLIGHT: runs every demo step in the SAME order as
-# module2/demo/m2-demo1-queues-rate-limits-failfast.md (5 steps), captures each
+# module2/demo/m2-demo2-queues-rate-limits-failfast.md (5 steps), captures each
 # command and its output, and asserts the learning objectives (TO2, EO2a/b/e).
 #
-#   bash module2/scripts/m2-demo1-queues-rate-limits-failfast.preflight.sh
+#   bash module2/scripts/m2-demo2-queues-rate-limits-failfast.preflight.sh
 #
 # Step 1 runs the real k6 spike when k6 is installed; otherwise it drives the SAME
 # atomic admission path with a concurrent-curl burst. Override the stack with env
@@ -15,7 +15,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
-LOG="$ROOT/preflight-logs/m2-demo1-queues-rate-limits-failfast.log"
+LOG="$ROOT/preflight-logs/m2-demo2-queues-rate-limits-failfast.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
@@ -202,5 +202,5 @@ else
   emit "  ${PINK}✗ ${FAIL} step(s) failed — fix above, reset, and re-run.${R}"
 fi
 blank
-emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo1-queues-rate-limits-failfast.log${R}"
+emit "  ${GRAY}full readable log written to:${R} ${LGRN}preflight-logs/m2-demo2-queues-rate-limits-failfast.log${R}"
 exit "$FAIL"
