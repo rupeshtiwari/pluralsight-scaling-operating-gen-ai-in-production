@@ -1,17 +1,36 @@
-# SLO alert rules (Module 2, Clip 5). Real Prometheus alerting rules covering the
-# three dimensions from the demo: latency, availability, and output quality. They
-# evaluate against the live metric stream Prometheus scrapes (/live-metrics).
+# SLO alert rules (Module 2, Clips 5-6). Real Prometheus alerting rules for the
+# incident dimensions: latency, quota, cost, output quality (and availability).
+# They evaluate against the live metric stream Prometheus scrapes (/live-metrics),
+# and fire in the same order the incident timeline shows.
 groups:
   - name: genai-slos
     rules:
       - alert: LatencyP95AboveObjective
-        expr: histogram_quantile(0.95, sum(rate(genai_request_latency_ms_bucket[5m])) by (le)) > 2500
+        expr: genai_latency_p95_ms > 2500
         for: 1m
         labels:
           severity: ticket
           dimension: latency
         annotations:
           summary: "p95 latency is above the 2500ms objective"
+
+      - alert: QuotaSaturationHigh
+        expr: genai_quota_saturation_pct > 90
+        for: 1m
+        labels:
+          severity: ticket
+          dimension: quota
+        annotations:
+          summary: "provider quota saturation is above the 90% objective"
+
+      - alert: CostPerRequestDrift
+        expr: genai_cost_per_request_usd{model="balanced-ai"} > 0.0150
+        for: 1m
+        labels:
+          severity: ticket
+          dimension: cost
+        annotations:
+          summary: "cost per request is above the $0.0150 objective"
 
       - alert: AvailabilityBelowObjective
         expr: (sum(rate(genai_requests_total{outcome="success"}[5m])) / sum(rate(genai_requests_total[5m]))) * 100 < 99

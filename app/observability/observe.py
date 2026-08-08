@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 from opentelemetry import trace as otel_trace
 from opentelemetry.sdk.resources import Resource
@@ -175,58 +176,80 @@ HEALTHY_MS, FAILOVER_MS, SLOW_MS = 712, 1812, 2112
 _STATE: dict = {}
 
 
-# --- Live scrape metrics for the Grafana incident dashboard (Clip 6) --------
+# --- Live incident replay for the Grafana dashboard (Clip 6) ----------------
 # The exposition run_observe() builds is a deterministic ONE-SHOT snapshot for
 # the terminal (Clip 5 reads it straight off /metrics). Grafana is different: it
-# reads LIVE data. Prometheus scrapes an endpoint every few seconds, and the
-# panels only render if the series ADVANCES over the window — a static snapshot
-# makes the latency panel's histogram_quantile(rate(...)) collapse to zero and
-# read "No data", and nothing "climbs".
+# reads LIVE data over a moving window, so /live-metrics REPLAYS the incident as
+# a time series — each dimension starts at its baseline and steps to its breach
+# value at the moment it fires, in the same order the alert timeline shows. That
+# is what lets the operator SEE latency break first, then quota, then cost and
+# quality cross their lines, instead of arriving already-broken and flat.
 #
-# So the /live-metrics endpoint serves this persistent registry, seeded to the
-# SAME incident the terminal diagnoses (app/incident/diagnose.py): latency p95
-# well above the 2500 ms objective (~3.7 s), output quality parked at 68% under
-# the 90% objective, and cost / fallbacks / retries climbing in the same window.
-# Each scrape advances the timeline by one incident request.
-_LIVE_REG = CollectorRegistry()
-_LIVE_LATENCY = Histogram(
-    "genai_request_latency_ms", "Request latency (ms)",
-    # Buckets straddle the incident p95 (~3.7 s) so histogram_quantile can place
-    # it above the 2500 ms objective line instead of clamping at a coarse edge.
-    buckets=(500, 1000, 2000, 2500, 3000, 3750, 4000, 5000), registry=_LIVE_REG)
-_LIVE_QUALITY = Gauge(
-    "genai_quality_pass_rate", "Output quality pass rate (percent)", registry=_LIVE_REG)
-_LIVE_COST = Counter("genai_cost_usd_total", "Estimated cost (usd)", registry=_LIVE_REG)
-_LIVE_FALLBACKS = Counter("genai_fallbacks_total", "Fallback routings", registry=_LIVE_REG)
-_LIVE_RETRIES = Counter("genai_retries_total", "Retry attempts", registry=_LIVE_REG)
-# Requests by outcome so the availability SLO rule (observability/alerts.yml)
-# evaluates against real data — the fallback covers every request, so
-# availability holds at 100% and that alert stays green while latency and
-# quality fire. Two breaches, not four problems.
-_LIVE_REQUESTS = Counter("genai_requests_total", "Requests", ["outcome"], registry=_LIVE_REG)
+# Every number here is identical to the terminal diagnosis (app/incident/
+# diagnose.py) so Grafana and the terminal never disagree. The clock is real
+# wall-time since the service started; restart the api to replay from the top.
+_LIVE_T0 = time.monotonic()
 
-INCIDENT_QUALITY_PASS_PCT = 68.0     # current pass rate — under the 90% objective
-INCIDENT_COST_PER_REQUEST = 0.0210   # current per-request cost, added each scrape
-_LIVE_QUALITY.set(INCIDENT_QUALITY_PASS_PCT)
+# Fire times (seconds) — the +00:30 / +01:10 / +02:00 / +02:40 alert timeline.
+_FIRE = {"latency": 30.0, "quota": 70.0, "cost": 120.0, "quality": 160.0}
+
+# baseline, current (breach), objective — the operator dashboard's three numbers.
+_LAT_BASE, _LAT_CUR, _LAT_OBJ = 950.0, 3750.0, 2500.0
+_QUOTA_BASE, _QUOTA_CUR, _QUOTA_OBJ = 55.0, 98.0, 90.0
+_COST_BASE, _COST_CUR, _COST_OBJ = 0.0120, 0.0210, 0.0150
+_ECONO_COST = 0.0050                   # the cheap fallback tier — stays flat
+_QUAL_BASE, _QUAL_CUR, _QUAL_OBJ = 92.0, 68.0, 90.0
+
+_REQ_TOTAL = 0                         # running total so availability rate() works
+
+
+def incident_elapsed() -> float:
+    """Seconds since the service started — drives the replay timeline."""
+    return time.monotonic() - _LIVE_T0
 
 
 def live_metrics_exposition() -> str:
-    """Serve the LIVE incident exposition Prometheus scrapes for Grafana. Every
-    scrape advances the window by one incident request: latency p95 holds ~3.7 s
-    (above the 2500 ms objective), quality holds at 68% (under the 90%
-    objective), and cost / fallbacks / retries climb — so the four panels move
-    together in one window, the tell the operator acts on."""
-    # p95 above 2500 ms: the degraded primary dominates each batch; one fast
-    # request keeps the low buckets honest.
-    for _ in range(19):
-        _LIVE_LATENCY.observe(3700)
-    _LIVE_LATENCY.observe(950)
-    _LIVE_REQUESTS.labels(outcome="success").inc(20)  # all served — availability 100%
-    _LIVE_COST.inc(INCIDENT_COST_PER_REQUEST)  # one incident request's cost
-    _LIVE_RETRIES.inc(3)                        # 3 extra calls on the degraded primary
-    _LIVE_FALLBACKS.inc(1)                      # one failover to the healthy alternative
-    _LIVE_QUALITY.set(INCIDENT_QUALITY_PASS_PCT)
-    return generate_latest(_LIVE_REG).decode()
+    """Serve the LIVE incident replay Prometheus scrapes for Grafana (Clip 6).
+
+    A fresh registry per scrape lets each dimension read its baseline before it
+    fires and its breach value after, and lets the annotation marker appear only
+    in the window right after a crossing. Latency crosses 2500 ms first, quota
+    crosses 90% next, then balanced-ai cost crosses $0.0150 and quality drops
+    under 90% — four signals crossing their lines in order, one shared cause."""
+    global _REQ_TOTAL
+    e = incident_elapsed()
+    reg = CollectorRegistry()
+
+    lat = Gauge("genai_latency_p95_ms", "Request latency p95 (ms)", registry=reg)
+    quota = Gauge("genai_quota_saturation_pct", "Provider quota saturation (percent)",
+                  registry=reg)
+    cost = Gauge("genai_cost_per_request_usd", "Cost per request (usd)", ["model"],
+                 registry=reg)
+    qual = Gauge("genai_quality_pass_rate", "Output quality pass rate (percent)",
+                 registry=reg)
+    reqs = Counter("genai_requests_total", "Requests", ["outcome"], registry=reg)
+
+    lat.set(_LAT_CUR if e >= _FIRE["latency"] else _LAT_BASE)
+    quota.set(_QUOTA_CUR if e >= _FIRE["quota"] else _QUOTA_BASE)
+    # Break the cost panel by model: the degraded balanced-ai primary climbs past
+    # the objective; econo-mini, the cheap fallback, stays flat and innocent.
+    cost.labels(model="balanced-ai").set(_COST_CUR if e >= _FIRE["cost"] else _COST_BASE)
+    cost.labels(model="econo-mini").set(_ECONO_COST)
+    qual.set(_QUAL_CUR if e >= _FIRE["quality"] else _QUAL_BASE)
+
+    _REQ_TOTAL += 20
+    reqs.labels(outcome="success").inc(_REQ_TOTAL)  # fallback covers all — availability 100%
+
+    # Annotation marker: emit a one-off event series ONLY in the ~10s after a
+    # crossing, so the Grafana annotation query drops a vertical marker exactly
+    # at each fire and nowhere else.
+    for dim, t in _FIRE.items():
+        if t <= e < t + 10.0:
+            Gauge("genai_incident_event", "Incident fire marker", ["dimension"],
+                  registry=reg).labels(dimension=dim).set(1)
+            break
+
+    return generate_latest(reg).decode()
 
 
 def _percentile(values: list[int], pct: float) -> int:

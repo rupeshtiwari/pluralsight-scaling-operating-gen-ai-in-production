@@ -1,5 +1,18 @@
 {
-  "annotations": { "list": [] },
+  "annotations": {
+    "list": [
+      {
+        "name": "Incident fires",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "enable": true,
+        "iconColor": "red",
+        "expr": "genai_incident_event == 1",
+        "titleFormat": "{{dimension}} crossed its objective",
+        "tagKeys": "dimension",
+        "step": "10s"
+      }
+    ]
+  },
   "editable": true,
   "graphTooltip": 0,
   "schemaVersion": 39,
@@ -9,7 +22,7 @@
   "timezone": "browser",
   "title": "GenAI incident",
   "uid": "genai-incident",
-  "version": 1,
+  "version": 2,
   "panels": [
     {
       "id": 1,
@@ -20,33 +33,35 @@
       "fieldConfig": {
         "defaults": {
           "unit": "ms",
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "thresholdsStyle": { "mode": "line" }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 2500 }
-            ]
-          }
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "auto" }
         },
-        "overrides": []
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p95" },
+            "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#73BF69" } } ] },
+          { "matcher": { "id": "byName", "options": "baseline" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#8E8E8E" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 } ] },
+          { "matcher": { "id": "byName", "options": "objective" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#F2495C" } },
+              { "id": "custom.fillOpacity", "value": 0 } ] }
+        ]
       },
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum(rate(genai_request_latency_ms_bucket[5m])) by (le))",
-          "legendFormat": "p95"
-        }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "genai_latency_p95_ms", "legendFormat": "p95" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(950)", "legendFormat": "baseline" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(2500)", "legendFormat": "objective" }
       ]
     },
     {
       "id": 2,
-      "title": "Output quality pass rate (%)",
+      "title": "Quota saturation (%)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
@@ -55,72 +70,104 @@
           "unit": "percent",
           "min": 0,
           "max": 100,
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "thresholdsStyle": { "mode": "line" }
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 90 }
-            ]
-          }
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "auto" }
         },
-        "overrides": []
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "saturation" },
+            "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#73BF69" } } ] },
+          { "matcher": { "id": "byName", "options": "baseline" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#8E8E8E" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 } ] },
+          { "matcher": { "id": "byName", "options": "objective" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#F2495C" } },
+              { "id": "custom.fillOpacity", "value": 0 } ] }
+        ]
       },
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "genai_quality_pass_rate",
-          "legendFormat": "pass rate"
-        }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "genai_quota_saturation_pct", "legendFormat": "saturation" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(55)", "legendFormat": "baseline" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(90)", "legendFormat": "objective" }
       ]
     },
     {
       "id": 3,
-      "title": "Estimated cost (USD, cumulative)",
+      "title": "Cost per request (USD) — by model",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "fieldConfig": {
-        "defaults": { "unit": "currencyUSD" },
-        "overrides": []
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "auto" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "balanced-ai" },
+            "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#FF9830" } } ] },
+          { "matcher": { "id": "byName", "options": "econo-mini" },
+            "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#5794F2" } } ] },
+          { "matcher": { "id": "byName", "options": "baseline" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#8E8E8E" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 } ] },
+          { "matcher": { "id": "byName", "options": "objective" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#F2495C" } },
+              { "id": "custom.fillOpacity", "value": 0 } ] }
+        ]
       },
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "genai_cost_usd_total",
-          "legendFormat": "cost"
-        }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "genai_cost_per_request_usd", "legendFormat": "{{model}}" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(0.012)", "legendFormat": "baseline" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(0.015)", "legendFormat": "objective" }
       ]
     },
     {
       "id": 4,
-      "title": "Fallbacks & retries (cumulative)",
+      "title": "Output quality pass rate (%)",
       "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "fieldConfig": {
-        "defaults": { "unit": "short" },
-        "overrides": []
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "custom": { "drawStyle": "line", "lineWidth": 2, "fillOpacity": 8, "showPoints": "auto" }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "pass rate" },
+            "properties": [ { "id": "color", "value": { "mode": "fixed", "fixedColor": "#73BF69" } } ] },
+          { "matcher": { "id": "byName", "options": "baseline" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#8E8E8E" } },
+              { "id": "custom.lineStyle", "value": { "fill": "dash", "dash": [10, 10] } },
+              { "id": "custom.fillOpacity", "value": 0 } ] },
+          { "matcher": { "id": "byName", "options": "objective" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#F2495C" } },
+              { "id": "custom.fillOpacity", "value": 0 } ] }
+        ]
       },
       "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "genai_fallbacks_total",
-          "legendFormat": "fallbacks"
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "genai_retries_total",
-          "legendFormat": "retries"
-        }
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "genai_quality_pass_rate", "legendFormat": "pass rate" },
+        { "refId": "B", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(92)", "legendFormat": "baseline" },
+        { "refId": "C", "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(90)", "legendFormat": "objective" }
       ]
     }
   ]

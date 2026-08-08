@@ -134,13 +134,15 @@ find it.
 
 ### Step 1 · browser follow-up: see the same signals in Grafana
 
-**Goal:** The alert list names *what* fired; open Grafana to see each signal drawn
-against the objective line it has to hold. Prometheus scrapes the live incident
-stream every 5s and the board auto-refreshes, so the panels fill and climb on their
-own — the objective lines are provisioned, no setup at the machine.
+**Goal:** The alert list names *what* fired; open Grafana to watch each dimension
+cross its objective line in the order the timeline reported — latency first, then
+quota, then cost and quality. The board replays the incident live and auto-refreshes,
+so the crossings happen on screen; baseline and objective lines are provisioned.
 
-**Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`); give
-Prometheus about a minute to fill the window before recording.
+**Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`). The
+incident replays from the moment the `api` starts, so for a clean take
+`docker compose restart api`, wait until quality crosses (~3 minutes), then record —
+the trailing 5-minute window shows the full arc from baseline to all four breached.
 
 ```bash
 open http://localhost:3000/d/genai-incident
@@ -149,24 +151,28 @@ open http://localhost:3000/d/genai-incident
 > `open` is macOS. On Linux use `xdg-open http://localhost:3000/d/genai-incident`; on
 > Windows use `start http://localhost:3000/d/genai-incident`.
 
-**Expected output:** the provisioned **GenAI incident** dashboard — four panels:
-`Latency p95 (ms)`, `Output quality pass rate (%)`, `Estimated cost (USD,
-cumulative)`, and `Fallbacks & retries (cumulative)`. The **latency** and **quality**
-panels each draw their objective line right across the graph — `2500 ms` and `90%` —
-so a breach reads as the series crossing a line, not a feeling. Cost and
-fallbacks/retries are cumulative trend panels: no single threshold, they corroborate
-the same window climbing.
+**Expected output:** the provisioned **GenAI incident** dashboard — four panels, one
+dimension each: `Latency p95 (ms)`, `Quota saturation (%)`, `Cost per request (USD) —
+by model`, and `Output quality pass rate (%)`. **Every** panel draws both its
+**baseline** line (grey dashed) and its **objective** line (red) across the graph, so
+a breach reads as the series crossing a line. The series step across in fire order —
+latency `950 → 3750 ms` past `2500`, quota `55 → 98%` past `90`, then balanced-ai cost
+`$0.0120 → $0.0210` past `$0.0150` (with `econo-mini` flat and innocent) and quality
+`92 → 68%` under `90`. A red **annotation marker** drops on each panel at the instant
+it crosses.
 
 **What the learner should notice:** This is the alert list turned into evidence. An
 alert says a threshold was crossed; the panel shows *by how much*, and the objective
 line is what turns a number into a verdict — a red value without a line drawn across
-it is decoration. Latency and quality carry their lines because each has one clear
-objective; cost and the fallback-retry panel are the corroborating context, climbing
-in the same window. Four signals moving together in one window is the tell:
-independent problems do not arrive at the same instant — suspect one shared cause,
-which the next steps go and find. (Grafana is the visual companion; the terminal
-dashboard in Step 1 remains the source of truth, with all four dimensions and their
-baseline-vs-objective side by side.)
+it is decoration. Watch the annotation markers: latency crosses first, quota next,
+cost and quality last — the same order the timeline reported. Break the cost panel by
+model and the story sharpens: the `balanced-ai` series climbs alone while `econo-mini`
+stays flat, so the extra dollars belong to one provider, not the platform. Four
+signals crossing their lines in the same short window is the tell: independent
+problems do not arrive together — suspect one shared cause, which the next steps go
+and find. (Grafana is the visual companion; the terminal dashboard in Step 1 remains
+the source of truth, with all four dimensions and their baseline-vs-objective side by
+side.)
 
 ### Step 2: Isolate the latency from one trace
 
