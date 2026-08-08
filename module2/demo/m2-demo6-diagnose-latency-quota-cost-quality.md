@@ -139,13 +139,21 @@ cross its objective line in the order the timeline reported — latency first, t
 quota, then cost and quality. The board replays the incident live and auto-refreshes,
 so the crossings happen on screen; baseline and objective lines are provisioned.
 
-**Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`). The
-incident replays from the moment the `api` starts, and the board ships with
-auto-refresh **off** so the screen holds still while you narrate. For a clean take:
-`docker compose restart api`, wait ~5 minutes (all four have crossed), then open the
-board — it loads the full arc frozen. To lock it exactly, drag-select the incident
-region on any panel (that pins the time range and keeps it from moving). Hit the
-refresh button or reload to capture a fresh arc for another take.
+**Prerequisite:** the `obs` profile is up, and the board ships with auto-refresh
+**off** so the screen holds still while you narrate. The incident replays from the
+moment `api` starts, but Prometheus keeps whatever it already scraped — so restarting
+`api` alone leaves stale breach data on the left of the window. For a clean take,
+wipe Prometheus history and replay one fresh arc:
+
+```bash
+docker compose --profile obs down     # clears Prometheus (no data volume)
+docker compose --profile obs up -d    # fresh start; incident replays from zero
+```
+
+Wait ~5 minutes (all four have crossed), then open the board — the now-5m window shows
+only the new run: baselines on the left, the four staggered crossings, then held
+breach, frozen. To lock the framing exactly, drag-select the incident region on any
+panel. Repeat the `down`/`up` for another clean take.
 
 ```bash
 open http://localhost:3000/d/genai-incident
