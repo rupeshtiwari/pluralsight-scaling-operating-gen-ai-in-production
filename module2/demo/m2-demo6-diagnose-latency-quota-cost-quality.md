@@ -142,13 +142,12 @@ own — the objective lines are provisioned, no setup at the machine.
 **Prerequisite:** the `obs` profile is up (`docker compose --profile obs up -d`); give
 Prometheus about a minute to fill the window before recording.
 
-This is a browser step — no terminal command. In your browser's address bar, go to:
+```bash
+open http://localhost:3000/d/genai-incident
+```
 
-    http://localhost:3000/d/genai-incident
-
-> Keep the browser open on this URL before you record, so the panels are already live
-> when you cut to it. (Avoid the terminal `open`/`xdg-open`/`start` commands here —
-> they launch a fresh browser window and steal focus mid-take.)
+> `open` is macOS. On Linux use `xdg-open http://localhost:3000/d/genai-incident`; on
+> Windows use `start http://localhost:3000/d/genai-incident`.
 
 **Expected output:** the provisioned **GenAI incident** dashboard — four panels:
 `Latency p95 (ms)`, `Output quality pass rate (%)`, `Estimated cost (USD,
