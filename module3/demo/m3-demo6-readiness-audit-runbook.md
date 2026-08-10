@@ -15,13 +15,14 @@ everything green is a rubber stamp. A useful one names the gap. How do you asses
 GenAI system against production readiness criteria and decide, on evidence, how ready
 it really is?
 
-**What you will see:** Six moves that turn a pile of controls into a graded, operable
+**What you will see:** Four moves that turn a pile of controls into a graded, operable
 system — a deprecated model retired through a replacement adapter with compatibility
 receipts; a readiness audit that scores five dimensions and names the one real gap; a
-deployment decision driven by the workload's latency and throughput; a side-by-side
-comparison of serverless, containers, and dedicated GPU; an operational runbook wired
-to the controls the earlier demos built; and an evidence-based maturity decision that
-places the system on the ladder from prototype to scale-ready.
+deployment decision driven by the workload's latency and throughput and confirmed against
+a side-by-side comparison of serverless, containers, and dedicated GPU; and an
+operational runbook wired to the controls the earlier demos built, closed by an
+evidence-based maturity decision that places the system on the ladder from prototype to
+scale-ready.
 
 **What you walk away with:** The ability to manage a model deprecation (EO4d) and
 assess a GenAI system against production readiness criteria — architecture (EO5a),
@@ -34,10 +35,8 @@ capstone of assessing and operating a production GenAI system (TO5).
 |------|----------------|----------------|
 | 1 | EO4d | A deprecated model retires through a replacement adapter with compatibility receipts |
 | 2 | EO5a | The audit scores scalability, observability, security, cost efficiency, and reliability |
-| 3 | EO5a, EO5b | The audit drives a deployment decision matched to the workload |
-| 4 | EO5b | Serverless, containers, and dedicated GPU are compared on the deciding factors |
-| 5 | EO5c | The operational runbook covers deploy, monitoring, incident response, rollback, capacity |
-| 6 | EO5d, TO5 | The system is placed on the maturity ladder on evidence, with the gaps named |
+| 3 | EO5a, EO5b | The audit drives a deployment decision matched to the workload, and serverless, containers, and dedicated GPU are compared on the deciding factors |
+| 4 | EO5c, EO5d, TO5 | The operational runbook covers deploy, monitoring, incident response, rollback, capacity, and the system is placed on the maturity ladder on evidence with the gaps named |
 
 ## What this demo proves — and each step is unique
 
@@ -45,10 +44,8 @@ capstone of assessing and operating a production GenAI system (TO5).
 |------|---------|-----------------------------------|
 | 1 | `/lifecycle/readiness/deprecation` | The adapter contract absorbs a deprecation |
 | 2 | `/lifecycle/readiness/audit` | A readiness score that names the gap |
-| 3 | `/lifecycle/readiness/decision` | The pattern follows the workload |
-| 4 | `/lifecycle/readiness/patterns` | Why serverless and GPU lose here |
-| 5 | `/lifecycle/readiness/runbook` | A runbook wired to real controls |
-| 6 | `/lifecycle/readiness/maturity` | Maturity is evidence, not opinion |
+| 3 | `/lifecycle/readiness/decision` + `/lifecycle/readiness/patterns` | The pattern follows the workload, and why serverless and GPU lose here |
+| 4 | `/lifecycle/readiness/runbook` + `/lifecycle/readiness/maturity` | A runbook wired to real controls, and maturity as evidence, not opinion |
 
 ## Prerequisites
 
@@ -135,72 +132,70 @@ scores everything green is worthless, because it tells you nothing to do; an aud
 names one concrete gap gives you a task and a reason. A seventeen out of twenty with a
 known gap beats a fake twenty every single time.
 
-### Step 3: Choose the deployment pattern
+### Step 3: Choose the deployment pattern and compare the alternatives
 
 **Goal:** Turn the workload profile into a deployment decision — the cloud-native
-pattern that fits the latency and throughput this service actually needs.
+pattern that fits the latency and throughput this service actually needs — then see the
+three patterns side by side on the factors that decide, and confirm why the two you did
+not pick lose.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision \
   --title "Choose the deployment pattern" \
   --why "The cloud-native pattern the workload calls for — by latency, throughput, and warm-start requirements"
-```
-
-**Expected output:** ★ `workload: steady ~10 RPS, latency-sensitive, cold start
-unacceptable`, ★ `recommended pattern: containers`, and the reasons — cold start rules
-out serverless, steady load does not need burst scaling, 10 RPS does not justify a
-dedicated GPU, containers stay warm with headroom.
-
-**What the learner should notice:** The lesson here is that the deployment pattern is
-an output of the workload, not a matter of taste or whatever is trendy. Start from the
-facts: the traffic is steady at about ten requests per second, it is latency-sensitive,
-and cold starts are unacceptable. Those three facts do the deciding. Cold-start
-sensitivity eliminates scale-to-zero serverless before you even discuss it. Steady load
-means you are not paying for burst scaling you will never use. And ten RPS is nowhere
-near enough to justify the cost and operational weight of a dedicated GPU. The decision
-writes itself once you let the workload lead — which is exactly how these choices should
-be made.
-
-### Step 4: Compare the deployment patterns
-
-**Goal:** See the three patterns side by side on the factors that decide, and confirm
-why the two you did not pick lose.
-
-```bash
 curl -s http://localhost:8000/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns \
   --title "Compare the deployment patterns" \
   --why "Serverless, containers, and dedicated GPU on latency, throughput, warm start, and ownership"
 ```
 
-**Expected output:** three rows — `serverless` (`cold starts`, ruled out), `containers`
-(`always warm`, `chosen`), `dedicated_gpu` (`overkill at 10 RPS`) — compared on latency,
-throughput, warm start, and ownership, with ★ `chosen: containers`.
+**Expected output:** first the decision — ★ `workload: steady ~10 RPS, latency-sensitive,
+cold start unacceptable`, ★ `recommended pattern: containers`, and the reasons — cold
+start rules out serverless, steady load does not need burst scaling, 10 RPS does not
+justify a dedicated GPU, containers stay warm with headroom. Then the comparison — three
+rows — `serverless` (`cold starts`, ruled out), `containers` (`always warm`, `chosen`),
+`dedicated_gpu` (`overkill at 10 RPS`) — compared on latency, throughput, warm start, and
+ownership, with ★ `chosen: containers`.
 
-**What the learner should notice:** A good decision shows its work, and this table is
-the work behind the last step. Seeing all three options next to each other makes the
-trade-offs concrete instead of abstract: serverless has the lowest ownership burden but
-loses on cold starts; a dedicated GPU has the best raw latency and throughput but brings
-an operational burden and a price tag that ten RPS cannot justify; containers sit in the
-middle and win precisely because they match this workload — always warm, high enough
-throughput, and autoscaling headroom. The point is not that containers are always right.
-It is that the right pattern is the one whose strengths line up with your requirements
-and whose weaknesses you can live with.
+**What the learner should notice:** The lesson here is that the deployment pattern is an
+output of the workload, not a matter of taste or whatever is trendy. Start from the
+facts: the traffic is steady at about ten requests per second, it is latency-sensitive,
+and cold starts are unacceptable. Those three facts do the deciding. Cold-start
+sensitivity eliminates scale-to-zero serverless before you even discuss it. Steady load
+means you are not paying for burst scaling you will never use. And ten RPS is nowhere
+near enough to justify the cost and operational weight of a dedicated GPU. The comparison
+table is the work behind that decision — seeing all three options next to each other
+makes the trade-offs concrete instead of abstract: serverless has the lowest ownership
+burden but loses on cold starts; a dedicated GPU has the best raw latency and throughput
+but brings an operational burden and a price tag that ten RPS cannot justify; containers
+sit in the middle and win precisely because they match this workload — always warm, high
+enough throughput, and autoscaling headroom. The point is not that containers are always
+right. It is that the right pattern is the one whose strengths line up with your
+requirements and whose weaknesses you can live with — and the decision writes itself once
+you let the workload lead.
 
-### Step 5: Inspect the operational runbook
+### Step 4: Inspect the operational runbook and decide the operational maturity
 
 **Goal:** Read the operational runbook and confirm every section is concrete and wired
-to a control the system actually has.
+to a control the system actually has, then place the system on the maturity ladder —
+prototype, managed production, or scale-ready — on evidence, and name the gaps that
+separate it from the next level.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook \
   --title "Inspect the operational runbook" \
   --why "Deploy, monitoring thresholds, incident response, rollback, and capacity planning — each wired to a real control"
+curl -s http://localhost:8000/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity \
+  --title "Decide the operational maturity" \
+  --why "Prototype, managed production, or scale-ready — an evidence-based decision with the gaps to the next level"
 ```
 
-**Expected output:** five sections — `deploy` (canary ramp, health-gated),
-`monitoring` (the SLO thresholds), `incident_response` (page, diagnose, fail over),
-`rollback` (revert to the approved release id), `capacity` (10 RPS baseline, scale
-triggers) — and ★ `runbook complete: true`.
+**Expected output:** first the runbook — five sections — `deploy` (canary ramp,
+health-gated), `monitoring` (the SLO thresholds), `incident_response` (page, diagnose,
+fail over), `rollback` (revert to the approved release id), `capacity` (10 RPS baseline,
+scale triggers) — and ★ `runbook complete: true`. Then the maturity decision — the
+maturity ladder with `managed_production` marked `← current`, the evidence, the gaps to
+scale-ready (complete PII redaction, load-test to 30 RPS, add multi-region capacity), and
+★ `disposition: MANAGED_PRODUCTION`.
 
 **What the learner should notice:** Read this runbook and notice that nothing in it is
 aspirational. Every section points at a control you have already seen work. The deploy
@@ -209,34 +204,18 @@ evaluate. Incident response is the trace-to-logs-to-receipts path with the circu
 breaker as the escape hatch. Rollback is the approved-release-id revert. Capacity names
 the scale triggers — queue depth and p95. That is what separates a real runbook from a
 document nobody trusts: it is not a wish list of practices you intend to adopt, it is a
-description of the machinery that already exists. An on-call engineer can follow this at
-2am because every line maps to a button that actually exists.
-
-### Step 6: Decide the operational maturity
-
-**Goal:** Place the system on the maturity ladder — prototype, managed production, or
-scale-ready — on evidence, and name the gaps that separate it from the next level.
-
-```bash
-curl -s http://localhost:8000/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity \
-  --title "Decide the operational maturity" \
-  --why "Prototype, managed production, or scale-ready — an evidence-based decision with the gaps to the next level"
-```
-
-**Expected output:** the maturity ladder with `managed_production` marked `← current`,
-the evidence, the gaps to scale-ready (complete PII redaction, load-test to 30 RPS,
-add multi-region capacity), and ★ `disposition: MANAGED_PRODUCTION`.
-
-**What the learner should notice:** This is the honest close to the whole course. The
-system is not a prototype — it has observability, resilience, versioning, canary
-releases, and cost tracking, all proven in the earlier demos, and that evidence puts it
-firmly at managed production. But it is not scale-ready either, and the decision says so
-by naming exactly what stands in the way: finish the security gap, load-test to the
-capacity ceiling, and add multi-region failover. That is what operational maturity
-actually is — not a badge you award yourself, but a position you can defend with
-evidence, plus a concrete list of what comes next. You now have a GenAI service you can
-scale, observe, release, and operate — and, just as importantly, an honest account of
-exactly how ready it is.
+description of the machinery that already exists, and an on-call engineer can follow it
+at 2am because every line maps to a button that actually exists. That runbook is what the
+maturity decision rests on, and this is the honest close to the whole course. The system
+is not a prototype — it has observability, resilience, versioning, canary releases, and
+cost tracking, all proven in the earlier demos, and that evidence puts it firmly at
+managed production. But it is not scale-ready either, and the decision says so by naming
+exactly what stands in the way: finish the security gap, load-test to the capacity
+ceiling, and add multi-region failover. That is what operational maturity actually is —
+not a badge you award yourself, but a position you can defend with evidence, plus a
+concrete list of what comes next. You now have a GenAI service you can scale, observe,
+release, and operate — and, just as importantly, an honest account of exactly how ready
+it is.
 
 ## Preflight check
 
@@ -246,7 +225,7 @@ bash module3/scripts/m3-demo6-readiness-audit-runbook.preflight.sh
 
 Runs every step above, captures each command and its output, maps each step to EO4d /
 TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo6-readiness-audit-runbook.log`. Expect
-`PASS: 6  FAIL: 0`.
+`PASS: 4  FAIL: 0`.
 
 ## Cleanup
 

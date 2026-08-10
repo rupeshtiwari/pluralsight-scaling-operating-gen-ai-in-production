@@ -14,14 +14,14 @@ prove the blast radius stayed small, you were not running a canary, you were run
 gamble with extra steps. How do you test a release on real traffic while guaranteeing
 a bad one can harm no more than a fraction of it?
 
-**What you will see:** Six moves that turn a risky rollout into a bounded, reversible
+**What you will see:** Four moves that turn a risky rollout into a bounded, reversible
 experiment — the canary start that shifts exactly ten percent of eligible traffic and
-proves the blast radius; the watch that tracks five live signals against the approved
-release; the promotion criteria that demand every signal pass AND the receipt trail
-prove exposure stayed bounded; the promote decision that ramps a healthy canary in
-stages; the hold-and-rollback that pulls a degraded canary and returns production to
-the approved release; and the reconciliation that proves production landed safely with
-the blast radius capped the entire time.
+proves the blast radius, paired with the watch that tracks five live signals against
+the approved release; the promotion criteria that demand every signal pass AND the
+receipt trail prove exposure stayed bounded; the promote decision that ramps a healthy
+canary in stages, paired with the hold-and-rollback that pulls a degraded canary and
+returns production to the approved release; and the reconciliation that proves
+production landed safely with the blast radius capped the entire time.
 
 **What you walk away with:** A canary deployment with a controlled blast radius and
 defined promotion criteria (EO4c) — the release control that lets you test on real
@@ -31,23 +31,19 @@ traffic without betting production on the result.
 
 | Step | LO sub-element | What proves it |
 |------|----------------|----------------|
-| 1 | EO4c | The canary shifts only 10% of eligible traffic — the blast radius is bounded |
-| 2 | EO4c | The canary is watched on quality, latency, cost, error rate, and contract compliance |
-| 3 | EO4c | Promotion needs every signal within criteria AND a receipt trail proving bounded exposure |
-| 4 | EO4c | A healthy canary is promoted on a staged, watched ramp |
-| 5 | EO4c | A breached signal holds and rolls back the canary to the approved release |
-| 6 | EO4c | Production provably returns to the approved release with the blast radius capped |
+| 1 | EO4c | The canary shifts only 10% of eligible traffic — the blast radius is bounded — and is watched on quality, latency, cost, error rate, and contract compliance against the approved release |
+| 2 | EO4c | Promotion needs every signal within criteria AND a receipt trail proving bounded exposure |
+| 3 | EO4c | A healthy canary is promoted on a staged, watched ramp, and a breached signal holds and rolls back the canary to the approved release |
+| 4 | EO4c | Production provably returns to the approved release with the blast radius capped |
 
 ## What this demo proves — and each step is unique
 
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
-| 1 | `/lifecycle/canary/start` | Ten percent is a cap, and it is provable |
-| 2 | `/lifecycle/canary/watch` | The five signals a canary lives or dies by |
-| 3 | `/lifecycle/canary/criteria` | Promotion needs both criteria AND bounded exposure |
-| 4 | `/lifecycle/canary/promote` | Earning promotion buys a ramp, not a flip |
-| 5 | `/lifecycle/canary/rollback` | A breach rolls back before most users notice |
-| 6 | `/lifecycle/canary/reconcile` | The safe landing is provable, not assumed |
+| 1 | `/lifecycle/canary/start` + `/lifecycle/canary/watch` | Ten percent is a cap, and it is provable; the five signals a canary lives or dies by |
+| 2 | `/lifecycle/canary/criteria` | Promotion needs both criteria AND bounded exposure |
+| 3 | `/lifecycle/canary/promote` + `/lifecycle/canary/rollback` | Earning promotion buys a ramp, not a flip; a breach rolls back before most users notice |
+| 4 | `/lifecycle/canary/reconcile` | The safe landing is provable, not assumed |
 
 ## Prerequisites
 
@@ -83,21 +79,29 @@ reproduce the same promote and rollback outcomes every time. Reset before you st
 
 ## Demo steps
 
-### Step 1: Start the canary
+### Step 1: Start the canary and watch its signals
 
 **Goal:** Shift ten percent of eligible traffic to the candidate release and confirm
-the blast radius is bounded to that slice.
+the blast radius is bounded to that slice, then watch the five signals — quality,
+latency, cost, error rate, and contract compliance — on the canary slice, side by side
+with the approved release.
 
 ```bash
 curl -s -X POST http://localhost:8000/lifecycle/canary/run >/dev/null
 curl -s http://localhost:8000/lifecycle/canary/start | python3 scripts/fmt.py --type canary-start \
   --title "Start the canary" \
   --why "Ten percent of eligible traffic shifts to the candidate — the blast radius is bounded to that slice"
+curl -s http://localhost:8000/lifecycle/canary/watch | python3 scripts/fmt.py --type canary-watch \
+  --title "Watch the canary signals" \
+  --why "Quality, latency, cost, error rate, and contract compliance on the canary slice, against the approved release"
 ```
 
-**Expected output:** ★ `canary: 10% of 50 eligible`, then the split — ★ `production:
-45 requests` on the approved release, ★ `canary: 5 requests` on the candidate — and
-★ `blast radius bounded: true`.
+**Expected output:** first the start — ★ `canary: 10% of 50 eligible`, then the split —
+★ `production: 45 requests` on the approved release, ★ `canary: 5 requests` on the
+candidate — and ★ `blast radius bounded: true`. Then the watch — ★ `canary:
+rel-2026.07-rc1` (vs approved `rel-2026.06`), then five signals with the canary value
+beside the approved value — quality `0.93` vs `0.91`, latency `780ms` vs `740ms`, cost
+`$0.32` vs `$0.30`, error `0.5%` vs `0.4%`, contract `100.0%` vs `99.6%`.
 
 **What the learner should notice:** The whole safety of a canary is in one number, and
 here it is `5`. Ten percent of the eligible traffic — five of fifty requests — goes to
@@ -105,33 +109,16 @@ the candidate; the other forty-five stay on the approved release. That split is 
 contract: no matter how badly the candidate behaves, it is structurally incapable of
 touching more than five requests. `blast radius bounded: true` is not a comment, it is
 the property you must be able to assert before you expose real users to anything new.
-A canary without a bounded blast radius is just an outage waiting for a trigger.
+A canary without a bounded blast radius is just an outage waiting for a trigger. With
+the slice bounded, the watch is deliberately just watching — not judging. You are
+seeing the candidate's live behavior next to the production baseline, and the honest
+read is that the canary is slightly worse on cost and latency and slightly better on
+quality and contract — which is exactly why you never eyeball a canary. Small movements
+in five directions are impossible to adjudicate by feel. That is what the next step is
+for: turning these observations into a single, defensible promote-or-not decision
+against thresholds you set in advance.
 
-### Step 2: Watch the canary signals
-
-**Goal:** Watch the five signals — quality, latency, cost, error rate, and contract
-compliance — on the canary slice, side by side with the approved release.
-
-```bash
-curl -s http://localhost:8000/lifecycle/canary/watch | python3 scripts/fmt.py --type canary-watch \
-  --title "Watch the canary signals" \
-  --why "Quality, latency, cost, error rate, and contract compliance on the canary slice, against the approved release"
-```
-
-**Expected output:** ★ `canary: rel-2026.07-rc1` (vs approved `rel-2026.06`), then five
-signals with the canary value beside the approved value — quality `0.93` vs `0.91`,
-latency `780ms` vs `740ms`, cost `$0.32` vs `$0.30`, error `0.5%` vs `0.4%`, contract
-`100.0%` vs `99.6%`.
-
-**What the learner should notice:** Watching is not the same as judging, and this step
-is deliberately just watching. You are seeing the candidate's live behavior next to the
-production baseline, and the honest read is that the canary is slightly worse on cost
-and latency and slightly better on quality and contract — which is exactly why you
-never eyeball a canary. Small movements in five directions are impossible to
-adjudicate by feel. That is what the next step is for: turning these observations into
-a single, defensible promote-or-not decision against thresholds you set in advance.
-
-### Step 3: Check the promotion criteria
+### Step 2: Check the promotion criteria
 
 **Goal:** Evaluate the canary's signals against the promotion criteria and confirm the
 receipt trail proves the exposure stayed bounded.
@@ -155,20 +142,28 @@ thirty percent, promotion would still be off the table, because a good result fr
 unbounded experiment tells you nothing about a bounded rollout. Criteria met and
 exposure bounded — both true — is the only state that earns a promotion.
 
-### Step 4: Promote the healthy canary
+### Step 3: Promote the healthy canary and roll back the degraded one
 
 **Goal:** Promote the healthy canary and confirm it advances on a staged ramp rather
-than an instant flip to a hundred percent.
+than an instant flip to a hundred percent, then see what happens when a canary breaches
+— the decision flips to rollback and production returns to the approved release, with
+the damage capped at the canary slice.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/canary/promote | python3 scripts/fmt.py --type canary-promote \
   --title "Promote the healthy canary" \
   --why "Criteria met and exposure bounded — promote on a staged ramp, each stage still watched"
+curl -s http://localhost:8000/lifecycle/canary/rollback | python3 scripts/fmt.py --type canary-rollback \
+  --title "Hold and roll back the degraded canary" \
+  --why "A breached signal rolls the canary back — production returns to the approved release, blast radius capped at the canary slice"
 ```
 
-**Expected output:** ★ `decision: PROMOTE`, ★ `criteria met: true`, ★ `exposure
-bounded: true`, ★ `ramp plan: 10% → 25% → 50% → 100%`, and the release path
-`rel-2026.06 → rel-2026.07-rc1`.
+**Expected output:** first the promote — ★ `decision: PROMOTE`, ★ `criteria met: true`,
+★ `exposure bounded: true`, ★ `ramp plan: 10% → 25% → 50% → 100%`, and the release path
+`rel-2026.06 → rel-2026.07-rc1`. Then the rollback — ★ `decision: ROLLBACK`, then the
+degraded signals — quality `0.84` breach, latency `1300ms` breach, cost `$0.33` pass,
+error `3.2%` breach, contract `95.0%` breach — ★ `blast radius: 5 requests (10%)`, ★
+`active after rollback: rel-2026.06`, and ★ `canary exposure after: 0%`.
 
 **What the learner should notice:** Even a canary that earns promotion does not get
 flipped straight to a hundred percent, and the ramp plan is why. Promotion buys the
@@ -177,34 +172,17 @@ stage is still watched against the same criteria. This matters because ten perce
 might look healthy while a problem that only shows up under higher load is still hiding.
 A staged ramp keeps the blast radius bounded at each step of the way up, so if the
 candidate stumbles at fifty percent, you still catch it before it reaches everyone.
-Promotion is a gradient, not a switch.
+Promotion is a gradient, not a switch. Now watch the other outcome — the canary doing
+its job, and it is worth sitting with. A different candidate — degraded — breaches four
+of five signals, and the decision is immediate: `ROLLBACK`. Look at the number that
+makes this a good day instead of a bad one: `blast radius: 5 requests`. Only the ten
+percent canary slice ever saw the regression; the ninety percent on the approved
+release never noticed. Production returns to `rel-2026.06` and canary exposure drops to
+zero. Without the canary, this degraded release goes to a hundred percent of users; with
+it, it touched five requests and was gone. That contrast is the entire value
+proposition of canarying.
 
-### Step 5: Hold and roll back the degraded canary
-
-**Goal:** See what happens when a canary breaches — the decision flips to rollback and
-production returns to the approved release, with the damage capped at the canary slice.
-
-```bash
-curl -s http://localhost:8000/lifecycle/canary/rollback | python3 scripts/fmt.py --type canary-rollback \
-  --title "Hold and roll back the degraded canary" \
-  --why "A breached signal rolls the canary back — production returns to the approved release, blast radius capped at the canary slice"
-```
-
-**Expected output:** ★ `decision: ROLLBACK`, then the degraded signals — quality `0.84`
-breach, latency `1300ms` breach, cost `$0.33` pass, error `3.2%` breach, contract
-`95.0%` breach — ★ `blast radius: 5 requests (10%)`, ★ `active after rollback:
-rel-2026.06`, and ★ `canary exposure after: 0%`.
-
-**What the learner should notice:** This is the canary doing its job, and it is worth
-sitting with. A different candidate — degraded — breaches four of five signals, and the
-decision is immediate: `ROLLBACK`. Now look at the number that makes this a good day
-instead of a bad one: `blast radius: 5 requests`. Only the ten percent canary slice
-ever saw the regression; the ninety percent on the approved release never noticed.
-Production returns to `rel-2026.06` and canary exposure drops to zero. Without the
-canary, this degraded release goes to a hundred percent of users; with it, it touched
-five requests and was gone. That contrast is the entire value proposition of canarying.
-
-### Step 6: Reconcile after rollback
+### Step 4: Reconcile after rollback
 
 **Goal:** Confirm production is provably back on the approved release, with zero canary
 exposure and a blast radius that stayed bounded the whole time.
@@ -236,7 +214,7 @@ bash module3/scripts/m3-demo5-canary-promotion-rollback.preflight.sh
 ```
 
 Runs every step above, captures each command and its output, maps each step to EO4c,
-and writes a readable log to `preflight-logs/m3-demo5-canary-promotion-rollback.log`. Expect `PASS: 6  FAIL:
+and writes a readable log to `preflight-logs/m3-demo5-canary-promotion-rollback.log`. Expect `PASS: 4  FAIL:
 0`.
 
 ## Cleanup

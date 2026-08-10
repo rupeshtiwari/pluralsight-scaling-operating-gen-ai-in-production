@@ -51,40 +51,31 @@ emit "${GRAY}reading the prompt repository and building the lifecycle state ...$
 curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
 curl -s -X POST "$API_BASE/lifecycle/prompts/run" >/dev/null 2>&1
 
-# STEP 1 — prompt registry
-step_head "1" "Inspect the prompt version registry" \
-  "Prompts must be versioned like code, with owner, fixture, model pin, eval run, release tag, status." \
-  "three versions — superseded, approved, candidate — each with its metadata and result hash."
+# STEP 1 — registry + receipts (versioned like code, and every receipt links the release identity)
+step_head "1" "Inspect the version registry and link receipts to releases" \
+  "Prompts must be versioned like code with owner/fixture/model/eval/release/status, and every receipt must carry that release identity." \
+  "three versions — superseded, approved, candidate — with metadata and hash, then six receipts on the approved version carrying model, eval run, release, and hash."
 show_cmd "curl -s -X POST \$API_BASE/lifecycle/prompts/run >/dev/null; curl -s \$API_BASE/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry"
-RAW="$(curl -s "$API_BASE/lifecycle/prompts/registry")"
-emit "$(printf '%s' "$RAW" | $FMT --type lc-registry 2>&1)"
-if echo "$RAW" | jq -e '(.versions|length>=3) and (.approved_release=="rel-2026.06") and ([.versions[].status]|(index("approved") and index("candidate") and index("superseded"))) and (.versions|all(has("model_version") and has("eval_run_id") and has("result_hash")))' >/dev/null 2>&1; then
-  verdict 0 "the registry lists versions with owner, fixture, model, eval run, release tag, and status" "" ""
-  LO+=("Step 1: prompt version control — versioned like code with full metadata (EO4a)")
-else
-  verdict 1 "the prompt registry is wrong" \
-    "Check prompts/registry.yaml and _version_records in app/lifecycle/prompts.py." \
-    "GET /lifecycle/prompts/registry must list >=3 versions, approved_release rel-2026.06, statuses approved/candidate/superseded, each with model_version, eval_run_id, result_hash. Fix app/lifecycle/prompts.py."
-fi
-
-# STEP 2 — receipts link version + model + eval
-step_head "2" "Link prompt version, model, and eval run to receipts" \
-  "Every request receipt must carry the release identity: prompt version, model version, eval run, release, hash." \
-  "six receipts, each on the approved version with its model, eval run, release tag, and result hash."
+RAW_REG="$(curl -s "$API_BASE/lifecycle/prompts/registry")"
+emit "$(printf '%s' "$RAW_REG" | $FMT --type lc-registry 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/receipts | python3 scripts/fmt.py --type lc-prompt-receipts"
-RAW="$(curl -s "$API_BASE/lifecycle/prompts/receipts")"
-emit "$(printf '%s' "$RAW" | $FMT --type lc-prompt-receipts 2>&1)"
-if echo "$RAW" | jq -e '(.receipts|length>=1) and (.approved_version=="v2.0.0") and (.receipts|all(.prompt_version=="v2.0.0" and has("model_version") and has("eval_run_id") and has("release_tag") and has("result_hash")))' >/dev/null 2>&1; then
-  verdict 0 "every receipt links prompt version, model version, and evaluation run id to a release and result hash" "" ""
-  LO+=("Step 2: receipts link prompt version, model version, and eval run id (EO4a)")
+RAW_RCP="$(curl -s "$API_BASE/lifecycle/prompts/receipts")"
+emit "$(printf '%s' "$RAW_RCP" | $FMT --type lc-prompt-receipts 2>&1)"
+REG_OK=1; RCP_OK=1
+echo "$RAW_REG" | jq -e '(.versions|length>=3) and (.approved_release=="rel-2026.06") and ([.versions[].status]|(index("approved") and index("candidate") and index("superseded"))) and (.versions|all(has("model_version") and has("eval_run_id") and has("result_hash")))' >/dev/null 2>&1 || REG_OK=0
+echo "$RAW_RCP" | jq -e '(.receipts|length>=1) and (.approved_version=="v2.0.0") and (.receipts|all(.prompt_version=="v2.0.0" and has("model_version") and has("eval_run_id") and has("release_tag") and has("result_hash")))' >/dev/null 2>&1 || RCP_OK=0
+if [ "$REG_OK" = "1" ] && [ "$RCP_OK" = "1" ]; then
+  verdict 0 "the registry lists versions with full metadata, and every receipt links prompt version, model version, and evaluation run id to a release and result hash" "" ""
+  LO+=("Step 1: prompt version control — versioned like code with full metadata (EO4a)")
+  LO+=("Step 1: receipts link prompt version, model version, and eval run id (EO4a)")
 else
-  verdict 1 "receipts do not carry the release identity" \
-    "Check the receipts block in app/lifecycle/prompts.py." \
-    "GET /lifecycle/prompts/receipts must return receipts all on v2.0.0 with model_version, eval_run_id, release_tag, result_hash. Fix app/lifecycle/prompts.py."
+  verdict 1 "the registry or receipts do not carry the release identity" \
+    "Check prompts/registry.yaml, _version_records, and the receipts block in app/lifecycle/prompts.py." \
+    "GET /lifecycle/prompts/registry must list >=3 versions (approved/candidate/superseded, each with model_version/eval_run_id/result_hash) and approved_release rel-2026.06; GET /lifecycle/prompts/receipts must return receipts all on v2.0.0 with model_version, eval_run_id, release_tag, result_hash. Fix app/lifecycle/prompts.py."
 fi
 
-# STEP 3 — candidate isolated
-step_head "3" "Deploy the prompt change to an isolated lane" \
+# STEP 2 — candidate isolated
+step_head "2" "Deploy the prompt change to an isolated lane" \
   "A candidate prompt must be isolated so approved production traffic never reaches it." \
   "two lanes — production on the approved version, an isolated candidate lane; zero candidate traffic in production."
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/isolation | python3 scripts/fmt.py --type lc-isolation"
@@ -92,47 +83,38 @@ RAW="$(curl -s "$API_BASE/lifecycle/prompts/isolation")"
 emit "$(printf '%s' "$RAW" | $FMT --type lc-isolation 2>&1)"
 if echo "$RAW" | jq -e '.candidate_in_production==0 and .isolated==true and (.lanes|length==2) and ((.lanes[]|select(.lane=="production").serves_customers)==true) and ((.lanes[]|select(.lane=="isolated_candidate").serves_customers)==false)' >/dev/null 2>&1; then
   verdict 0 "the candidate runs in an isolated lane with zero production traffic — blast radius is nil" "" ""
-  LO+=("Step 3: a candidate change is isolated from approved production traffic (EO4a)")
+  LO+=("Step 2: a candidate change is isolated from approved production traffic (EO4a)")
 else
   verdict 1 "the candidate is not isolated" \
     "Check the isolation block in app/lifecycle/prompts.py." \
     "GET /lifecycle/prompts/isolation must show candidate_in_production 0, isolated true, production lane serves_customers true, candidate lane false. Fix app/lifecycle/prompts.py."
 fi
 
-# STEP 4 — rollback to approved
-step_head "4" "Roll back production to the approved release" \
-  "A rollback must return production to the approved release id, targeting a retained immutable version." \
-  "from the candidate to the approved version; active release rel-2026.06, zero candidate traffic after."
+# STEP 3 — rollback to approved + reproducibility
+step_head "3" "Roll back to the approved release and prove it reproduces" \
+  "A rollback must return production to the approved release id (a retained immutable version), and the preserved prompt/fixture/model must reproduce the same result hash." \
+  "from the candidate to the approved version, active release rel-2026.06 with zero candidate traffic, then recorded and replayed hashes match and reproducible is true."
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/rollback | python3 scripts/fmt.py --type lc-rollback"
-RAW="$(curl -s "$API_BASE/lifecycle/prompts/rollback")"
-emit "$(printf '%s' "$RAW" | $FMT --type lc-rollback 2>&1)"
-if echo "$RAW" | jq -e '.to_release=="rel-2026.06" and .active_release_after=="rel-2026.06" and .active_version_after=="v2.0.0" and .candidate_in_production_after==0 and ([.retained_versions[]]|index("v3.0.0-rc1"))' >/dev/null 2>&1; then
-  verdict 0 "rollback returns production to the approved release id, with the candidate retained but withdrawn" "" ""
-  LO+=("Step 4: safe rollback returns production to the approved release id (EO4a)")
-else
-  verdict 1 "the rollback did not return to the approved release" \
-    "Check the rollback block in app/lifecycle/prompts.py." \
-    "GET /lifecycle/prompts/rollback must show to_release/active_release_after rel-2026.06, active_version_after v2.0.0, candidate_in_production_after 0, candidate retained. Fix app/lifecycle/prompts.py."
-fi
-
-# STEP 5 — reproducibility
-step_head "5" "Prove the rollback is reproducible" \
-  "Preserved prompt, fixture, and model must reproduce the same result hash on replay." \
-  "the recorded and replayed result hashes match; reproducible is true."
+RAW_RB="$(curl -s "$API_BASE/lifecycle/prompts/rollback")"
+emit "$(printf '%s' "$RAW_RB" | $FMT --type lc-rollback 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/reproducibility | python3 scripts/fmt.py --type lc-reproducibility"
-RAW="$(curl -s "$API_BASE/lifecycle/prompts/reproducibility")"
-emit "$(printf '%s' "$RAW" | $FMT --type lc-reproducibility 2>&1)"
-if echo "$RAW" | jq -e '.reproducible==true and (.recorded_result_hash==.replayed_result_hash) and ([.preserved[]]|(index("prompt_text") and index("fixture") and index("model_version")))' >/dev/null 2>&1; then
-  verdict 0 "the same prompt, fixture, and model reproduce the same result hash — reproducible, not re-run" "" ""
-  LO+=("Step 5: rollback is reproducible because prompt, fixture, model, and result are preserved (EO4a)")
+RAW_RP="$(curl -s "$API_BASE/lifecycle/prompts/reproducibility")"
+emit "$(printf '%s' "$RAW_RP" | $FMT --type lc-reproducibility 2>&1)"
+RB_OK=1; RP_OK=1
+echo "$RAW_RB" | jq -e '.to_release=="rel-2026.06" and .active_release_after=="rel-2026.06" and .active_version_after=="v2.0.0" and .candidate_in_production_after==0 and ([.retained_versions[]]|index("v3.0.0-rc1"))' >/dev/null 2>&1 || RB_OK=0
+echo "$RAW_RP" | jq -e '.reproducible==true and (.recorded_result_hash==.replayed_result_hash) and ([.preserved[]]|(index("prompt_text") and index("fixture") and index("model_version")))' >/dev/null 2>&1 || RP_OK=0
+if [ "$RB_OK" = "1" ] && [ "$RP_OK" = "1" ]; then
+  verdict 0 "rollback returns production to the approved release id (candidate retained but withdrawn), and the same prompt, fixture, and model reproduce the same result hash" "" ""
+  LO+=("Step 3: safe rollback returns production to the approved release id (EO4a)")
+  LO+=("Step 3: rollback is reproducible because prompt, fixture, model, and result are preserved (EO4a)")
 else
-  verdict 1 "the rollback is not reproducible" \
-    "Check _result_hash and the reproducibility block in app/lifecycle/prompts.py." \
-    "GET /lifecycle/prompts/reproducibility must show reproducible true with recorded==replayed hash and preserved prompt_text/fixture/model_version. Fix app/lifecycle/prompts.py."
+  verdict 1 "the rollback did not return to the approved release or is not reproducible" \
+    "Check the rollback and reproducibility blocks (and _result_hash) in app/lifecycle/prompts.py." \
+    "GET /lifecycle/prompts/rollback must show to_release/active_release_after rel-2026.06, active_version_after v2.0.0, candidate_in_production_after 0, candidate retained; GET /lifecycle/prompts/reproducibility must show reproducible true with recorded==replayed hash and preserved prompt_text/fixture/model_version. Fix app/lifecycle/prompts.py."
 fi
 
-# STEP 6 — reconcile
-step_head "6" "Reconcile the release state" \
+# STEP 4 — reconcile
+step_head "4" "Reconcile the release state" \
   "The active release must match approved, with no candidate traffic in production and a reproducible result." \
   "disposition CONFIRMED: active matches approved, candidate in production 0, reproducible true."
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/reconcile | python3 scripts/fmt.py --type lc-reconcile"
@@ -140,7 +122,7 @@ RAW="$(curl -s "$API_BASE/lifecycle/prompts/reconcile")"
 emit "$(printf '%s' "$RAW" | $FMT --type lc-reconcile 2>&1)"
 if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .active_matches_approved==true and .candidate_in_production==0 and .reproducible==true' >/dev/null 2>&1; then
   verdict 0 "the release state is provable: on the approved release, no leaked candidate traffic, reproducible" "" ""
-  LO+=("Step 6: the release state reconciles to a provable, approved production state (TO4, EO4a)")
+  LO+=("Step 4: the release state reconciles to a provable, approved production state (TO4, EO4a)")
 else
   verdict 1 "the release state did not reconcile" \
     "Check the reconcile block in app/lifecycle/prompts.py." \

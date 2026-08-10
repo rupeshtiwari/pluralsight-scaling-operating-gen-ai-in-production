@@ -83,68 +83,50 @@ else
     "GET /lifecycle/readiness/audit must score scalability, observability, security, cost_efficiency, reliability, with security a gap. Fix app/lifecycle/readiness.py."
 fi
 
-# STEP 3 — deployment decision
-step_head "3" "Choose the deployment pattern" \
-  "The audit must lead to a deployment decision that fits the workload's latency and throughput." \
-  "containers recommended for steady 10 RPS where cold start is unacceptable, with reasons."
+# STEP 3 — deployment decision + pattern comparison
+step_head "3" "Choose the deployment pattern and compare the alternatives" \
+  "The audit must lead to a deployment decision that fits the workload's latency and throughput, and serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
+  "containers recommended for steady 10 RPS where cold start is unacceptable, with reasons; then three patterns compared, containers chosen, serverless and dedicated GPU ruled out."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/decision")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-decision 2>&1)"
-if echo "$RAW" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS"))' >/dev/null 2>&1; then
-  verdict 0 "the workload profile leads to containers, with cold-start and cost reasons stated" "" ""
-  LO+=("Step 3: the readiness audit drives a deployment decision (EO5a, EO5b)")
-else
-  verdict 1 "the deployment decision is wrong" \
-    "Check the decision block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/decision must recommend containers with a workload profile and >=3 reasons. Fix app/lifecycle/readiness.py."
-fi
-
-# STEP 4 — pattern comparison
-step_head "4" "Compare the deployment patterns" \
-  "Serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
-  "three patterns compared; containers chosen, serverless and dedicated GPU ruled out."
+RAW_DEC="$(curl -s "$API_BASE/lifecycle/readiness/decision")"
+emit "$(printf '%s' "$RAW_DEC" | $FMT --type readiness-decision 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/patterns")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-patterns 2>&1)"
-if echo "$RAW" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1; then
-  verdict 0 "all three patterns are compared on the deciding factors; containers is the right-sized choice" "" ""
-  LO+=("Step 4: select a cloud-native deployment pattern by latency/throughput (EO5b)")
+RAW_PAT="$(curl -s "$API_BASE/lifecycle/readiness/patterns")"
+emit "$(printf '%s' "$RAW_PAT" | $FMT --type readiness-patterns 2>&1)"
+DEC_OK=1; PAT_OK=1
+echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS"))' >/dev/null 2>&1 || DEC_OK=0
+echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
+if [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ]; then
+  verdict 0 "the workload profile leads to containers with cold-start and cost reasons stated, and all three patterns are compared on the deciding factors — containers is the right-sized choice" "" ""
+  LO+=("Step 3: the readiness audit drives a deployment decision (EO5a, EO5b)")
+  LO+=("Step 3: select a cloud-native deployment pattern by latency/throughput (EO5b)")
 else
-  verdict 1 "the pattern comparison is wrong" \
-    "Check the patterns block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
+  verdict 1 "the deployment decision or the pattern comparison is wrong" \
+    "Check the decision and patterns blocks in app/lifecycle/readiness.py." \
+    "GET /lifecycle/readiness/decision must recommend containers with a workload profile and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
 fi
 
-# STEP 5 — operational runbook
-step_head "5" "Inspect the operational runbook" \
-  "The runbook must cover deploy, monitoring thresholds, incident response, rollback, and capacity." \
-  "five sections, each with concrete content wired to a real control."
+# STEP 4 — operational runbook + maturity decision
+step_head "4" "Inspect the operational runbook and decide the operational maturity" \
+  "The runbook must cover deploy, monitoring thresholds, incident response, rollback, and capacity, and the system must be placed on the maturity ladder with evidence and the gaps to the next level." \
+  "five sections, each with concrete content wired to a real control; then current managed_production, with evidence and the gaps to scale-ready."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/runbook")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-runbook 2>&1)"
-if echo "$RAW" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity")))' >/dev/null 2>&1; then
-  verdict 0 "the runbook covers deploy, monitoring, incident response, rollback, and capacity" "" ""
-  LO+=("Step 5: construct an operational runbook (EO5c)")
-else
-  verdict 1 "the runbook is incomplete" \
-    "Check the runbook block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/runbook must return 5 sections: deploy, monitoring, incident_response, rollback, capacity, complete true. Fix app/lifecycle/readiness.py."
-fi
-
-# STEP 6 — maturity decision
-step_head "6" "Decide the operational maturity" \
-  "The system must be placed on the maturity ladder with evidence and the gaps to the next level." \
-  "current managed_production, with evidence and the gaps to scale-ready."
+RAW_RUN="$(curl -s "$API_BASE/lifecycle/readiness/runbook")"
+emit "$(printf '%s' "$RAW_RUN" | $FMT --type readiness-runbook 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/maturity")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-maturity 2>&1)"
-if echo "$RAW" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1)' >/dev/null 2>&1; then
-  verdict 0 "the system is placed at managed production on evidence, with the gaps to scale-ready named" "" ""
-  LO+=("Step 6: identify the operational maturity progression from prototype to scale (EO5d, TO5)")
+RAW_MAT="$(curl -s "$API_BASE/lifecycle/readiness/maturity")"
+emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
+RUN_OK=1; MAT_OK=1
+echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity")))' >/dev/null 2>&1 || RUN_OK=0
+echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1)' >/dev/null 2>&1 || MAT_OK=0
+if [ "$RUN_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
+  verdict 0 "the runbook covers deploy, monitoring, incident response, rollback, and capacity, and the system is placed at managed production on evidence with the gaps to scale-ready named" "" ""
+  LO+=("Step 4: construct an operational runbook (EO5c)")
+  LO+=("Step 4: identify the operational maturity progression from prototype to scale (EO5d, TO5)")
 else
-  verdict 1 "the maturity decision is wrong" \
-    "Check the maturity block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, and gaps to scale-ready. Fix app/lifecycle/readiness.py."
+  verdict 1 "the runbook is incomplete or the maturity decision is wrong" \
+    "Check the runbook and maturity blocks in app/lifecycle/readiness.py." \
+    "GET /lifecycle/readiness/runbook must return 5 sections: deploy, monitoring, incident_response, rollback, capacity, complete true; GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, and gaps to scale-ready. Fix app/lifecycle/readiness.py."
 fi
 
 # COVERAGE + SUMMARY
