@@ -9,6 +9,11 @@
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
 # stack: API_BASE
+#
+# TRANSPORT SAFETY: this script fails LOUDLY and distinctly when the service is
+# unreachable — it never lets a down stack masquerade as a content/logic failure.
+# A precondition asserts API_BASE is set and /health is 200 before Step 1, and
+# every read is status-gated (HTTP 200) before it is parsed.
 # =============================================================================
 set -uo pipefail
 
@@ -45,26 +50,76 @@ verdict() {
   blank
 }
 
+# --- transport gates: never let a down service look like a logic failure ------
+# Hard precondition — API_BASE must be set and /health must be 200 before Step 1.
+require_stack() {
+  if [ -z "${API_BASE:-}" ]; then
+    emit "${PINK}✗ PRECONDITION FAILED — API_BASE is empty.${R}"
+    emit "${GRAY}  Set it (or use the default http://localhost:8000) and re-run.${R}"
+    exit 2
+  fi
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$API_BASE/health" 2>/dev/null)
+  if [ "$code" != "200" ]; then
+    emit "${PINK}✗ PRECONDITION FAILED — GET ${API_BASE}/health returned HTTP ${code:-000}.${R}"
+    emit "${GRAY}  The service is not reachable. This is a TRANSPORT problem, not a logic bug —${R}"
+    emit "${GRAY}  do NOT edit app/lifecycle/readiness.py. Start the stack, then re-run:${R}"
+    emit "${LGRN}    bash module3/scripts/demo_up.sh${R}"
+    exit 2
+  fi
+  emit "${GRAY}precondition:${R} ${LGRN}${API_BASE}/health${R} ${GRAY}= 200 ✓${R}"
+}
+
+# GET a path with a status gate. On 200: sets GET_BODY, returns 0.
+# Otherwise: leaves GET_BODY empty and returns 1 (caller emits a TRANSPORT verdict).
+GET_BODY=""
+get_json() {  # $1 = path
+  local resp code
+  resp=$(curl -s -w $'\n%{http_code}' "$API_BASE$1" 2>/dev/null)
+  code=${resp##*$'\n'}
+  GET_BODY=${resp%$'\n'*}
+  [ "$code" = "200" ] || { GET_BODY=""; return 1; }
+  return 0
+}
+
+# Emit a TRANSPORT failure verdict — points at the stack, never at readiness.py.
+transport_fail() {  # $1 = path(s) that failed
+  verdict 1 "TRANSPORT — could not read $1 with HTTP 200 (service down or route missing)" \
+    "Confirm the stack is up: curl \$API_BASE/health must be 200 and curl \$API_BASE/openapi.json must list /lifecycle/readiness/*." \
+    "Bring up FastAPI/Redis/Postgres (bash module3/scripts/demo_up.sh) and re-run. This is a service/transport failure — do NOT edit app/lifecycle/readiness.py."
+}
+
 banner "MODULE 3 · DEMO — READINESS AUDIT AND OPERATIONAL RUNBOOK  (LO: EO4d, TO5, EO5a-d)"
 emit "${GRAY}stack:${R} API=${LGRN}${API_BASE}${R}"
+require_stack
 emit "${GRAY}building the readiness audit, runbook, and maturity decision ...${R}"
 curl -s -X POST "$API_BASE/admin/reset" >/dev/null 2>&1
-curl -s -X POST "$API_BASE/lifecycle/readiness/run" >/dev/null 2>&1
+SEED_CODE=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API_BASE/lifecycle/readiness/run" 2>/dev/null)
+if [ "$SEED_CODE" != "200" ]; then
+  emit "${PINK}✗ SEEDING FAILED — POST ${API_BASE}/lifecycle/readiness/run returned HTTP ${SEED_CODE:-000}.${R}"
+  emit "${GRAY}  No lifecycle state was built, so every downstream read would be empty. This is a${R}"
+  emit "${GRAY}  routing/transport failure, not a logic bug — do NOT edit app/lifecycle/readiness.py.${R}"
+  exit 2
+fi
 
 # STEP 1 — deprecation migration
 step_head "1" "Migrate off the deprecated model" \
   "A deprecated model must route through a replacement adapter with compatibility receipts and no disruption." \
   "deprecated -> replacement, four compatibility checks pass, disposition MIGRATED."
 show_cmd "curl -s -X POST \$API_BASE/lifecycle/readiness/run >/dev/null; curl -s \$API_BASE/lifecycle/readiness/deprecation | python3 scripts/fmt.py --type readiness-deprecation"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/deprecation")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-deprecation 2>&1)"
-if echo "$RAW" | jq -e '.disposition=="MIGRATED" and .disruption=="none" and (.compatibility|length>=3) and (.compatibility|all(.status=="pass")) and has("replacement_model")' >/dev/null 2>&1; then
-  verdict 0 "deprecated traffic routes to the replacement with compatibility receipts and zero disruption" "" ""
-  LO+=("Step 1: manage an upstream deprecation with minimal disruption (EO4d)")
+get_json "/lifecycle/readiness/deprecation" && RAW="$GET_BODY" || RAW=""
+if [ -z "$RAW" ]; then
+  transport_fail "/lifecycle/readiness/deprecation"
 else
-  verdict 1 "the deprecation migration is wrong" \
-    "Check the deprecation block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/deprecation must show disposition MIGRATED, disruption none, all compatibility checks pass, a replacement_model. Fix app/lifecycle/readiness.py."
+  emit "$(printf '%s' "$RAW" | $FMT --type readiness-deprecation 2>&1)"
+  if echo "$RAW" | jq -e '.disposition=="MIGRATED" and .disruption=="none" and (.compatibility|length>=3) and (.compatibility|all(.status=="pass")) and has("replacement_model")' >/dev/null 2>&1; then
+    verdict 0 "deprecated traffic routes to the replacement with compatibility receipts and zero disruption" "" ""
+    LO+=("Step 1: manage an upstream deprecation with minimal disruption (EO4d)")
+  else
+    verdict 1 "the deprecation migration is wrong" \
+      "Check the deprecation block in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/deprecation must show disposition MIGRATED, disruption none, all compatibility checks pass, a replacement_model. Fix app/lifecycle/readiness.py."
+  fi
 fi
 
 # STEP 2 — readiness audit
@@ -72,15 +127,19 @@ step_head "2" "Run the production readiness audit" \
   "The audit must score scalability, observability, security, cost efficiency, and reliability." \
   "five dimensions scored; four ready, security a gap; overall 17/20."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/audit | python3 scripts/fmt.py --type readiness-audit"
-RAW="$(curl -s "$API_BASE/lifecycle/readiness/audit")"
-emit "$(printf '%s' "$RAW" | $FMT --type readiness-audit 2>&1)"
-if echo "$RAW" | jq -e '(.rows|length==5) and ([.rows[].dimension]|(index("scalability") and index("observability") and index("security") and index("cost_efficiency") and index("reliability"))) and ([.gaps[]]|index("security"))' >/dev/null 2>&1; then
-  verdict 0 "the audit scores all five readiness dimensions and names the open gap (security)" "" ""
-  LO+=("Step 2: evaluate architecture against readiness criteria (EO5a)")
+get_json "/lifecycle/readiness/audit" && RAW="$GET_BODY" || RAW=""
+if [ -z "$RAW" ]; then
+  transport_fail "/lifecycle/readiness/audit"
 else
-  verdict 1 "the readiness audit is wrong" \
-    "Check the audit block in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/audit must score scalability, observability, security, cost_efficiency, reliability, with security a gap. Fix app/lifecycle/readiness.py."
+  emit "$(printf '%s' "$RAW" | $FMT --type readiness-audit 2>&1)"
+  if echo "$RAW" | jq -e '(.rows|length==5) and ([.rows[].dimension]|(index("scalability") and index("observability") and index("security") and index("cost_efficiency") and index("reliability"))) and ([.gaps[]]|index("security"))' >/dev/null 2>&1; then
+    verdict 0 "the audit scores all five readiness dimensions and names the open gap (security)" "" ""
+    LO+=("Step 2: evaluate architecture against readiness criteria (EO5a)")
+  else
+    verdict 1 "the readiness audit is wrong" \
+      "Check the audit block in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/audit must score scalability, observability, security, cost_efficiency, reliability, with security a gap. Fix app/lifecycle/readiness.py."
+  fi
 fi
 
 # STEP 3 — deployment decision + pattern comparison
@@ -88,22 +147,26 @@ step_head "3" "Choose the deployment pattern and compare the alternatives" \
   "The audit must lead to a deployment decision that fits the workload's latency and throughput, and serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
   "containers recommended for steady 10 RPS where cold start is unacceptable, with reasons; then three patterns compared, containers chosen, serverless and dedicated GPU ruled out."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision"
-RAW_DEC="$(curl -s "$API_BASE/lifecycle/readiness/decision")"
-emit "$(printf '%s' "$RAW_DEC" | $FMT --type readiness-decision 2>&1)"
+get_json "/lifecycle/readiness/decision" && RAW_DEC="$GET_BODY" || RAW_DEC=""
+[ -n "$RAW_DEC" ] && emit "$(printf '%s' "$RAW_DEC" | $FMT --type readiness-decision 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns"
-RAW_PAT="$(curl -s "$API_BASE/lifecycle/readiness/patterns")"
-emit "$(printf '%s' "$RAW_PAT" | $FMT --type readiness-patterns 2>&1)"
-DEC_OK=1; PAT_OK=1
-echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS"))' >/dev/null 2>&1 || DEC_OK=0
-echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
-if [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ]; then
-  verdict 0 "the workload profile leads to containers with cold-start and cost reasons stated, and all three patterns are compared on the deciding factors — containers is the right-sized choice" "" ""
-  LO+=("Step 3: the readiness audit drives a deployment decision (EO5a, EO5b)")
-  LO+=("Step 3: select a cloud-native deployment pattern by latency/throughput (EO5b)")
+get_json "/lifecycle/readiness/patterns" && RAW_PAT="$GET_BODY" || RAW_PAT=""
+[ -n "$RAW_PAT" ] && emit "$(printf '%s' "$RAW_PAT" | $FMT --type readiness-patterns 2>&1)"
+if [ -z "$RAW_DEC" ] || [ -z "$RAW_PAT" ]; then
+  transport_fail "/lifecycle/readiness/decision or /patterns"
 else
-  verdict 1 "the deployment decision or the pattern comparison is wrong" \
-    "Check the decision and patterns blocks in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/decision must recommend containers with a workload profile and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
+  DEC_OK=1; PAT_OK=1
+  echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS"))' >/dev/null 2>&1 || DEC_OK=0
+  echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
+  if [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ]; then
+    verdict 0 "the workload profile leads to containers with cold-start and cost reasons stated, and all three patterns are compared on the deciding factors — containers is the right-sized choice" "" ""
+    LO+=("Step 3: the readiness audit drives a deployment decision (EO5a, EO5b)")
+    LO+=("Step 3: select a cloud-native deployment pattern by latency/throughput (EO5b)")
+  else
+    verdict 1 "the deployment decision or the pattern comparison is wrong" \
+      "Check the decision and patterns blocks in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/decision must recommend containers with a workload profile and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
+  fi
 fi
 
 # STEP 4 — operational runbook + maturity decision
@@ -111,22 +174,26 @@ step_head "4" "Inspect the operational runbook and decide the operational maturi
   "The runbook must cover deploy, monitoring thresholds, incident response, rollback, and capacity, and the system must be placed on the maturity ladder with evidence and the gaps to the next level." \
   "five sections, each with concrete content wired to a real control; then current managed_production, with evidence and the gaps to scale-ready."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook"
-RAW_RUN="$(curl -s "$API_BASE/lifecycle/readiness/runbook")"
-emit "$(printf '%s' "$RAW_RUN" | $FMT --type readiness-runbook 2>&1)"
+get_json "/lifecycle/readiness/runbook" && RAW_RUN="$GET_BODY" || RAW_RUN=""
+[ -n "$RAW_RUN" ] && emit "$(printf '%s' "$RAW_RUN" | $FMT --type readiness-runbook 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity"
-RAW_MAT="$(curl -s "$API_BASE/lifecycle/readiness/maturity")"
-emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
-RUN_OK=1; MAT_OK=1
-echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity")))' >/dev/null 2>&1 || RUN_OK=0
-echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1)' >/dev/null 2>&1 || MAT_OK=0
-if [ "$RUN_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
-  verdict 0 "the runbook covers deploy, monitoring, incident response, rollback, and capacity, and the system is placed at managed production on evidence with the gaps to scale-ready named" "" ""
-  LO+=("Step 4: construct an operational runbook (EO5c)")
-  LO+=("Step 4: identify the operational maturity progression from prototype to scale (EO5d, TO5)")
+get_json "/lifecycle/readiness/maturity" && RAW_MAT="$GET_BODY" || RAW_MAT=""
+[ -n "$RAW_MAT" ] && emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
+if [ -z "$RAW_RUN" ] || [ -z "$RAW_MAT" ]; then
+  transport_fail "/lifecycle/readiness/runbook or /maturity"
 else
-  verdict 1 "the runbook is incomplete or the maturity decision is wrong" \
-    "Check the runbook and maturity blocks in app/lifecycle/readiness.py." \
-    "GET /lifecycle/readiness/runbook must return 5 sections: deploy, monitoring, incident_response, rollback, capacity, complete true; GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, and gaps to scale-ready. Fix app/lifecycle/readiness.py."
+  RUN_OK=1; MAT_OK=1
+  echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity")))' >/dev/null 2>&1 || RUN_OK=0
+  echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1)' >/dev/null 2>&1 || MAT_OK=0
+  if [ "$RUN_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
+    verdict 0 "the runbook covers deploy, monitoring, incident response, rollback, and capacity, and the system is placed at managed production on evidence with the gaps to scale-ready named" "" ""
+    LO+=("Step 4: construct an operational runbook (EO5c)")
+    LO+=("Step 4: identify the operational maturity progression from prototype to scale (EO5d, TO5)")
+  else
+    verdict 1 "the runbook is incomplete or the maturity decision is wrong" \
+      "Check the runbook and maturity blocks in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/runbook must return 5 sections: deploy, monitoring, incident_response, rollback, capacity, complete true; GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, and gaps to scale-ready. Fix app/lifecycle/readiness.py."
+  fi
 fi
 
 # COVERAGE + SUMMARY
