@@ -43,6 +43,10 @@ services:
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./app:/srv/app
+      # The prompt-lifecycle demo (Module 3, Clip 2) reads the real prompt
+      # repository at /srv/prompts. Mount it so /lifecycle/prompts/run finds
+      # registry.yaml and the version files instead of 500-ing on a missing dir.
+      - ./prompts:/srv/prompts:ro
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
