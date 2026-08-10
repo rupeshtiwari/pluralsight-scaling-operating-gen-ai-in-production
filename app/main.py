@@ -69,7 +69,18 @@ from app.schemas import BatchRequest, RouteRequest, SpikeRequest, SubmitRequest
 async def lifespan(app: FastAPI):
     # Ensure the receipts schema exists and conditions default to healthy so
     # the very first demo run is clean and repeatable.
-    postgres.init_schema()
+    #
+    # Datastore init is BEST-EFFORT: a single datastore being unavailable must
+    # NOT take down the whole service. Otherwise one Postgres/Redis hiccup makes
+    # every endpoint return empty ("None everywhere") at boot — which reads as a
+    # broken demo when the real fault is infrastructure. Demos that genuinely
+    # need receipts/conditions surface a clear per-step error and /health reports
+    # the unhealthy component; demos that don't (the Module 3 lifecycle clips,
+    # which are pure and stateless) keep working regardless.
+    try:
+        postgres.init_schema()
+    except Exception:
+        pass
     try:
         redis_client.reset_conditions()
         redis_client.reset_smart()
