@@ -110,7 +110,7 @@ def run_incident() -> dict:
                            OBJ_LATENCY_P95_MS, "<=", False, "ticket", "ms"),
             _dashboard_row("quota_saturation_pct", "quota", 55, 98,
                            OBJ_QUOTA_SATURATION_PCT, "<=", False, "ticket", "%"),
-            _dashboard_row("cost_per_request_usd", "cost", 0.0120, 0.0210,
+            _dashboard_row("cost_per_request_usd", "cost", 0.0120, 0.0185,
                            OBJ_COST_PER_REQUEST_USD, "<=", False, "ticket", "$"),
             _dashboard_row("quality_pass_rate_pct", "output_quality", 92.0, 68.0,
                            OBJ_QUALITY_PASS_PCT, ">=", False, "page", "%"),
@@ -171,13 +171,14 @@ def run_incident() -> dict:
     }
 
     # --- Cost drift: tie the extra dollars to a cause --------------------
-    # Baseline $0.0120/req climbs to $0.0210/req (+75%). The delta is two named
+    # Baseline $0.0120/req climbs to $0.0185/req (+54.2%). The delta is two named
     # drivers, and they sum exactly to the gap — no hand-waving.
-    base_pr, curr_pr = 0.0120, 0.0210
-    # Retries hit the expensive degraded primary; the fallback lands on the cheap
-    # econo-mini tier — so per call the retry costs MORE than the fallback, matching
-    # the module's routing economics. Both still sum exactly to the +$0.0090 delta.
-    retries_add, fallback_add = 0.0075, 0.0015
+    base_pr, curr_pr = 0.0120, 0.0185
+    # The retry cap is 3 attempts (BACKOFF_MAX_ATTEMPTS from Clip 3): 1 primary
+    # plus 2 retries, so TWO extra calls on the expensive degraded tier; the
+    # fallback adds one more call on cheap econo-mini. Both sum exactly to the
+    # +$0.0065 delta, and the retry driver stays within the established cap.
+    retries_add, fallback_add = 0.0050, 0.0015
     cost = {
         "baseline_per_request_usd": base_pr,
         "current_per_request_usd": curr_pr,
@@ -187,7 +188,7 @@ def run_incident() -> dict:
         "baseline_window_usd": round(ACCEPTED * base_pr, 4),
         "current_window_usd": round(ACCEPTED * curr_pr, 4),
         "drivers": [
-            {"driver": "retries on balanced-std", "calc": "3 extra calls x $0.0025",
+            {"driver": "retries on balanced-std", "calc": "2 extra calls x $0.0025",
              "detail": "degraded_slow primary retried before failover — each retry "
                        "pays for another call on the expensive tier",
              "add_per_request_usd": retries_add},
@@ -243,7 +244,7 @@ def run_incident() -> dict:
              "action": "keep admission control shedding at the current limit",
              "expected_effect": "429 shed rate falls as failover drains balanced-ai"},
             {"dimension": "cost",
-             "evidence": "+75% per request, driven by retries on balanced-std",
+             "evidence": "+54.2% per request, driven by retries on balanced-std",
              "action": "cap retries and stop retrying the degraded primary",
              "expected_effect": "cost per request back toward $0.0120"},
             {"dimension": "output_quality",

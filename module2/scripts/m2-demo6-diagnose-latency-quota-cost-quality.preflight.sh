@@ -107,21 +107,21 @@ fi
 # STEP 4 — connect model identity, tokens, cost, and quality (cost drift + quality regression)
 step_head "4" "Connect the cost drift and the quality regression to the provider" \
   "Logs and receipts must tie model identity, tokens, and cost to the drift, and sampling must confirm the quality regression — both on the same degraded provider." \
-  "\$0.0120 -> \$0.0210 per request (+75%) reconciled to retries + fallback; pass rate 68% (17/25) vs 92% baseline, clustered on balanced-std."
+  "\$0.0120 -> \$0.0185 per request (+54.2%) reconciled to retries + fallback; pass rate 68% (17/25) vs 92% baseline, clustered on balanced-std."
 show_cmd "curl -s \$API_BASE/incident/cost | python3 scripts/fmt.py --type incident-cost"
 CO="$(curl -s "$API_BASE/incident/cost")"
 emit "$(printf '%s' "$CO" | $FMT --type incident-cost 2>&1)"
 show_cmd "curl -s \$API_BASE/incident/quality | python3 scripts/fmt.py --type incident-quality"
 QR="$(curl -s "$API_BASE/incident/quality")"
 emit "$(printf '%s' "$QR" | $FMT --type incident-quality 2>&1)"
-if echo "$CO" | jq -e '.reconciles==true and .drift_pct==75.0 and (.current_per_request_usd>.objective_per_request_usd) and (.drivers|length>=2) and (.drivers|all(has("add_per_request_usd")))' >/dev/null 2>&1 \
+if echo "$CO" | jq -e '.reconciles==true and .drift_pct==54.2 and (.current_per_request_usd>.objective_per_request_usd) and (.drivers|length>=2) and (.drivers|all(has("add_per_request_usd")))' >/dev/null 2>&1 \
   && echo "$QR" | jq -e '.pass_rate_pct==68.0 and .passed==17 and .failed==8 and .sampled_from==34 and .sample_size==25 and (.pass_rate_pct<.objective_pass_rate_pct) and (.baseline_pass_rate_pct==92.0) and (.failure_reasons|length>=2) and (.cluster|test("balanced-std"))' >/dev/null 2>&1; then
   verdict 0 "cost drift reconciles to retries + fallback, and quality sampling confirms 68% vs 92% — both on balanced-std" "" ""
   LO+=("Step 4: connect model identity, tokens, cost, and quality to the degraded provider (EO3b, EO3c)")
 else
   verdict 1 "the cost drift or the quality regression is wrong" \
     "Check the cost and quality blocks in app/incident/diagnose.py." \
-    "GET /incident/cost must show reconciles=true, drift 75, current above objective, >=2 drivers; GET /incident/quality must show pass_rate 68, 17/8, baseline 92, cluster balanced-std. Fix app/incident/diagnose.py."
+    "GET /incident/cost must show reconciles=true, drift 54.2, current above objective, >=2 drivers; GET /incident/quality must show pass_rate 68, 17/8, baseline 92, cluster balanced-std. Fix app/incident/diagnose.py."
 fi
 
 # STEP 5 — root cause and coordinated action
@@ -150,7 +150,7 @@ emit "      ${GRAY}Step 1 — 4 alerts in fire order (latency first, quality pag
 emit "  ${M} ${WHITE}EO3a${R} ${GRAY}distributed tracing isolates the latency source across the pipeline${R}"
 emit "      ${GRAY}Step 2 — one trace clears queue/retry/fallback and pins provider_call on balanced-ai${R}"
 emit "  ${M} ${WHITE}EO3b${R} ${GRAY}logs and receipts tie model identity, tokens, and cost to the drift${R}"
-emit "      ${GRAY}Step 4 — cost \$0.0120→\$0.0210/req (+75%) from retries + fallback on balanced-std (provider balanced-ai)${R}"
+emit "      ${GRAY}Step 4 — cost \$0.0120→\$0.0185/req (+54.2%) from retries + fallback on balanced-std (provider balanced-ai)${R}"
 emit "  ${M} ${WHITE}EO3c${R} ${GRAY}output quality sampling confirms the regression${R}"
 emit "      ${GRAY}Step 4 — pass rate 68% (17/25) vs 92% baseline, clustered on balanced-std (provider balanced-ai)${R}"
 emit "  ${M} ${WHITE}EO3e${R} ${GRAY}observability data drives one root-cause, evidence-based decision${R}"

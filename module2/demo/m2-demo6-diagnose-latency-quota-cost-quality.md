@@ -118,7 +118,7 @@ four alerts in fire order (`+00:30` latency `ticket`, `+01:10` quota `ticket`,
 `+02:00` cost `ticket`, `+02:40` output quality `page`); then the dashboard —
 ★ `window: 40 requests`, `4 of 4 dimensions breached`, and one row per dimension
 (baseline → current vs objective): `latency` `950ms → 3750ms`, `quota`
-`55% → 98%`, `cost` `$0.0120 → $0.0210`, `output_quality` `92.0% → 68.0%`.
+`55% → 98%`, `cost` `$0.0120 → $0.0185`, `output_quality` `92.0% → 68.0%`.
 
 **What the learner should notice:** Four alerts in two minutes is the moment an
 incident tempts you into the wrong move — splitting the team to chase all four. Read
@@ -126,7 +126,7 @@ the timeline instead: latency fired first at thirty seconds, and the quality bre
 the one that actually pages a human — fired last. The first signal is almost never
 the root cause, it is just the fastest symptom to cross a threshold. Then the
 dashboard turns each alert into a *movement*: latency nearly quadrupled, quota went
-from comfortable to nearly exhausted, cost drifted up three quarters, quality fell
+from comfortable to nearly exhausted, cost drifted up by more than half, quality fell
 twenty-four points. Four dimensions moving together, in the same window, is itself
 the biggest clue in the incident — independent problems do not politely arrive at
 once. When everything breaks at the same instant, suspect one shared cause, and go
@@ -168,7 +168,7 @@ by model`, and `Output quality pass rate (%)`. **Every** panel draws both its
 **baseline** line (grey dashed) and its **objective** line (red) across the graph, so
 a breach reads as the series crossing a line. The series step across in fire order —
 latency `950 → 3750 ms` past `2500`, quota `55 → 98%` past `90`, then balanced-ai cost
-`$0.0120 → $0.0210` past `$0.0150` (with `econo-mini` flat and innocent) and quality
+`$0.0120 → $0.0185` past `$0.0150` (with `econo-mini` flat and innocent) and quality
 `92 → 68%` under `90`. A red **annotation marker** drops on each panel at the instant
 it crosses.
 
@@ -248,15 +248,15 @@ it, then read the quality sampling — and see both land on the same degraded pr
 
 ```bash
 curl -s http://localhost:8000/incident/cost | python3 scripts/fmt.py --type incident-cost \
-  --title "Connect the cost drift and the quality regression to the provider" \
-  --why "The extra dollars tie to retries and failover on the degraded provider — reconciled to the cent"
+  --title "Connect the cost drift to the provider" \
+  --why "The extra dollars tie to retries and failover on the degraded provider, reconciled to the cent"
 curl -s http://localhost:8000/incident/quality | python3 scripts/fmt.py --type incident-quality \
-  --title "Connect the cost drift and the quality regression to the provider" \
-  --why "Grouped failure reasons that cluster on the degraded provider — every failure is a confident, wrong 200"
+  --title "Connect the quality regression to the provider" \
+  --why "Grouped failure reasons that cluster on the degraded provider; every failure is a confident, wrong 200"
 ```
 
 **Expected output:** first the cost — ★ `baseline: $0.0120 /req`, ★ `current:
-$0.0210 /req` (`+75.0%`), drivers `retries on balanced-std +$0.0075 (3 extra calls
+$0.0185 /req` (`+54.2%`), drivers `retries on balanced-std +$0.0050 (2 extra calls
 x $0.0025)` and `fallback overhead +$0.0015 (1 extra call x $0.0015)` — the retry on
 the expensive tier costs more per call than the fallback to cheap econo-mini —
 ★ `reconciles to current: true`; then the quality — ★ `sampled: 25 of 34 accepted (73.5%)`,
@@ -266,9 +266,9 @@ schema invalid ×2`), and ★ `cluster: balanced-std (degraded window)`.
 
 **What the learner should notice:** Cost drift is where teams wave their hands and
 say "traffic must be up." Do not — reconcile it. The two drivers add up to exactly
-the gap, and neither is more traffic: the slow primary gets retried before it fails
-over, and every retry pays for a second call on the balanced tier; the failover adds
-one more. The dollars did not leak, they went somewhere specific — `balanced-ai`.
+the gap, and neither is more traffic: the slow primary is retried twice before it
+fails over (the three-attempt cap), and each retry pays for another call on the
+balanced tier; the failover adds one more. The dollars did not leak, they went somewhere specific — `balanced-ai`.
 Then the quality sample confirms the dimension your infrastructure dashboards can
 never see: every one of the twenty-five responses returned a clean `200`, yet eight
 were wrong anyway, and the failures *cluster* on `balanced-std` during its degraded

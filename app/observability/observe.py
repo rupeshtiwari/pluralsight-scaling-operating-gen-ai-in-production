@@ -196,7 +196,7 @@ _FIRE = {"latency": 30.0, "quota": 70.0, "cost": 120.0, "quality": 160.0}
 # baseline, current (breach), objective — the operator dashboard's three numbers.
 _LAT_BASE, _LAT_CUR, _LAT_OBJ = 950.0, 3750.0, 2500.0
 _QUOTA_BASE, _QUOTA_CUR, _QUOTA_OBJ = 55.0, 98.0, 90.0
-_COST_BASE, _COST_CUR, _COST_OBJ = 0.0120, 0.0210, 0.0150
+_COST_BASE, _COST_CUR, _COST_OBJ = 0.0120, 0.0185, 0.0150
 _ECONO_COST = 0.0050                   # the cheap fallback tier — stays flat
 _QUAL_BASE, _QUAL_CUR, _QUAL_OBJ = 92.0, 68.0, 90.0
 
