@@ -90,7 +90,7 @@ stamps the full release identity, so any answer traces back to the exact prompt,
 model, and evaluation behind it.
 
 ```bash
-cat prompts/registry.yaml                      # the source-controlled manifest, tracked in the repo
+grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*$//'   # source manifest, outline fields only
 curl -s -X POST http://localhost:8000/lifecycle/prompts/run >/dev/null
 curl -s http://localhost:8000/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry \
   --title "Inspect the prompt version registry" \
@@ -100,11 +100,11 @@ curl -s http://localhost:8000/lifecycle/prompts/receipts | python3 scripts/fmt.p
   --why "Every receipt carries the release identity — prompt version, model version, evaluation run, release tag, and result hash"
 ```
 
-**Expected output:** first the **source file** `prompts/registry.yaml` — the raw,
-version-controlled manifest: `prompt_id: support_summary`, `approved_release:
-rel-2026.06`, and three `versions` blocks, each carrying `owner`, `fixture`,
-`model_version`, `eval_run_id`, `release_tag`, and `status`
-(`superseded` / `approved` / `candidate`). Then the same registry read through the
+**Expected output:** first the **source file** `prompts/registry.yaml`
+(comments stripped for a clean read) — the version-controlled manifest:
+`prompt_id: support_summary`, `approved_release: rel-2026.06`, and three `versions`
+blocks, each carrying `owner`, `fixture`, `model_version`, `eval_run_id`,
+`release_tag`, and `status` (`superseded` / `approved` / `candidate`). Then the same registry read through the
 service — ★ `prompt id: support_summary`, ★ `approved release: rel-2026.06`, and three
 versions — `v1.0.0` (`superseded`), `v2.0.0` (`approved`, marked `← approved`), and
 `v3.0.0-rc1` (`candidate`) — each with its model version, eval run id, release tag,

@@ -107,9 +107,9 @@ step_head "1" "Inspect the source-controlled registry and link receipts to relea
   "The registry must be a source-controlled file (prompts/registry.yaml) with owner/fixture/model/eval/release/status, the service must read that same registry, and every receipt must carry the release identity." \
   "the raw prompts/registry.yaml source with full metadata, then the same registry via the service, then six receipts on the approved version."
 # 1a — the source-controlled manifest (a real file in the repo)
-show_cmd "cat prompts/registry.yaml"
+show_cmd "grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*\$//'"
 REGYAML="$ROOT/prompts/registry.yaml"
-[ -f "$REGYAML" ] && emit "${GRAY}$(cat "$REGYAML")${R}"
+[ -f "$REGYAML" ] && emit "${GRAY}$(grep -vE '^[[:space:]]*(#|file:|created:|notes:)' "$REGYAML" | sed -E 's/[[:space:]]+#.*$//')${R}"
 SRC_OK=1
 { [ -f "$REGYAML" ] \
   && grep -q "prompt_id: support_summary" "$REGYAML" \
