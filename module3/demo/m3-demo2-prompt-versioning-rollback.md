@@ -90,14 +90,10 @@ stamps the full release identity, so any answer traces back to the exact prompt,
 model, and evaluation behind it.
 
 ```bash
-grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*$//'   # source manifest, outline fields only
+grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*$//'
 curl -s -X POST http://localhost:8000/lifecycle/prompts/run >/dev/null
-curl -s http://localhost:8000/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry \
-  --title "Inspect the prompt version registry" \
-  --why "Prompts versioned like code — owner, fixture, model pin, eval run, release tag, and status"
-curl -s http://localhost:8000/lifecycle/prompts/receipts | python3 scripts/fmt.py --type lc-prompt-receipts \
-  --title "Link prompt version, model, and eval run to receipts" \
-  --why "Every receipt carries the release identity — prompt version, model version, evaluation run, release tag, and result hash"
+curl -s http://localhost:8000/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry
+curl -s http://localhost:8000/lifecycle/prompts/receipts | python3 scripts/fmt.py --type lc-prompt-receipts
 ```
 
 **Expected output:** first the **source file** `prompts/registry.yaml`
@@ -136,9 +132,7 @@ query.
 approved production traffic never enters.
 
 ```bash
-curl -s http://localhost:8000/lifecycle/prompts/isolation | python3 scripts/fmt.py --type lc-isolation \
-  --title "Deploy the prompt change to an isolated lane" \
-  --why "A candidate enters isolated — approved production traffic never reaches it, so an untested prompt cannot affect a customer"
+curl -s http://localhost:8000/lifecycle/prompts/isolation | python3 scripts/fmt.py --type lc-isolation
 ```
 
 **Expected output:** ★ `candidate: v3.0.0-rc1`, ★ `approved: v2.0.0`, then two
@@ -166,15 +160,9 @@ version with its preserved prompt, fixture, and model and confirm the result has
 matches — proving the rollback is reproducible, not approximate.
 
 ```bash
-curl -s http://localhost:8000/lifecycle/prompts/rollback | python3 scripts/fmt.py --type lc-rollback \
-  --title "Roll back production to the approved release" \
-  --why "The rollback targets a retained, immutable release id — production returns to the approved version with zero candidate traffic"
-curl -s http://localhost:8000/lifecycle/prompts/post-rollback-receipt | python3 scripts/fmt.py --type lc-post-rollback-receipt \
-  --title "Send a fresh request after the rollback" \
-  --why "A new request after the rollback gets a receipt on the approved release — the rollback took effect for live traffic, not just state"
-curl -s http://localhost:8000/lifecycle/prompts/reproducibility | python3 scripts/fmt.py --type lc-reproducibility \
-  --title "Prove the rollback is reproducible" \
-  --why "Preserved prompt, fixture, and model reproduce the same result hash — reproducible, not merely re-run"
+curl -s http://localhost:8000/lifecycle/prompts/rollback | python3 scripts/fmt.py --type lc-rollback
+curl -s http://localhost:8000/lifecycle/prompts/post-rollback-receipt | python3 scripts/fmt.py --type lc-post-rollback-receipt
+curl -s http://localhost:8000/lifecycle/prompts/reproducibility | python3 scripts/fmt.py --type lc-reproducibility
 ```
 
 **Expected output:** first the rollback — ★ `from: v3.0.0-rc1`, ★ `to: v2.0.0
@@ -210,9 +198,7 @@ regenerates the exact same result.
 approved, no candidate traffic reached production, and the result reproduces.
 
 ```bash
-curl -s http://localhost:8000/lifecycle/prompts/reconcile | python3 scripts/fmt.py --type lc-reconcile \
-  --title "Reconcile the release state" \
-  --why "Active release matches approved, no candidate traffic leaked, and the result reproduces — the release state is provable"
+curl -s http://localhost:8000/lifecycle/prompts/reconcile | python3 scripts/fmt.py --type lc-reconcile
 ```
 
 **Expected output:** ★ `disposition: CONFIRMED`, ★ `active release: rel-2026.06`
