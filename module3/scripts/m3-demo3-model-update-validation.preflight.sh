@@ -8,7 +8,7 @@
 #   bash module3/scripts/m3-demo3-model-update-validation.preflight.sh
 #
 # Defaults target Docker Compose on macOS; override with env vars for a native
-# stack: API_BASE, PYTEST (the command that runs pytest, default "python3 -m pytest")
+# stack: API_BASE, PYTEST (the command that runs pytest, default ".venv/bin/python -m pytest")
 #
 # TRANSPORT SAFETY: this script fails LOUDLY and distinctly when the service is
 # unreachable — it never lets a down stack masquerade as a content/logic failure.
@@ -23,7 +23,14 @@ LOG="$ROOT/preflight-logs/m3-demo3-model-update-validation.log"
 : > "$LOG"
 
 API_BASE="${API_BASE:-http://localhost:8000}"
-PYTEST="${PYTEST:-python3 -m pytest}"
+# The course installs the pinned pytest==9.1.1 into the project virtualenv (.venv)
+# via environment-setup/setup.sh — NOT into the system python. Prefer the venv's
+# interpreter so the suite runs the pinned pytest regardless of what `python3`
+# resolves to on the host. Override with PYTEST=... to manage deps differently.
+if [ -z "${PYTEST:-}" ]; then
+  if [ -x "$ROOT/.venv/bin/python" ]; then PYTEST=".venv/bin/python -m pytest"
+  else PYTEST="python3 -m pytest"; fi
+fi
 FMT="python3 $ROOT/scripts/fmt.py"
 
 PINK=$'\033[38;2;255;22;117m'; LIME=$'\033[38;2;2;224;136m'
@@ -90,15 +97,16 @@ transport_fail() {  # $1 = path(s) that failed
     "Bring up FastAPI/Redis/Postgres (bash module3/scripts/demo_up.sh) and re-run. This is a service/transport failure — do NOT edit app/lifecycle/validation.py."
 }
 
-# The baseline gate is a real Pytest suite that runs on the HOST (not in the
-# container). A host that only ran Docker may not have pytest, which would fail
-# Step 1 as a false negative. Ensure it is importable — auto-install if missing —
-# so the gate always runs; returns non-zero only if it truly cannot be provided.
-ensure_pytest() {
-  python3 -c "import pytest" >/dev/null 2>&1 && return 0
-  emit "${GRAY}pytest not found on host — installing it so the baseline gate can run ...${R}"
-  python3 -m pip install --quiet pytest >/dev/null 2>&1 || pip3 install --quiet pytest >/dev/null 2>&1
-  python3 -c "import pytest" >/dev/null 2>&1
+# The baseline gate is a real Pytest suite. It runs via the interpreter in $PYTEST
+# (the project .venv by default, where setup.sh installs the pinned pytest==9.1.1).
+# If that interpreter cannot import pytest, say exactly how to fix it — we never
+# fabricate a pass, and we never silently fall back to a pytest-less "gate".
+check_pytest() {  # returns non-zero and explains if pytest is not importable
+  local pybin="${PYTEST%% -m pytest}"
+  $pybin -c "import pytest" >/dev/null 2>&1 && return 0
+  emit "${GRAY}pytest is not importable via '${pybin}'. The course installs it into the project venv —${R}"
+  emit "${GRAY}  run: ${R}${LGRN}bash environment-setup/setup.sh${R}${GRAY}  (or: python3 -m venv .venv && .venv/bin/python -m pip install pytest==9.1.1)${R}"
+  return 1
 }
 
 banner "MODULE 3 · DEMO — VALIDATE MODEL UPDATES AGAINST QUALITY BASELINES  (LO: EO4b)"
@@ -123,7 +131,7 @@ show_cmd "$PYTEST tests/baseline -q  &&  curl -s \$API_BASE/lifecycle/validation
 # course environment pins pytest==9.1.1 — so run it for real and let its pass BE the
 # evidence. A host that cannot run pytest is a setup gap to fix, never a pass to fake:
 # there is no server-side fallback that fabricates a "suite passed" line.
-ensure_pytest >/dev/null 2>&1 || true
+check_pytest || true
 PYOUT="$($PYTEST tests/baseline -q 2>&1)"; PYRC=$?
 emit "${GRAY}${PYOUT}${R}"
 get_json "/lifecycle/validation/gate" && RAW_GATE="$GET_BODY" || RAW_GATE=""
@@ -150,7 +158,7 @@ else
     LO+=("Step 1: the baseline shows the approved model's values across quality and performance dimensions (EO4b)")
   else
     verdict 1 "the Pytest baseline suite did not pass, or the gate/baseline is wrong" \
-      "Run '$PYTEST tests/baseline -q' — it must exit 0. If pytest is missing, install the pinned version (it is in requirements.txt): pip install pytest==9.1.1. Then check app/lifecycle/validation.py." \
+      "Run '$PYTEST tests/baseline -q' — it must exit 0. If pytest is missing, the course installs it into the project venv: run 'bash environment-setup/setup.sh' (or 'python3 -m venv .venv && .venv/bin/python -m pip install pytest==9.1.1'). Then check app/lifecycle/validation.py." \
       "The recorded clip must show the REAL Pytest suite passing — do not rely on any server-side fallback. Ensure 'python3 -m pytest tests/baseline -q' passes, then GET /lifecycle/validation/gate shows checks=10, gate_enforced true, one eligible + one blocked; GET /lifecycle/validation/baseline lists 5 dimensions each carrying the approved model's value. Fix app/lifecycle/validation.py or the environment."
   fi
 fi

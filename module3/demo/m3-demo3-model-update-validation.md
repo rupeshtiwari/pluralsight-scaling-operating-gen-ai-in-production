@@ -38,7 +38,7 @@ model becomes the default on a hunch.
 
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
-| 1 | `python3 -m pytest tests/baseline` + `/lifecycle/validation/gate` + `/lifecycle/validation/baseline` | The gate is a real, runnable test, and the written criteria a candidate must meet |
+| 1 | `.venv/bin/python -m pytest tests/baseline` + `/lifecycle/validation/gate` + `/lifecycle/validation/baseline` | The gate is a real, runnable test, and the written criteria a candidate must meet |
 | 2 | `/lifecycle/validation/pass` | What clearing every threshold looks like |
 | 3 | `/lifecycle/validation/fail` | How a drift is caught and named |
 | 4 | `/lifecycle/validation/decision` + `/lifecycle/validation/reconcile` | Eligibility is not the same as default, and the default holds until promotion is earned |
@@ -58,6 +58,13 @@ bash environment-setup/setup.sh    # INSTALL — one step: installs everything t
 - **First time on this Mac?** Run the install step once. When it prints `READY`,
   you have everything this clip needs, including Pytest.
 - **Already set up?** The check confirms you're good in seconds.
+
+> **Why the suite runs as `.venv/bin/python -m pytest`:** `setup.sh` installs the
+> pinned `pytest==9.1.1` into the project virtualenv at `.venv/`, not your system
+> Python. Invoking the venv's interpreter directly runs that pinned Pytest with no
+> `pip install` on your host and no dependence on what `python3` resolves to — which
+> is exactly why a bare `pytest` or a Homebrew `python3 -m pytest` can report
+> `command not found` / `No module named pytest` even though the gate is installed.
 
 ### Start the stack
 
@@ -85,7 +92,7 @@ itself, the five dimensions and the floor or ceiling each candidate must respect
 
 ```bash
 curl -s -X POST http://localhost:8000/lifecycle/validation/run >/dev/null
-python3 -m pytest tests/baseline -q
+.venv/bin/python -m pytest tests/baseline -q
 curl -s http://localhost:8000/lifecycle/validation/gate | python3 scripts/fmt.py --type validation-gate \
   --title "Run the baseline gate" \
   --why "A candidate must clear a five-dimension baseline — enforced by a real Pytest suite — before promotion"
