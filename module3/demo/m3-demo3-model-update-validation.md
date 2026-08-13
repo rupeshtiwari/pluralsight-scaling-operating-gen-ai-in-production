@@ -38,7 +38,7 @@ model becomes the default on a hunch.
 
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
-| 1 | `pytest tests/baseline` + `/lifecycle/validation/gate` + `/lifecycle/validation/baseline` | The gate is a real, runnable test, and the written criteria a candidate must meet |
+| 1 | `python3 -m pytest tests/baseline` + `/lifecycle/validation/gate` + `/lifecycle/validation/baseline` | The gate is a real, runnable test, and the written criteria a candidate must meet |
 | 2 | `/lifecycle/validation/pass` | What clearing every threshold looks like |
 | 3 | `/lifecycle/validation/fail` | How a drift is caught and named |
 | 4 | `/lifecycle/validation/decision` + `/lifecycle/validation/reconcile` | Eligibility is not the same as default, and the default holds until promotion is earned |
@@ -85,7 +85,7 @@ itself, the five dimensions and the floor or ceiling each candidate must respect
 
 ```bash
 curl -s -X POST http://localhost:8000/lifecycle/validation/run >/dev/null
-pytest tests/baseline -q
+python3 -m pytest tests/baseline -q
 curl -s http://localhost:8000/lifecycle/validation/gate | python3 scripts/fmt.py --type validation-gate \
   --title "Run the baseline gate" \
   --why "A candidate must clear a five-dimension baseline — enforced by a real Pytest suite — before promotion"
