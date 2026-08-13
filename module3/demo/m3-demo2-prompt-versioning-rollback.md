@@ -90,7 +90,7 @@ stamps the full release identity, so any answer traces back to the exact prompt,
 model, and evaluation behind it.
 
 ```bash
-grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*$//'
+grep -vE '^[[:space:]]*(#|file:|created:|notes:)' prompts/registry.yaml | sed -E 's/[[:space:]]+#.*$//;/^[[:space:]]*$/d'
 curl -s -X POST http://localhost:8000/lifecycle/prompts/run >/dev/null
 curl -s http://localhost:8000/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry
 curl -s http://localhost:8000/lifecycle/prompts/receipts | python3 scripts/fmt.py --type lc-prompt-receipts
@@ -104,9 +104,11 @@ blocks, each carrying `owner`, `fixture`, `model_version`, `eval_run_id`,
 service — ★ `prompt id: support_summary`, ★ `approved release: rel-2026.06`, and three
 versions — `v1.0.0` (`superseded`), `v2.0.0` (`approved`, marked `← approved`), and
 `v3.0.0-rc1` (`candidate`) — each with its model version, eval run id, release tag,
-and a `result hash`. Then the receipts — ★ `approved version: v2.0.0` (`release
-rel-2026.06`) and six receipts, each on `v2.0.0` with model `balanced-std@2026-06`,
-eval run `ev-1042`, release `rel-2026.06`, and the same `result hash`.
+and a `result hash`. Then the receipts, stated compactly because they are identical
+by design — ★ `approved version: v2.0.0` (`release rel-2026.06`), ★ the one identity
+every request carries (`prompt v2.0.0`, `model balanced-std@2026-06`, `eval ev-1042`,
+`release rel-2026.06`), ★ the single `result hash` identical on all, and ★ the six
+requests stamped with it (`req-pv-1001` … `req-pv-1006`).
 
 **What the learner should notice:** This is the whole mindset shift, and it starts in
 the repo: `prompts/registry.yaml` is a real **source-controlled** file — the versions

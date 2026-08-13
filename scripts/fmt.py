@@ -1444,26 +1444,32 @@ def fmt_lc_registry(d: dict) -> str:
                    f"{stc}{st:<12}{RESET}{LGRN}{str(v.get('model_version')):<22}"
                    f"{str(v.get('eval_run_id')):<10}{str(v.get('release_tag')):<18}{RESET}"
                    f"{GRAY}{v.get('result_hash')}{RESET}{tag}")
-        out.append("")
     return "\n".join(out)
 
 
 def fmt_lc_prompt_receipts(d: dict) -> str:
+    # The receipts are identical by design — every approved-production request
+    # carries the SAME prompt version, model, eval run, release, and result hash.
+    # That sameness is the whole point, so state the shared identity once and list
+    # every request id stamped with it, instead of repeating six identical rows.
     out = [header(
-        "Link prompt version, model, and eval run to receipts",
-        "Every request receipt carries the release identity — prompt version, "
-        "model version, evaluation run, release tag, and result hash", width=96)]
+        "Link every request receipt to the approved release",
+        "Every request carries one release identity — prompt version, model "
+        "version, evaluation run, release tag, and result hash", width=96)]
+    receipts = d.get("receipts", [])
     out += _noted("approved version", d.get("approved_version"),
                   f"release {d.get('approved_release')}", LIME)
-    out.append(f"    {BLUE}{'request':<14}{'prompt':<12}{'model':<22}{'eval':<10}"
-               f"{'release':<14}{'result hash'}{RESET}")
-    out.append("")
-    for r in d.get("receipts", []):
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('request_id')):<14}"
-                   f"{str(r.get('prompt_version')):<12}{str(r.get('model_version')):<22}"
-                   f"{str(r.get('eval_run_id')):<10}{str(r.get('release_tag')):<14}{RESET}"
-                   f"{GRAY}{r.get('result_hash')}{RESET}")
-        out.append("")
+    if receipts:
+        r0 = receipts[0]
+        out.append(f"  {PINK}★{RESET} {BLUE}every request carries this identity:{RESET}  "
+                   f"{LGRN}prompt {r0.get('prompt_version')}{RESET} {GRAY}·{RESET} "
+                   f"{LGRN}model {r0.get('model_version')}{RESET} {GRAY}·{RESET} "
+                   f"{LGRN}eval {r0.get('eval_run_id')}{RESET} {GRAY}·{RESET} "
+                   f"{LGRN}release {r0.get('release_tag')}{RESET}")
+        out.append(f"  {PINK}★{RESET} {BLUE}result hash — identical on all:{RESET}  "
+                   f"{GRAY}{r0.get('result_hash')}{RESET}")
+        ids = "  ".join(str(r.get("request_id")) for r in receipts)
+        out.append(f"  {PINK}★{RESET} {BLUE}{len(receipts)} requests stamped:{RESET}  {LGRN}{ids}{RESET}")
     return "\n".join(out)
 
 
