@@ -29,6 +29,19 @@ BASELINE: dict[str, dict] = {
     "contract_compliance_pct": {"threshold": 99.0, "direction": "min", "unit": "%"},
 }
 
+# The approved model's OWN measured values — the reference every candidate is
+# compared against. The approved model clears every threshold (it is in production);
+# a candidate earns promotion by matching or beating these while staying inside the
+# baseline. Showing these makes Step 1 a genuine model-vs-model comparison
+# (approved -> candidate -> threshold), not just candidate-vs-threshold.
+APPROVED_METRICS: dict[str, float] = {
+    "quality_score": 0.91,
+    "latency_p95_ms": 790,
+    "cost_per_1k_usd": 0.34,
+    "failure_rate_pct": 0.7,
+    "contract_compliance_pct": 99.5,
+}
+
 # Candidate measurements (deterministic — the fixed evaluation result per model).
 CANDIDATES: dict[str, dict] = {
     "balanced-std@2026-07": {
@@ -70,6 +83,7 @@ def evaluate(candidate: str) -> list[dict]:
         rows.append({
             "dimension": dim,
             "value": value,
+            "approved": APPROVED_METRICS[dim],
             "threshold": cfg["threshold"],
             "comparator": comparator,
             "unit": cfg["unit"],
@@ -123,7 +137,8 @@ def run_validation() -> dict:
     # Report: both candidates, per-dimension, side by side with the baseline.
     report = {
         "approved_model": APPROVED_MODEL,
-        "baseline": [{"dimension": d, "threshold": BASELINE[d]["threshold"],
+        "baseline": [{"dimension": d, "approved": APPROVED_METRICS[d],
+                      "threshold": BASELINE[d]["threshold"],
                       "comparator": ">=" if BASELINE[d]["direction"] == "min" else "<=",
                       "unit": BASELINE[d]["unit"]} for d in dims],
         "candidates": [gate_pass, gate_fail],
@@ -135,7 +150,8 @@ def run_validation() -> dict:
         {"candidate": passing, "eligible": gate_pass["eligible"],
          "decision": "promote_to_candidate_default", "breaches": gate_pass["breaches"],
          "becomes_default": False,
-         "note": "eligible — cleared every baseline dimension; promoted behind a canary"},
+         "note": "eligible — cleared every baseline dimension; promoted to candidate "
+                 "default, not the production default"},
         {"candidate": failing, "eligible": gate_fail["eligible"],
          "decision": "blocked", "breaches": gate_fail["breaches"],
          "becomes_default": False,
@@ -150,7 +166,8 @@ def run_validation() -> dict:
         "gate_enforced": True,
         "disposition": "CONFIRMED",
         "note": "the default stays on the approved model; only a baseline-passing "
-                "candidate is even eligible, and promotion still goes through a canary",
+                "candidate is even eligible, and the production default does not "
+                "change until a candidate earns it",
     }
 
     _STATE.update({

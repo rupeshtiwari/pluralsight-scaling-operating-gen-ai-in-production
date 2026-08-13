@@ -1616,12 +1616,15 @@ def fmt_validation_baseline(d: dict) -> str:
         "Inspect the baseline thresholds",
         "The approved baseline every candidate is measured against — quality, "
         "latency, cost, failure rate, and contract compliance", width=86)]
-    out += _noted("approved model", d.get("approved_model"), "the reference the gate holds", LIME)
-    out.append(f"    {BLUE}{'dimension':<26}{'objective'}{RESET}")
+    out += _noted("approved model", d.get("approved_model"),
+                  "the reference the gate holds — its own measured values shown below", LIME)
+    out.append(f"    {BLUE}{'dimension':<26}{'approved':<12}{'objective'}{RESET}")
     out.append("")
     for r in d.get("rows", []):
+        appr = _mv(r.get("approved"), r.get("unit", ""))
         obj = f"{r.get('comparator')} {_mv(r.get('threshold'), r.get('unit',''))}"
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<26}{RESET}{BLUE}{obj}{RESET}")
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<26}{RESET}"
+                   f"{LIME}{appr:<12}{RESET}{BLUE}{obj}{RESET}")
         out.append("")
     return "\n".join(out)
 
@@ -1637,15 +1640,16 @@ def fmt_validation_candidate(d: dict) -> str:
     out += star("candidate", d.get("candidate"))
     out += _noted("verdict", "eligible" if el else "blocked",
                   d.get("label"), LIME if el else PINK)
-    out.append(f"    {BLUE}{'dimension':<26}{'value':<12}{'objective':<14}{'status'}{RESET}")
+    out.append(f"    {BLUE}{'dimension':<26}{'approved':<11}{'candidate':<11}{'objective':<14}{'status'}{RESET}")
     out.append("")
     for r in d.get("rows", []):
         ok = r.get("status") == "pass"
         sc = LIME if ok else PINK
+        appr = _mv(r.get("approved"), r.get("unit", ""))
         val = _mv(r.get("value"), r.get("unit", ""))
         obj = f"{r.get('comparator')} {_mv(r.get('threshold'), r.get('unit',''))}"
         out.append(f"  {PINK}★{RESET} {LGRN}{str(r.get('dimension')):<26}"
-                   f"{sc}{val:<12}{RESET}{BLUE}{obj:<14}{RESET}{sc}{r.get('status')}{RESET}")
+                   f"{GRAY}{appr:<11}{RESET}{sc}{val:<11}{RESET}{BLUE}{obj:<14}{RESET}{sc}{r.get('status')}{RESET}")
         out.append("")
     if not el:
         out += _noted("breaches", ", ".join(d.get("breaches", [])), "must be fixed before promotion", PINK)

@@ -98,9 +98,11 @@ curl -s http://localhost:8000/lifecycle/validation/baseline | python3 scripts/fm
 model: balanced-std@2026-06`, ★ `checks: 10` (`5 dimensions × 2 candidates`), and
 the two candidates — `balanced-std@2026-07` `eligible`, `econo-fast@2026-07`
 `blocked (4 breaches)` — with ★ `gate enforced: true`. Then the baseline itself —
-★ `approved model: balanced-std@2026-06`, and five objectives — `quality_score >= 0.9`,
-`latency_p95_ms <= 800ms`, `cost_per_1k_usd <= $0.35`, `failure_rate_pct <= 1.0%`, and
-`contract_compliance_pct >= 99.0%`.
+★ `approved model: balanced-std@2026-06`, and five dimensions, each showing the
+**approved model's own measured value** against its floor or ceiling: quality `0.91`
+(`>= 0.90`), latency `790ms` (`<= 800ms`), cost `$0.34` (`<= $0.35`), failure `0.7%`
+(`<= 1.0%`), and contract `99.5%` (`>= 99.0%`) — the approved model clears every
+threshold, which is why it holds the production default.
 
 **What the learner should notice:** The most important thing on this screen is that
 the gate is a *test*, not a spreadsheet. When Pytest goes green, it is asserting the
@@ -115,7 +117,10 @@ threshold — and three are ceilings — latency, cost, and failure rate must be
 theirs. That mix is the point. A model can win on cost and still lose the release by
 being slow or off-contract. The baseline refuses to let one good number paper over a
 bad one, and that is exactly the discipline that keeps a model swap from becoming a
-regression.
+regression. And notice you are not measuring against an abstract limit alone: the
+approved model's *own* five numbers are on screen, so when you read each candidate's
+scorecard next you are comparing model to model — approved → candidate → threshold —
+not model to a bare line in the sand.
 
 ### Step 2: Validate the passing candidate
 
@@ -129,8 +134,10 @@ curl -s http://localhost:8000/lifecycle/validation/pass | python3 scripts/fmt.py
 ```
 
 **Expected output:** ★ `candidate: balanced-std@2026-07`, ★ `verdict: eligible`, then
-five rows all `pass` — quality `0.93 >= 0.9`, latency `760ms <= 800ms`, cost `$0.32
-<= $0.35`, failure `0.4% <= 1.0%`, contract `100.0% >= 99.0%`.
+five rows all `pass`, each read as **approved → candidate → objective**: quality
+`0.91 → 0.93` (`>= 0.90`), latency `790 → 760ms` (`<= 800ms`), cost `$0.34 → $0.32`
+(`<= $0.35`), failure `0.7 → 0.4%` (`<= 1.0%`), contract `99.5 → 100.0%` (`>= 99.0%`) —
+the candidate matches or beats the approved model on every dimension.
 
 **What the learner should notice:** This is what earning a promotion looks like:
 every single row is green, with real margin on each one. Notice it is not close — the
@@ -152,9 +159,11 @@ curl -s http://localhost:8000/lifecycle/validation/fail | python3 scripts/fmt.py
 ```
 
 **Expected output:** ★ `candidate: econo-fast@2026-07`, ★ `verdict: blocked`, then the
-rows — quality `0.86` breach, latency `900ms` breach, cost `$0.30` pass, failure
-`2.1%` breach, contract `96.5%` breach — and ★ `breaches: quality_score,
-latency_p95_ms, failure_rate_pct, contract_compliance_pct`.
+rows as **approved → candidate → objective**: quality `0.91 → 0.86` breach, latency
+`790 → 900ms` breach, cost `$0.34 → $0.30` pass, failure `0.7 → 2.1%` breach, contract
+`99.5 → 96.5%` breach — and ★ `breaches: quality_score, latency_p95_ms,
+failure_rate_pct, contract_compliance_pct`. Cost is the only dimension where this
+candidate beats the approved model — cheaper, but worse on the other four.
 
 **What the learner should notice:** This is the model that "felt fast," and the
 scorecard shows why fast is not enough. Cost passes — it is genuinely cheaper — but it
@@ -177,7 +186,7 @@ curl -s http://localhost:8000/lifecycle/validation/decision | python3 scripts/fm
   --why "Promote the candidate that cleared the baseline, block the one that did not — neither becomes the default without passing"
 curl -s http://localhost:8000/lifecycle/validation/reconcile | python3 scripts/fmt.py --type validation-reconcile \
   --title "Reconcile the release state" \
-  --why "The default stays on the approved model; only a baseline-passing candidate is eligible, and promotion still goes through a canary"
+  --why "The default stays on the approved model; only a baseline-passing candidate is eligible for promotion, and the production default does not change until one earns it"
 ```
 
 **Expected output:** first the decision — `balanced-std@2026-07` →
@@ -190,18 +199,18 @@ true`.
 
 **What the learner should notice:** Here is the subtlety that separates a mature
 release process from a naive one: passing the baseline makes a candidate *eligible*,
-not *live*. The passing model is promoted — but `becomes default` is `false`, because
-it still has to prove itself under real traffic. Clearing an offline baseline earns a
-candidate the right to a canary, not a coronation. The failing model is blocked
-outright. Two candidates, two decisions, and neither one flips the production default.
-The reconciliation makes that safety property explicit: the disposition is
-`CONFIRMED`, and read what it is confirming: production never moved. Through this
-entire evaluation — a passing candidate, a failing candidate, two decisions — the
-default stayed on the approved model. A model update process should be boring from
-production's point of view: candidates are measured, some earn a canary, some are
-sent back, and the live default does not budge until a candidate has earned it through
-the baseline and the canary that follows. The gate is enforced by a test, the default
-is protected by policy, and nothing ships on a hunch.
+not *live*. The passing model is promoted to candidate default — but `becomes default`
+is `false`, because eligibility is not the same as being the production default.
+Clearing the baseline earns a candidate the right to move forward, not a coronation.
+The failing model is blocked outright. Two candidates, two decisions, and neither one
+flips the production default. The reconciliation makes that safety property explicit:
+the disposition is `CONFIRMED`, and read what it is confirming: production never moved.
+Through this entire evaluation — a passing candidate, a failing candidate, two
+decisions — the default stayed on the approved model. A model update process should be
+boring from production's point of view: candidates are measured, some become eligible,
+some are sent back, and the live default does not budge until a candidate has earned it
+against the baseline. The gate is enforced by a test, the default is protected by
+policy, and nothing ships on a hunch.
 
 ## Preflight check
 

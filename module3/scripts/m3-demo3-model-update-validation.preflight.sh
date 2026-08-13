@@ -119,15 +119,13 @@ step_head "1" "Run the baseline gate (Pytest) and inspect the thresholds" \
   "The gate must be a real automated test, not a claim — run the Pytest baseline suite — and the baseline must cover quality, latency, cost, failure rate, and contract compliance." \
   "the Pytest suite passes and the gate marks one candidate eligible and one blocked, then five dimensions each with its objective (a min floor or a max ceiling)."
 show_cmd "$PYTEST tests/baseline -q  &&  curl -s \$API_BASE/lifecycle/validation/gate | python3 scripts/fmt.py --type validation-gate"
-if ensure_pytest; then
-  PYOUT="$($PYTEST tests/baseline -q 2>&1)"; PYRC=$?
-  emit "${GRAY}${PYOUT}${R}"
-else
-  # pytest could not be provided on this host; validate the identical gate
-  # server-side (app/lifecycle/validation.py) instead of failing falsely.
-  PYRC=0
-  emit "${GRAY}pytest is unavailable on this host and could not be installed — validating the gate via /lifecycle/validation/gate (the same criteria, enforced server-side). To run the suite locally: pip install pytest.${R}"
-fi
+# The baseline gate is a REAL Pytest suite. The outline requires it to RUN, and the
+# course environment pins pytest==9.1.1 — so run it for real and let its pass BE the
+# evidence. A host that cannot run pytest is a setup gap to fix, never a pass to fake:
+# there is no server-side fallback that fabricates a "suite passed" line.
+ensure_pytest >/dev/null 2>&1 || true
+PYOUT="$($PYTEST tests/baseline -q 2>&1)"; PYRC=$?
+emit "${GRAY}${PYOUT}${R}"
 get_json "/lifecycle/validation/gate" && RAW_GATE="$GET_BODY" || RAW_GATE=""
 [ -n "$RAW_GATE" ] && emit "$(printf '%s' "$RAW_GATE" | $FMT --type validation-gate 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/validation/baseline | python3 scripts/fmt.py --type validation-baseline"
@@ -137,27 +135,23 @@ if [ -z "$RAW_GATE" ] || [ -z "$RAW_BASE" ]; then
   transport_fail "/lifecycle/validation/gate or /baseline"
 else
   GATE_OK=1; BASE_OK=1
-  # The gate's correctness is the SERVER-SIDE truth: /lifecycle/validation/gate
-  # (app/lifecycle/validation.py) reports checks=10, enforced, one eligible + one
-  # blocked. The Pytest suite exercises the SAME criteria as a local test — shown
-  # as evidence, but a host that cannot run pytest must not fail this step
-  # falsely. Any real logic breakage still fails here, because the server gate
-  # uses the same validation.py the tests cover.
   echo "$RAW_GATE" | jq -e '.checks==10 and .gate_enforced==true and ([.candidates[].eligible]|(index(true) and index(false)))' >/dev/null 2>&1 || GATE_OK=0
-  echo "$RAW_BASE" | jq -e '(.rows|length==5) and ([.rows[].dimension]|(index("quality_score") and index("latency_p95_ms") and index("cost_per_1k_usd") and index("failure_rate_pct") and index("contract_compliance_pct")))' >/dev/null 2>&1 || BASE_OK=0
+  echo "$RAW_BASE" | jq -e '(.rows|length==5) and (.rows|all(has("approved"))) and ([.rows[].dimension]|(index("quality_score") and index("latency_p95_ms") and index("cost_per_1k_usd") and index("failure_rate_pct") and index("contract_compliance_pct")))' >/dev/null 2>&1 || BASE_OK=0
+  # Pytest must ACTUALLY pass — it is the gate the outline requires, not decoration.
+  # Step 1 passes only if the real suite is green AND the gate/baseline are correct.
   if [ "$PYRC" = "0" ]; then
     emit "  ${LIME}Pytest baseline gate: suite passed — the promotion criteria are enforced as code.${R}"
   else
-    emit "  ${GRAY}Pytest baseline gate: the suite could not run on this host (pytest rc=$PYRC — an environment issue, e.g. pytest not installed). The identical gate is validated server-side below; run 'pip install pytest' to execute the suite locally.${R}"
+    emit "  ${PINK}Pytest baseline gate: the suite did NOT pass (pytest rc=$PYRC) — the recorded clip must show it green before you record.${R}"
   fi
-  if [ "$GATE_OK" = "1" ] && [ "$BASE_OK" = "1" ]; then
-    verdict 0 "the model-update gate is enforced (checks=10, one candidate eligible and one blocked) and the baseline covers quality, latency, cost, failure rate, and contract compliance" "" ""
-    LO+=("Step 1: the baseline gate enforces the promotion criteria as code (EO4b)")
-    LO+=("Step 1: the baseline spans quality and performance dimensions (EO4b)")
+  if [ "$PYRC" = "0" ] && [ "$GATE_OK" = "1" ] && [ "$BASE_OK" = "1" ]; then
+    verdict 0 "the real Pytest baseline suite passed, the gate is enforced (checks=10, one candidate eligible and one blocked), and the baseline shows the approved model's values across quality, latency, cost, failure rate, and contract compliance" "" ""
+    LO+=("Step 1: a real Pytest suite enforces the promotion criteria as code (EO4b)")
+    LO+=("Step 1: the baseline shows the approved model's values across quality and performance dimensions (EO4b)")
   else
-    verdict 1 "the gate summary is wrong or the baseline dimensions are wrong" \
-      "Check the gate and BASELINE in app/lifecycle/validation.py (optionally run '$PYTEST tests/baseline -q')." \
-      "GET /lifecycle/validation/gate must show checks=10, gate_enforced true, one eligible + one blocked candidate; GET /lifecycle/validation/baseline must list 5 dimensions: quality_score, latency_p95_ms, cost_per_1k_usd, failure_rate_pct, contract_compliance_pct. Fix app/lifecycle/validation.py."
+    verdict 1 "the Pytest baseline suite did not pass, or the gate/baseline is wrong" \
+      "Run '$PYTEST tests/baseline -q' — it must exit 0. If pytest is missing, install the pinned version (it is in requirements.txt): pip install pytest==9.1.1. Then check app/lifecycle/validation.py." \
+      "The recorded clip must show the REAL Pytest suite passing — do not rely on any server-side fallback. Ensure 'python3 -m pytest tests/baseline -q' passes, then GET /lifecycle/validation/gate shows checks=10, gate_enforced true, one eligible + one blocked; GET /lifecycle/validation/baseline lists 5 dimensions each carrying the approved model's value. Fix app/lifecycle/validation.py or the environment."
   fi
 fi
 
@@ -171,7 +165,7 @@ if [ -z "$RAW" ]; then
   transport_fail "/lifecycle/validation/pass"
 else
   emit "$(printf '%s' "$RAW" | $FMT --type validation-candidate 2>&1)"
-  if echo "$RAW" | jq -e '.eligible==true and (.breaches|length==0) and (.rows|all(.status=="pass"))' >/dev/null 2>&1; then
+  if echo "$RAW" | jq -e '.eligible==true and (.breaches|length==0) and (.rows|all(.status=="pass")) and (.rows|all(has("approved")))' >/dev/null 2>&1; then
     verdict 0 "the passing candidate clears every baseline dimension and is eligible" "" ""
     LO+=("Step 2: a candidate within thresholds is eligible for promotion (EO4b)")
   else
@@ -191,7 +185,7 @@ if [ -z "$RAW" ]; then
   transport_fail "/lifecycle/validation/fail"
 else
   emit "$(printf '%s' "$RAW" | $FMT --type validation-candidate 2>&1)"
-  if echo "$RAW" | jq -e '.eligible==false and ([.breaches[]]|(index("quality_score") and index("latency_p95_ms") and index("failure_rate_pct") and index("contract_compliance_pct")))' >/dev/null 2>&1; then
+  if echo "$RAW" | jq -e '.eligible==false and (.rows|all(has("approved"))) and ([.breaches[]]|(index("quality_score") and index("latency_p95_ms") and index("failure_rate_pct") and index("contract_compliance_pct")))' >/dev/null 2>&1; then
     verdict 0 "the failing candidate is blocked on quality, latency, failure rate, and contract drift" "" ""
     LO+=("Step 3: a candidate that breaches any dimension is blocked (EO4b)")
   else
@@ -218,7 +212,7 @@ else
   echo "$RAW_DEC" | jq -e '(.decisions|length==2) and (.decisions|all(.becomes_default==false)) and (.decisions[]|select(.candidate=="econo-fast@2026-07").decision=="blocked") and (.decisions[]|select(.candidate=="balanced-std@2026-07").eligible==true)' >/dev/null 2>&1 || DEC_OK=0
   echo "$RAW_REC" | jq -e '.disposition=="CONFIRMED" and .default_unchanged==true and .gate_enforced==true and ([.eligible_candidates[]]|index("balanced-std@2026-07")) and ([.blocked_candidates[]]|index("econo-fast@2026-07"))' >/dev/null 2>&1 || REC_OK=0
   if [ "$DEC_OK" = "1" ] && [ "$REC_OK" = "1" ]; then
-    verdict 0 "the passing candidate is promoted (behind a canary), the failing one blocked, neither is default yet; the default stays on the approved model and only the baseline-passing candidate is eligible" "" ""
+    verdict 0 "the passing candidate is promoted to candidate default (eligible, not the production default), the failing one blocked, neither is the default; the default stays on the approved model and only the baseline-passing candidate is eligible" "" ""
     LO+=("Step 4: a candidate cannot become the default without passing the baseline (EO4b)")
     LO+=("Step 4: the release state reconciles with the gate enforced (EO4b)")
   else
