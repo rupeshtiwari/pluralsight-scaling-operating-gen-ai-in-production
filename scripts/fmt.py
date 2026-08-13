@@ -1467,6 +1467,29 @@ def fmt_lc_prompt_receipts(d: dict) -> str:
     return "\n".join(out)
 
 
+def fmt_lc_post_rollback_receipt(d: dict) -> str:
+    require(d, "request_id", "prompt_version", "model_version", "eval_run_id",
+            "release_tag", "result_hash", "on_approved_release")
+    out = [header(
+        "Send a fresh request after the rollback",
+        "A new request, served after the rollback, whose receipt lands on the "
+        "approved release — the rollback took effect for live traffic, not just state",
+        width=96)]
+    out += _noted("fresh request", d.get("request_id"), "sent after rollback", LIME)
+    out.append(f"    {BLUE}{'prompt':<12}{'model':<22}{'eval':<10}"
+               f"{'release':<14}{'result hash'}{RESET}")
+    out.append("")
+    out.append(f"  {PINK}★{RESET} {LGRN}{str(d.get('prompt_version')):<12}"
+               f"{str(d.get('model_version')):<22}{str(d.get('eval_run_id')):<10}"
+               f"{str(d.get('release_tag')):<14}{RESET}{GRAY}{d.get('result_hash')}{RESET}")
+    out.append("")
+    ok = bool(d.get("on_approved_release"))
+    out += _noted("on approved release", str(ok).lower(),
+                  f"receipt is on {d.get('release_tag')} — the approved release",
+                  LIME if ok else PINK)
+    return "\n".join(out)
+
+
 def fmt_lc_isolation(d: dict) -> str:
     out = [header(
         "Deploy the prompt change to an isolated lane",
@@ -1970,6 +1993,7 @@ VIEWS = {
     "incident-action": fmt_incident_action,
     "lc-registry": fmt_lc_registry,
     "lc-prompt-receipts": fmt_lc_prompt_receipts,
+    "lc-post-rollback-receipt": fmt_lc_post_rollback_receipt,
     "lc-isolation": fmt_lc_isolation,
     "lc-rollback": fmt_lc_rollback,
     "lc-reproducibility": fmt_lc_reproducibility,

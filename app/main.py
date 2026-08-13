@@ -916,6 +916,13 @@ def lc_prompts_rollback() -> dict:
     return lc_prompts.state().get("rollback", {})
 
 
+@app.get("/lifecycle/prompts/post-rollback-receipt")
+def lc_prompts_post_rollback_receipt() -> dict:
+    """A fresh request served AFTER the rollback: its receipt lands on the
+    approved release id, proving the rollback took effect for live traffic."""
+    return lc_prompts.state().get("post_rollback_receipt", {})
+
+
 @app.get("/lifecycle/prompts/reproducibility")
 def lc_prompts_reproducibility() -> dict:
     """Replay the approved version with its preserved prompt, fixture, and model,

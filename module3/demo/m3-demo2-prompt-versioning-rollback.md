@@ -14,13 +14,14 @@ prompt change traceable, isolate an untested change from customers, and roll bac
 to a known-good release that reproduces exactly?
 
 **What you will see:** Four moves that turn prompts into managed releases — the
-version registry where each prompt version carries an owner, a fixture, a model
-pin, an evaluation run, a release tag, and a lifecycle status, and the receipts that
-stamp that release identity onto every request; a candidate change deployed into an
-isolated lane that approved production traffic never touches; a rollback that returns
-production to the approved release id and a reproducibility proof where the preserved
-prompt, fixture, and model regenerate the exact same result hash; and the
-reconciliation that shows the release state is provable, not hoped for.
+source-controlled `prompts/registry.yaml` where each version carries an owner, a
+fixture, a model pin, an evaluation run, a release tag, and a lifecycle status, and
+the receipts that stamp that release identity onto every request; a candidate change
+deployed into an isolated lane that approved production traffic never touches; a
+rollback that returns production to the approved release id, a fresh post-rollback
+request whose receipt lands on that approved release, and a reproducibility proof
+where the preserved prompt, fixture, and model regenerate the exact same result hash;
+and the reconciliation that shows the release state is provable, not hoped for.
 
 **What you walk away with:** Prompt version control that enables reproducible
 experiments and safe rollback (EO4a) — the foundation of managing the operational
@@ -30,18 +31,18 @@ lifecycle of prompts and models (TO4).
 
 | Step | LO sub-element | What proves it |
 |------|----------------|----------------|
-| 1 | EO4a | Prompts are versioned like code — owner, fixture, model pin, eval run, release, status — and every request receipt links a prompt version, model version, and evaluation run id |
+| 1 | EO4a | The source-controlled `prompts/registry.yaml` versions prompts like code — owner, fixture, model pin, eval run, release, status — and every request receipt links a prompt version, model version, and evaluation run id |
 | 2 | EO4a | A candidate change is isolated so approved production traffic never reaches it |
-| 3 | EO4a | A rollback returns production to the approved release id, and the preserved prompt, fixture, and model reproduce the exact result hash |
+| 3 | EO4a | A rollback returns production to the approved release id, a fresh post-rollback request's receipt lands on that approved release, and the preserved prompt, fixture, and model reproduce the exact result hash |
 | 4 | TO4, EO4a | The release state reconciles to a provable, approved production state |
 
 ## What this demo proves — and each step is unique
 
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
-| 1 | `/lifecycle/prompts/registry` + `/receipts` | A prompt version is a release with metadata, and every request carries that release identity |
+| 1 | `prompts/registry.yaml` + `/registry` + `/receipts` | The registry is a source-controlled file; every version is a release with metadata, and every request carries that release identity |
 | 2 | `/lifecycle/prompts/isolation` | A candidate change reaches zero customers |
-| 3 | `/lifecycle/prompts/rollback` + `/reproducibility` | Rollback targets a retained, immutable release that reproduces the exact result |
+| 3 | `/lifecycle/prompts/rollback` + `/post-rollback-receipt` + `/reproducibility` | Rollback returns to a retained release, fresh traffic lands on it, and it reproduces the exact result |
 | 4 | `/lifecycle/prompts/reconcile` | The production release state is provable |
 
 ## Prerequisites
@@ -79,14 +80,17 @@ files the service reads. Reset before you start:
 
 ## Demo steps
 
-### Step 1: Inspect the version registry and link receipts to releases
+### Step 1: Inspect the source-controlled registry and link receipts to releases
 
-**Goal:** Read the prompt repository and see each version as a release — with its
-owner, fixture, model pin, evaluation run, release tag, and lifecycle status — then
-confirm every request receipt stamps that full release identity, so any answer can
-be traced back to the exact prompt, model, and evaluation behind it.
+**Goal:** Show the prompt repository is *source-controlled* — read the real
+`prompts/registry.yaml` manifest so each version's owner, fixture, model pin,
+evaluation run, release tag, and status are visible as versioned files in the repo —
+then read that same registry through the service and confirm every request receipt
+stamps the full release identity, so any answer traces back to the exact prompt,
+model, and evaluation behind it.
 
 ```bash
+cat prompts/registry.yaml                      # the source-controlled manifest, tracked in the repo
 curl -s -X POST http://localhost:8000/lifecycle/prompts/run >/dev/null
 curl -s http://localhost:8000/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry \
   --title "Inspect the prompt version registry" \
@@ -96,16 +100,23 @@ curl -s http://localhost:8000/lifecycle/prompts/receipts | python3 scripts/fmt.p
   --why "Every receipt carries the release identity — prompt version, model version, evaluation run, release tag, and result hash"
 ```
 
-**Expected output:** first the registry — ★ `prompt id: support_summary`, ★ `approved
-release: rel-2026.06`, then three versions — `v1.0.0` (`superseded`), `v2.0.0`
-(`approved`, marked `← approved`), and `v3.0.0-rc1` (`candidate`) — each with its
-model version, eval run id, release tag, and a `result hash`. Then the receipts —
-★ `approved version: v2.0.0` (`release rel-2026.06`) and six receipts, each on
-`v2.0.0` with model `balanced-std@2026-06`, eval run `ev-1042`, release
-`rel-2026.06`, and the same `result hash`.
+**Expected output:** first the **source file** `prompts/registry.yaml` — the raw,
+version-controlled manifest: `prompt_id: support_summary`, `approved_release:
+rel-2026.06`, and three `versions` blocks, each carrying `owner`, `fixture`,
+`model_version`, `eval_run_id`, `release_tag`, and `status`
+(`superseded` / `approved` / `candidate`). Then the same registry read through the
+service — ★ `prompt id: support_summary`, ★ `approved release: rel-2026.06`, and three
+versions — `v1.0.0` (`superseded`), `v2.0.0` (`approved`, marked `← approved`), and
+`v3.0.0-rc1` (`candidate`) — each with its model version, eval run id, release tag,
+and a `result hash`. Then the receipts — ★ `approved version: v2.0.0` (`release
+rel-2026.06`) and six receipts, each on `v2.0.0` with model `balanced-std@2026-06`,
+eval run `ev-1042`, release `rel-2026.06`, and the same `result hash`.
 
-**What the learner should notice:** This is the whole mindset shift in one screen: a
-prompt is a *release*, not a string you paste. Every version has an owner who is
+**What the learner should notice:** This is the whole mindset shift, and it starts in
+the repo: `prompts/registry.yaml` is a real **source-controlled** file — the versions
+are immutable files under `prompts/`, tracked in git like code, and the manifest
+records the metadata that makes an experiment reproducible. A prompt is a *release*,
+not a string you paste. Every version has an owner who is
 accountable, a fixture it was tested against, the exact model it was pinned to, the
 evaluation run that graded it, and a release tag you can name in an incident. One
 version — `v2.0.0` — is marked approved, and that single flag is the source of truth
@@ -148,14 +159,19 @@ a control.
 ### Step 3: Roll back to the approved release and prove it reproduces
 
 **Goal:** Roll the candidate back so production returns to the approved release id —
-targeting a version that was retained, not reconstructed — then replay that version
-with its preserved prompt, fixture, and model and confirm the result hash matches,
-proving the rollback is reproducible, not approximate.
+targeting a version that was retained, not reconstructed — then send one fresh request
+and show its receipt lands on the approved release (proving the rollback took effect
+for live traffic, not just the stored pointer), and finally replay the approved
+version with its preserved prompt, fixture, and model and confirm the result hash
+matches — proving the rollback is reproducible, not approximate.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/prompts/rollback | python3 scripts/fmt.py --type lc-rollback \
   --title "Roll back production to the approved release" \
   --why "The rollback targets a retained, immutable release id — production returns to the approved version with zero candidate traffic"
+curl -s http://localhost:8000/lifecycle/prompts/post-rollback-receipt | python3 scripts/fmt.py --type lc-post-rollback-receipt \
+  --title "Send a fresh request after the rollback" \
+  --why "A new request after the rollback gets a receipt on the approved release — the rollback took effect for live traffic, not just state"
 curl -s http://localhost:8000/lifecycle/prompts/reproducibility | python3 scripts/fmt.py --type lc-reproducibility \
   --title "Prove the rollback is reproducible" \
   --why "Preserved prompt, fixture, and model reproduce the same result hash — reproducible, not merely re-run"
@@ -163,17 +179,23 @@ curl -s http://localhost:8000/lifecycle/prompts/reproducibility | python3 script
 
 **Expected output:** first the rollback — ★ `from: v3.0.0-rc1`, ★ `to: v2.0.0
 (rel-2026.06)`, ★ `active release after: rel-2026.06`, ★ `candidate in production
-after: 0`, with the retained versions listed. Then the reproducibility proof —
-★ `version: v2.0.0`, ★ `recorded result hash` and ★ `replayed result hash` —
-identical — and ★ `reproducible: true`, with the preserved inputs listed
-(`prompt_text`, `fixture`, `model_version`, `result_hash`).
+after: 0`, with the retained versions listed. Then the fresh post-rollback receipt —
+★ `fresh request: req-pv-1007` (`sent after rollback`), on `v2.0.0` with model
+`balanced-std@2026-06`, eval `ev-1042`, release `rel-2026.06`, and ★ `on approved
+release: true`. Then the reproducibility proof — ★ `version: v2.0.0`, ★ `recorded
+result hash` and ★ `replayed result hash` — identical — and ★ `reproducible: true`,
+with the preserved inputs listed (`prompt_text`, `fixture`, `model_version`,
+`result_hash`).
 
 **What the learner should notice:** Watch what rollback actually means here. It is
 not "retype the old prompt and hope" — it is a pointer move back to a release id that
 still exists, byte for byte, in the registry. The candidate is withdrawn but
 retained, so nothing is lost and the history stays intact; the active release returns
-to `rel-2026.06` and candidate traffic in production is zero. Then the second half
-separates a real rollback from a superstitious one: anyone can re-run an old prompt,
+to `rel-2026.06` and candidate traffic in production is zero. But state alone is not
+proof — so a fresh request goes out *after* the rollback, and its receipt
+(`req-pv-1007`) lands on the approved release `rel-2026.06`, showing the rollback took
+effect for live traffic, not just a stored pointer. Then the last part separates a
+real rollback from a superstitious one: anyone can re-run an old prompt,
 but the question is whether you get the *same thing back*. Here the recorded hash and
 the replayed hash are identical and `reproducible` is `true`, and that works only
 because the release preserved everything that determines the output — prompt text,
@@ -231,7 +253,8 @@ TO4 / EO4a, and writes a readable log to `preflight-logs/m3-demo2-prompt-version
   registry, receipts, isolation, rollback, reproducibility, and reconcile state
 - `app/main.py` — the `/lifecycle/prompts/run`, `/lifecycle/prompts/registry`,
   `/lifecycle/prompts/receipts`, `/lifecycle/prompts/isolation`,
-  `/lifecycle/prompts/rollback`, `/lifecycle/prompts/reproducibility`, and
-  `/lifecycle/prompts/reconcile` endpoints
-- `scripts/fmt.py` — the `lc-registry` / `lc-prompt-receipts` / `lc-isolation` /
-  `lc-rollback` / `lc-reproducibility` / `lc-reconcile` views
+  `/lifecycle/prompts/rollback`, `/lifecycle/prompts/post-rollback-receipt`,
+  `/lifecycle/prompts/reproducibility`, and `/lifecycle/prompts/reconcile` endpoints
+- `scripts/fmt.py` — the `lc-registry` / `lc-prompt-receipts` /
+  `lc-post-rollback-receipt` / `lc-isolation` / `lc-rollback` /
+  `lc-reproducibility` / `lc-reconcile` views

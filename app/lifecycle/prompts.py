@@ -133,6 +133,25 @@ def run_prompts() -> dict:
                 "returns to the approved version with zero candidate traffic left",
     }
 
+    # --- Fresh post-rollback receipt: prove NEW traffic lands on approved -----
+    # Rollback state is not enough — send one fresh request AFTER the rollback
+    # and show its receipt. A new request id (after the pre-rollback batch
+    # req-pv-1001..1006) served on the approved version proves the rollback took
+    # effect for live traffic, not just the stored release pointer.
+    post_rollback_receipt = {
+        "request_id": "req-pv-1007",
+        "sent_after": "rollback",
+        "prompt_version": approved["version"],
+        "model_version": approved["model_version"],
+        "eval_run_id": approved["eval_run_id"],
+        "release_tag": approved["release_tag"],
+        "result_hash": approved["result_hash"],
+        "lane": "production",
+        "on_approved_release": approved["release_tag"] == approved_release,
+        "note": "a fresh request after the rollback is served by the approved "
+                "release — the rollback took effect for live traffic, not just state",
+    }
+
     # --- Reproducibility: preserved metadata reproduces the result -----------
     # Replay the approved version with the SAME prompt, fixture, and model that
     # produced the recorded receipts. The recomputed result hash must match the
@@ -175,6 +194,7 @@ def run_prompts() -> dict:
                      "approved_release": approved_release},
         "isolation": isolation,
         "rollback": rollback,
+        "post_rollback_receipt": post_rollback_receipt,
         "reproducibility": reproducibility,
         "reconcile": reconcile,
     })

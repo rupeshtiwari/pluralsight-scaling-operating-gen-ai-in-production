@@ -102,13 +102,28 @@ if [ "$SEED_CODE" != "200" ]; then
   exit 2
 fi
 
-# STEP 1 — registry + receipts (versioned like code, and every receipt links the release identity)
-step_head "1" "Inspect the version registry and link receipts to releases" \
-  "Prompts must be versioned like code with owner/fixture/model/eval/release/status, and every receipt must carry that release identity." \
-  "three versions — superseded, approved, candidate — with metadata and hash, then six receipts on the approved version carrying model, eval run, release, and hash."
-show_cmd "curl -s -X POST \$API_BASE/lifecycle/prompts/run >/dev/null; curl -s \$API_BASE/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry"
+# STEP 1 — source-controlled registry.yaml + runtime registry + receipts
+step_head "1" "Inspect the source-controlled registry and link receipts to releases" \
+  "The registry must be a source-controlled file (prompts/registry.yaml) with owner/fixture/model/eval/release/status, the service must read that same registry, and every receipt must carry the release identity." \
+  "the raw prompts/registry.yaml source with full metadata, then the same registry via the service, then six receipts on the approved version."
+# 1a — the source-controlled manifest (a real file in the repo)
+show_cmd "cat prompts/registry.yaml"
+REGYAML="$ROOT/prompts/registry.yaml"
+[ -f "$REGYAML" ] && emit "${GRAY}$(cat "$REGYAML")${R}"
+SRC_OK=1
+{ [ -f "$REGYAML" ] \
+  && grep -q "prompt_id: support_summary" "$REGYAML" \
+  && grep -q "approved_release: rel-2026.06" "$REGYAML" \
+  && grep -q "owner:" "$REGYAML" && grep -q "fixture:" "$REGYAML" \
+  && grep -q "model_version:" "$REGYAML" && grep -q "eval_run_id:" "$REGYAML" \
+  && grep -q "release_tag:" "$REGYAML" \
+  && grep -q "status: approved" "$REGYAML" && grep -q "status: candidate" "$REGYAML" \
+  && grep -q "status: superseded" "$REGYAML" ; } || SRC_OK=0
+# 1b — the same registry read through the service
+show_cmd "curl -s \$API_BASE/lifecycle/prompts/registry | python3 scripts/fmt.py --type lc-registry"
 get_json "/lifecycle/prompts/registry" && RAW_REG="$GET_BODY" || RAW_REG=""
 [ -n "$RAW_REG" ] && emit "$(printf '%s' "$RAW_REG" | $FMT --type lc-registry 2>&1)"
+# 1c — receipts carry the release identity
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/receipts | python3 scripts/fmt.py --type lc-prompt-receipts"
 get_json "/lifecycle/prompts/receipts" && RAW_RCP="$GET_BODY" || RAW_RCP=""
 [ -n "$RAW_RCP" ] && emit "$(printf '%s' "$RAW_RCP" | $FMT --type lc-prompt-receipts 2>&1)"
@@ -118,14 +133,14 @@ else
   REG_OK=1; RCP_OK=1
   echo "$RAW_REG" | jq -e '(.versions|length>=3) and (.approved_release=="rel-2026.06") and ([.versions[].status]|(index("approved") and index("candidate") and index("superseded"))) and (.versions|all(has("model_version") and has("eval_run_id") and has("result_hash")))' >/dev/null 2>&1 || REG_OK=0
   echo "$RAW_RCP" | jq -e '(.receipts|length>=1) and (.approved_version=="v2.0.0") and (.receipts|all(.prompt_version=="v2.0.0" and has("model_version") and has("eval_run_id") and has("release_tag") and has("result_hash")))' >/dev/null 2>&1 || RCP_OK=0
-  if [ "$REG_OK" = "1" ] && [ "$RCP_OK" = "1" ]; then
-    verdict 0 "the registry lists versions with full metadata, and every receipt links prompt version, model version, and evaluation run id to a release and result hash" "" ""
-    LO+=("Step 1: prompt version control — versioned like code with full metadata (EO4a)")
+  if [ "$SRC_OK" = "1" ] && [ "$REG_OK" = "1" ] && [ "$RCP_OK" = "1" ]; then
+    verdict 0 "prompts/registry.yaml is a source-controlled manifest with full metadata, the service reads the same registry, and every receipt links prompt version, model version, and eval run id to a release and result hash" "" ""
+    LO+=("Step 1: source-controlled prompt registry — versioned like code with full metadata (EO4a)")
     LO+=("Step 1: receipts link prompt version, model version, and eval run id (EO4a)")
   else
-    verdict 1 "the registry or receipts do not carry the release identity" \
-      "Check prompts/registry.yaml, _version_records, and the receipts block in app/lifecycle/prompts.py." \
-      "GET /lifecycle/prompts/registry must list >=3 versions (approved/candidate/superseded, each with model_version/eval_run_id/result_hash) and approved_release rel-2026.06; GET /lifecycle/prompts/receipts must return receipts all on v2.0.0 with model_version, eval_run_id, release_tag, result_hash. Fix app/lifecycle/prompts.py."
+    verdict 1 "the source registry file, the runtime registry, or the receipts are wrong" \
+      "Check prompts/registry.yaml (owner/fixture/model_version/eval_run_id/release_tag/status per version) and the registry/receipts blocks in app/lifecycle/prompts.py." \
+      "prompts/registry.yaml must exist with prompt_id support_summary, approved_release rel-2026.06, and versions carrying owner/fixture/model_version/eval_run_id/release_tag and status approved/candidate/superseded; GET /lifecycle/prompts/registry must list >=3 versions each with model_version/eval_run_id/result_hash; GET /lifecycle/prompts/receipts must be all on v2.0.0 with model_version, eval_run_id, release_tag, result_hash. Fix prompts/registry.yaml or app/lifecycle/prompts.py."
   fi
 fi
 
@@ -149,30 +164,34 @@ else
   fi
 fi
 
-# STEP 3 — rollback to approved + reproducibility
+# STEP 3 — rollback to approved + fresh post-rollback receipt + reproducibility
 step_head "3" "Roll back to the approved release and prove it reproduces" \
-  "A rollback must return production to the approved release id (a retained immutable version), and the preserved prompt/fixture/model must reproduce the same result hash." \
-  "from the candidate to the approved version, active release rel-2026.06 with zero candidate traffic, then recorded and replayed hashes match and reproducible is true."
+  "A rollback must return production to the approved release id (a retained immutable version), a fresh request after the rollback must receipt on the approved release, and the preserved prompt/fixture/model must reproduce the same result hash." \
+  "from the candidate to the approved version, then a fresh request whose receipt lands on rel-2026.06, then recorded and replayed hashes match and reproducible is true."
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/rollback | python3 scripts/fmt.py --type lc-rollback"
 get_json "/lifecycle/prompts/rollback" && RAW_RB="$GET_BODY" || RAW_RB=""
 [ -n "$RAW_RB" ] && emit "$(printf '%s' "$RAW_RB" | $FMT --type lc-rollback 2>&1)"
+show_cmd "curl -s \$API_BASE/lifecycle/prompts/post-rollback-receipt | python3 scripts/fmt.py --type lc-post-rollback-receipt"
+get_json "/lifecycle/prompts/post-rollback-receipt" && RAW_PRR="$GET_BODY" || RAW_PRR=""
+[ -n "$RAW_PRR" ] && emit "$(printf '%s' "$RAW_PRR" | $FMT --type lc-post-rollback-receipt 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/prompts/reproducibility | python3 scripts/fmt.py --type lc-reproducibility"
 get_json "/lifecycle/prompts/reproducibility" && RAW_RP="$GET_BODY" || RAW_RP=""
 [ -n "$RAW_RP" ] && emit "$(printf '%s' "$RAW_RP" | $FMT --type lc-reproducibility 2>&1)"
-if [ -z "$RAW_RB" ] || [ -z "$RAW_RP" ]; then
-  transport_fail "/lifecycle/prompts/rollback or /reproducibility"
+if [ -z "$RAW_RB" ] || [ -z "$RAW_PRR" ] || [ -z "$RAW_RP" ]; then
+  transport_fail "/lifecycle/prompts/rollback, /post-rollback-receipt or /reproducibility"
 else
-  RB_OK=1; RP_OK=1
+  RB_OK=1; PRR_OK=1; RP_OK=1
   echo "$RAW_RB" | jq -e '.to_release=="rel-2026.06" and .active_release_after=="rel-2026.06" and .active_version_after=="v2.0.0" and .candidate_in_production_after==0 and ([.retained_versions[]]|index("v3.0.0-rc1"))' >/dev/null 2>&1 || RB_OK=0
+  echo "$RAW_PRR" | jq -e '.on_approved_release==true and .prompt_version=="v2.0.0" and .release_tag=="rel-2026.06" and (.request_id|test("req-pv-")) and .sent_after=="rollback"' >/dev/null 2>&1 || PRR_OK=0
   echo "$RAW_RP" | jq -e '.reproducible==true and (.recorded_result_hash==.replayed_result_hash) and ([.preserved[]]|(index("prompt_text") and index("fixture") and index("model_version")))' >/dev/null 2>&1 || RP_OK=0
-  if [ "$RB_OK" = "1" ] && [ "$RP_OK" = "1" ]; then
-    verdict 0 "rollback returns production to the approved release id (candidate retained but withdrawn), and the same prompt, fixture, and model reproduce the same result hash" "" ""
-    LO+=("Step 3: safe rollback returns production to the approved release id (EO4a)")
+  if [ "$RB_OK" = "1" ] && [ "$PRR_OK" = "1" ] && [ "$RP_OK" = "1" ]; then
+    verdict 0 "rollback returns production to the approved release id (candidate retained), a fresh post-rollback request's receipt lands on the approved release rel-2026.06, and the same prompt, fixture, and model reproduce the same result hash" "" ""
+    LO+=("Step 3: safe rollback to the approved release id, proven by a fresh post-rollback receipt on rel-2026.06 (EO4a)")
     LO+=("Step 3: rollback is reproducible because prompt, fixture, model, and result are preserved (EO4a)")
   else
-    verdict 1 "the rollback did not return to the approved release or is not reproducible" \
-      "Check the rollback and reproducibility blocks (and _result_hash) in app/lifecycle/prompts.py." \
-      "GET /lifecycle/prompts/rollback must show to_release/active_release_after rel-2026.06, active_version_after v2.0.0, candidate_in_production_after 0, candidate retained; GET /lifecycle/prompts/reproducibility must show reproducible true with recorded==replayed hash and preserved prompt_text/fixture/model_version. Fix app/lifecycle/prompts.py."
+    verdict 1 "the rollback, the fresh post-rollback receipt, or reproducibility is wrong" \
+      "Check the rollback, post_rollback_receipt, and reproducibility blocks (and _result_hash) in app/lifecycle/prompts.py." \
+      "GET /lifecycle/prompts/rollback must show to_release/active_release_after rel-2026.06, active_version_after v2.0.0, candidate_in_production_after 0, candidate retained; GET /lifecycle/prompts/post-rollback-receipt must show on_approved_release true, prompt_version v2.0.0, release_tag rel-2026.06, sent_after rollback; GET /lifecycle/prompts/reproducibility must show reproducible true with recorded==replayed hash and preserved prompt_text/fixture/model_version. Fix app/lifecycle/prompts.py."
   fi
 fi
 
