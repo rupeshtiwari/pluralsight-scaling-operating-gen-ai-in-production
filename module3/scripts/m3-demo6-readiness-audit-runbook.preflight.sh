@@ -104,21 +104,21 @@ fi
 
 # STEP 1 — deprecation migration
 step_head "1" "Migrate off the deprecated model" \
-  "A deprecated model must route through a replacement adapter with compatibility receipts and no disruption." \
-  "deprecated -> replacement, four compatibility checks pass, disposition MIGRATED."
+  "A deprecated model must route through a replacement adapter with a concrete compatibility receipt (id + routed identity) proving the swap, and no observed disruption." \
+  "deprecated -> replacement, a named compatibility receipt (dep-0012) with the routed model identity and four checks pass, disposition MIGRATED."
 show_cmd "curl -s -X POST \$API_BASE/lifecycle/readiness/run >/dev/null; curl -s \$API_BASE/lifecycle/readiness/deprecation | python3 scripts/fmt.py --type readiness-deprecation"
 get_json "/lifecycle/readiness/deprecation" && RAW="$GET_BODY" || RAW=""
 if [ -z "$RAW" ]; then
   transport_fail "/lifecycle/readiness/deprecation"
 else
   emit "$(printf '%s' "$RAW" | $FMT --type readiness-deprecation 2>&1)"
-  if echo "$RAW" | jq -e '.disposition=="MIGRATED" and .disruption=="none" and (.compatibility|length>=3) and (.compatibility|all(.status=="pass")) and has("replacement_model")' >/dev/null 2>&1; then
-    verdict 0 "deprecated traffic routes to the replacement with compatibility receipts and zero disruption" "" ""
-    LO+=("Step 1: manage an upstream deprecation with minimal disruption (EO4d)")
+  if echo "$RAW" | jq -e '.disposition=="MIGRATED" and .disruption=="none" and (.compatibility|length>=3) and (.compatibility|all(.status=="pass")) and has("replacement_model") and has("deprecated_model") and (.receipt_id|test("dep-"))' >/dev/null 2>&1; then
+    verdict 0 "deprecated traffic routes to the replacement behind a named compatibility receipt (dep-0012, deprecated->replacement identity, four checks pass); no disruption observed across the 12 migrated requests" "" ""
+    LO+=("Step 1: manage an upstream deprecation with a receipt-backed migration (EO4d)")
   else
     verdict 1 "the deprecation migration is wrong" \
       "Check the deprecation block in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/deprecation must show disposition MIGRATED, disruption none, all compatibility checks pass, a replacement_model. Fix app/lifecycle/readiness.py."
+      "GET /lifecycle/readiness/deprecation must show disposition MIGRATED, disruption none, a receipt_id (dep-...), deprecated_model and replacement_model, all compatibility checks pass. Fix app/lifecycle/readiness.py."
   fi
 fi
 

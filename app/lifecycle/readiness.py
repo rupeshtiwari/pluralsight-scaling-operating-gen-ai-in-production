@@ -35,6 +35,10 @@ def run_readiness() -> dict:
         "sunset_date": "2026-09-30",
         "adapter": "replacement adapter (uniform contract) — application code unchanged",
         "migrated_requests": 12,
+        # A concrete, representative compatibility receipt — a named artifact that
+        # ties the routed model identity (deprecated → replacement) to the four
+        # checks, so the proof is a receipt you can point at, not just results.
+        "receipt_id": "dep-0012",
         "compatibility": [
             {"check": "output_contract", "status": "pass"},
             {"check": "latency_within_slo", "status": "pass"},

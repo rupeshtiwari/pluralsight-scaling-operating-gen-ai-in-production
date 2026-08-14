@@ -1881,12 +1881,16 @@ def fmt_readiness_deprecation(d: dict) -> str:
                   "via the replacement adapter", LIME)
     out += _noted("migrated", f"{d.get('migrated_requests')} requests",
                   f"disruption: {d.get('disruption')}", LIME)
-    out += sect("compatibility receipts")
+    # A concrete compatibility receipt: a named artifact tying the routed model
+    # identity (deprecated → replacement) to the four checks — the answer to
+    # "where is the receipt?" is this id, not a bare list of results.
+    out += sect(f"compatibility receipt  ·  {d.get('receipt_id')}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'deprecated_model':<20}{RESET}{GRAY}{d.get('deprecated_model')}{RESET}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'replacement_model':<20}{RESET}{LGRN}{d.get('replacement_model')}{RESET}")
     for c in d.get("compatibility", []):
         ok = c.get("status") == "pass"
         sc = LIME if ok else PINK
-        out.append(f"  {PINK}★{RESET} {LGRN}{str(c.get('check')):<24}{RESET}{sc}{c.get('status')}{RESET}")
-        out.append("")
+        out.append(f"  {PINK}★{RESET} {BLUE}{str(c.get('check')):<20}{RESET}{sc}{c.get('status')}{RESET}")
     disp = d.get("disposition")
     out += star("disposition", disp, LIME if disp == "MIGRATED" else PINK)
     out.append(f"  {GRAY}{d.get('note')}{RESET}")

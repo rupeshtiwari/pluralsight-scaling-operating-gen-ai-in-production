@@ -95,17 +95,24 @@ curl -s http://localhost:8000/lifecycle/readiness/deprecation | python3 scripts/
 
 **Expected output:** ★ `deprecated: balanced-std@2026-04` (`sunset 2026-09-30`), ★
 `replacement: balanced-std@2026-06`, ★ `migrated: 12 requests` (`disruption: none`),
-four compatibility checks all `pass`, and ★ `disposition: MIGRATED`.
+then a concrete **compatibility receipt · `dep-0012`** that names the routed identity —
+★ `deprecated_model: balanced-std@2026-04`, ★ `replacement_model: balanced-std@2026-06`
+— and its four checks all `pass` (`output_contract`, `latency_within_slo`,
+`cost_within_budget`, `quality_within_bar`), and ★ `disposition: MIGRATED`.
 
 **What the learner should notice:** This is where the very first design decision of
 the course pays off. Because every model sits behind one uniform adapter contract,
 retiring a deprecated model is a routing change, not a code change — callers never
-touch their integration. The compatibility receipts are the proof: output contract,
-latency, cost, and quality all still pass on the replacement, so you are not hoping the
-swap is safe, you are asserting it with evidence. `disruption: none` is the whole goal
-of managing a deprecation. Providers sunset models on their schedule, not yours, and an
-architecture that turns that into a twelve-request migration with zero caller impact is
-one that can survive the real world.
+touch their integration. The compatibility receipt is the proof, and it is a named
+artifact you can point at: receipt `dep-0012` records the routed identity — deprecated
+`balanced-std@2026-04` to replacement `balanced-std@2026-06` — with output contract,
+latency, cost, and quality all still passing on the replacement, so you are not hoping
+the swap is safe, you are asserting it with evidence. Keep the claim honest and scoped:
+across these twelve controlled migration requests the replacement preserved the tested
+contract without observed disruption — that is what `disruption: none` reports here, not
+a universal guarantee. Providers sunset models on their schedule, not yours, and an
+architecture that turns that into a receipt-backed migration behind a uniform contract
+is one that can survive the real world.
 
 ### Step 2: Run the production readiness audit
 
