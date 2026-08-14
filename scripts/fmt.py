@@ -1637,6 +1637,7 @@ def fmt_validation_candidate(d: dict) -> str:
            "The dimensions that drifted past threshold block the candidate from "
            "promotion")
     out = [header(title, why, width=88)]
+    out += sect("Offline baseline validation  ·  Pytest gate, measured against fixtures")
     out += star("candidate", d.get("candidate"))
     out += _noted("verdict", "eligible" if el else "blocked",
                   d.get("label"), LIME if el else PINK)
@@ -1729,6 +1730,7 @@ def fmt_canary_watch(d: dict) -> str:
         "Watch the canary signals",
         "Quality, latency, cost, error rate, and contract compliance on the "
         "canary slice, against the approved release", width=86)]
+    out += sect("Live canary signals  ·  measured on 10% of live production traffic")
     out += _noted("canary", d.get("canary_release"),
                   f"vs approved {d.get('approved_release')}", BLUE)
     out.append(f"    {BLUE}{'signal':<26}{'canary':<12}{'approved'}{RESET}")
@@ -1748,6 +1750,7 @@ def fmt_canary_criteria(d: dict) -> str:
         "Check the promotion criteria",
         "Every signal within threshold AND a receipt trail proving exposure "
         "stayed inside the blast radius", width=90)]
+    out += sect("Live canary signals  ·  evaluated on the live canary slice")
     out.append(f"    {BLUE}{'signal':<26}{'value':<12}{'objective':<14}{'status'}{RESET}")
     out.append("")
     for r in d.get("rows", []):

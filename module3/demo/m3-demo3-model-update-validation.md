@@ -140,7 +140,8 @@ curl -s http://localhost:8000/lifecycle/validation/pass | python3 scripts/fmt.py
   --why "Every dimension is within its threshold — the candidate is eligible for promotion"
 ```
 
-**Expected output:** ★ `candidate: balanced-std@2026-07`, ★ `verdict: eligible`, then
+**Expected output:** the scorecard is labelled **Offline baseline validation**, then ★
+`candidate: balanced-std@2026-07`, ★ `verdict: eligible`, then
 five rows all `pass`, each read as **approved → candidate → objective**: quality
 `0.91 → 0.93` (`>= 0.90`), latency `790 → 760ms` (`<= 800ms`), cost `$0.34 → $0.32`
 (`<= $0.35`), failure `0.7 → 0.4%` (`<= 1.0%`), contract `99.5 → 100.0%` (`>= 99.0%`) —
@@ -165,7 +166,8 @@ curl -s http://localhost:8000/lifecycle/validation/fail | python3 scripts/fmt.py
   --why "The dimensions that drifted past threshold block the candidate from promotion"
 ```
 
-**Expected output:** ★ `candidate: econo-fast@2026-07`, ★ `verdict: blocked`, then the
+**Expected output:** the scorecard is labelled **Offline baseline validation**, then ★
+`candidate: econo-fast@2026-07`, ★ `verdict: blocked`, then the
 rows as **approved → candidate → objective**: quality `0.91 → 0.86` breach, latency
 `790 → 900ms` breach, cost `$0.34 → $0.30` pass, failure `0.7 → 2.1%` breach, contract
 `99.5 → 96.5%` breach — and ★ `breaches: quality_score, latency_p95_ms,

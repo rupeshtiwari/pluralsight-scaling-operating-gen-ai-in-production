@@ -54,9 +54,12 @@ APPROVED_SIGNALS = {
 }
 
 # Two canaries: one healthy (earns promotion), one degraded (rolled back).
+# The healthy canary's LIVE numbers are deliberately a touch softer than the tidy
+# offline fixture results — live traffic is messier than a fixture — yet every signal
+# still clears its threshold. That is the whole reason to canary after an offline gate.
 CANARY_HEALTHY = {
-    "quality_score": 0.93, "latency_p95_ms": 780, "cost_per_1k_usd": 0.32,
-    "error_rate_pct": 0.5, "contract_compliance_pct": 100.0,
+    "quality_score": 0.91, "latency_p95_ms": 835, "cost_per_1k_usd": 0.34,
+    "error_rate_pct": 0.7, "contract_compliance_pct": 99.4,
 }
 CANARY_DEGRADED = {
     "quality_score": 0.84, "latency_p95_ms": 1300, "cost_per_1k_usd": 0.33,

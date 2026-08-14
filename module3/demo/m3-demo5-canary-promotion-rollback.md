@@ -102,11 +102,14 @@ candidate — then the **release identity**, proving the canary is a *prompt + m
 combination*: ★ `prompt: support_summary v2.0.0 → support_summary v3.0.0-rc1`, ★
 `model: balanced-std@2026-06 → balanced-std@2026-07`, ★ `release: rel-2026.06 →
 rel-2026.07-rc1` — and ★ `blast radius bounded: true`. Then the watch — ★ `canary:
-rel-2026.07-rc1` (vs approved `rel-2026.06`), then five signals with the canary value
-beside the approved value — quality `0.93` vs `0.91`, latency `780ms` vs `740ms`, cost
-`$0.32` vs `$0.30`, error `0.5%` vs `0.4%`, contract `100.0%` vs `99.6%`.
+rel-2026.07-rc1` (vs approved `rel-2026.06`), labelled **Live canary signals**, then
+five signals with the canary value beside the approved value — quality `0.91` vs
+`0.91`, latency `835ms` vs `740ms`, cost `$0.34` vs `$0.30`, error `0.7%` vs `0.4%`,
+contract `99.4%` vs `99.6%`.
 
-**What the learner should notice:** The whole safety of a canary is in one number, and
+**What the learner should notice:** This candidate already cleared its offline
+baseline; live traffic now tests whether that decision still holds under production
+conditions. The whole safety of a canary is in one number, and
 here it is `5`. Ten percent of the eligible traffic — five of fifty requests — goes to
 the candidate; the other forty-five stay on the approved release. That split is the
 contract: no matter how badly the candidate behaves, it is structurally incapable of
@@ -115,8 +118,10 @@ the property you must be able to assert before you expose real users to anything
 A canary without a bounded blast radius is just an outage waiting for a trigger. With
 the slice bounded, the watch is deliberately just watching — not judging. You are
 seeing the candidate's live behavior next to the production baseline, and the honest
-read is that the canary is slightly worse on cost and latency and slightly better on
-quality and contract — which is exactly why you never eyeball a canary. Small movements
+read is that live is a little messier than the fixtures were: the canary is a touch
+softer than the approved release on latency, cost, error rate, and contract, and only
+flat on quality — every signal still inside its threshold, but nothing is tidier than
+production. That is exactly why you never eyeball a canary. Small movements
 in five directions are impossible to adjudicate by feel. That is what the next step is
 for: turning these observations into a single, defensible promote-or-not decision
 against thresholds you set in advance.
@@ -225,10 +230,11 @@ reconcile like this turns "we tried a release and pulled it" into "we ran a boun
 experiment, it failed its criteria, and here is the proof that production was never at
 risk." That is release management you can defend.
 
-Worth drawing the line to the earlier clip out loud in narration: in Clip 2 you rolled
-back a prompt *version* and proved it *reproduces* the same result hash; here you roll
-back a *canary rollout* and prove the *blast radius* never exceeded ten percent. Same
-word — rollback — two different guarantees, on two different mechanisms.
+Worth saying out loud in narration: "rollback" here means aborting a *live rollout* and
+proving the blast radius stayed bounded — a different guarantee from reverting a stored
+*version* to a reproducible result. This canary rollback returns production to the
+approved release with exposure that never exceeded ten percent. Same word, two
+mechanisms, two proofs.
 
 ## Preflight check
 
