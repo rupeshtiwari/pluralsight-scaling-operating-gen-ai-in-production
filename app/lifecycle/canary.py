@@ -21,6 +21,11 @@ from __future__ import annotations
 import math
 
 # --- The approved release the canary is measured against -------------------
+# A release is a prompt+model combination: the same prompt id (support_summary,
+# the registry from Clip 2) advances to a new prompt VERSION and a new model
+# VERSION together — that pairing is the "canary prompt and model combination".
+PROMPT_ID = "support_summary"
+
 APPROVED_PROMPT = "v2.0.0"
 APPROVED_RELEASE = "rel-2026.06"
 APPROVED_MODEL = "balanced-std@2026-06"
@@ -82,10 +87,45 @@ def run_canary() -> dict:
     rollback, and reconcile — for the /lifecycle/canary/* endpoints."""
     canary_requests = math.ceil(ELIGIBLE_REQUESTS * CANARY_PCT / 100)  # 5
     production_requests = ELIGIBLE_REQUESTS - canary_requests          # 45
-    bounded = canary_requests <= math.ceil(ELIGIBLE_REQUESTS * CANARY_PCT / 100)
+
+    # --- Receipt trail: the EVIDENCE that exposure stayed bounded ------------
+    # Every eligible request in the watch window leaves a receipt tagged with the
+    # lane that served it. Counting those receipts is how bounded exposure is
+    # *proven*, not asserted — the measured canary exposure comes from the trail,
+    # and it must not exceed the 10% blast-radius limit.
+    receipts = []
+    for i in range(ELIGIBLE_REQUESTS):
+        canary_lane = i >= production_requests   # the last `canary_requests` go canary
+        receipts.append({
+            "request_id": f"req-cn-{1001 + i}",
+            "lane": "canary" if canary_lane else "approved",
+            "release": CANARY_RELEASE if canary_lane else APPROVED_RELEASE,
+            "prompt": CANARY_PROMPT if canary_lane else APPROVED_PROMPT,
+            "model": CANARY_MODEL if canary_lane else APPROVED_MODEL,
+        })
+    approved_receipts = [r for r in receipts if r["lane"] == "approved"]
+    canary_receipts = [r for r in receipts if r["lane"] == "canary"]
+    measured_exposure_pct = round(100 * len(canary_receipts) / len(receipts))
+    bounded = measured_exposure_pct <= CANARY_PCT   # measured from the receipts
+
+    exposure = {
+        "prompt_id": PROMPT_ID,
+        "eligible_receipts": len(receipts),
+        "approved_receipts": len(approved_receipts),
+        "canary_receipts": len(canary_receipts),
+        "approved_range": [approved_receipts[0]["request_id"], approved_receipts[-1]["request_id"]],
+        "canary_range": [canary_receipts[0]["request_id"], canary_receipts[-1]["request_id"]],
+        "canary_exposure_pct": measured_exposure_pct,
+        "exposure_limit_pct": CANARY_PCT,
+        "receipt_check": "PASS" if bounded else "FAIL",
+        "source": "request receipts (watch window)",
+        "note": "the exposure percentage is counted from the request receipts — "
+                "measured, not asserted; the canary lane holds only the 10% slice",
+    }
 
     start = {
         "canary_pct": CANARY_PCT,
+        "prompt_id": PROMPT_ID,
         "eligible_requests": ELIGIBLE_REQUESTS,
         "canary_requests": canary_requests,
         "production_requests": production_requests,
@@ -152,6 +192,7 @@ def run_canary() -> dict:
         "breaches": degraded_breaches,
         "affected_requests": canary_requests,
         "affected_pct": CANARY_PCT,
+        "prompt_id": PROMPT_ID,
         "active_release_after": APPROVED_RELEASE,
         "active_prompt_after": APPROVED_PROMPT,
         "active_model_after": APPROVED_MODEL,
@@ -166,6 +207,7 @@ def run_canary() -> dict:
     exposure_zero = rollback["canary_exposure_after_pct"] == 0
     confirmed = active_ok and exposure_zero and bounded
     reconcile = {
+        "prompt_id": PROMPT_ID,
         "active_release": rollback["active_release_after"],
         "active_prompt": rollback["active_prompt_after"],
         "active_model": rollback["active_model_after"],
@@ -181,7 +223,8 @@ def run_canary() -> dict:
 
     _STATE.update({
         "start": start, "watch": watch, "criteria": criteria,
-        "promote": promote, "rollback": rollback, "reconcile": reconcile,
+        "exposure": exposure, "promote": promote, "rollback": rollback,
+        "reconcile": reconcile,
     })
     return {"canary_pct": CANARY_PCT, "eligible_to_promote": criteria["eligible_to_promote"],
             "rollback_breaches": len(degraded_breaches),

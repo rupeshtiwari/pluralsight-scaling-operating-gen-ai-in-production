@@ -41,7 +41,7 @@ traffic without betting production on the result.
 | Step | Command | What it teaches (nothing repeats) |
 |------|---------|-----------------------------------|
 | 1 | `/lifecycle/canary/start` + `/lifecycle/canary/watch` | Ten percent is a cap, and it is provable; the five signals a canary lives or dies by |
-| 2 | `/lifecycle/canary/criteria` | Promotion needs both criteria AND bounded exposure |
+| 2 | `/lifecycle/canary/criteria` + `/lifecycle/canary/exposure` | Promotion needs both criteria AND receipt-proven bounded exposure |
 | 3 | `/lifecycle/canary/promote` + `/lifecycle/canary/rollback` | Earning promotion buys a ramp, not a flip; a breach rolls back before most users notice |
 | 4 | `/lifecycle/canary/reconcile` | The safe landing is provable, not assumed |
 
@@ -98,7 +98,10 @@ curl -s http://localhost:8000/lifecycle/canary/watch | python3 scripts/fmt.py --
 
 **Expected output:** first the start — ★ `canary: 10% of 50 eligible`, then the split —
 ★ `production: 45 requests` on the approved release, ★ `canary: 5 requests` on the
-candidate — and ★ `blast radius bounded: true`. Then the watch — ★ `canary:
+candidate — then the **release identity**, proving the canary is a *prompt + model
+combination*: ★ `prompt: support_summary v2.0.0 → support_summary v3.0.0-rc1`, ★
+`model: balanced-std@2026-06 → balanced-std@2026-07`, ★ `release: rel-2026.06 →
+rel-2026.07-rc1` — and ★ `blast radius bounded: true`. Then the watch — ★ `canary:
 rel-2026.07-rc1` (vs approved `rel-2026.06`), then five signals with the canary value
 beside the approved value — quality `0.93` vs `0.91`, latency `780ms` vs `740ms`, cost
 `$0.32` vs `$0.30`, error `0.5%` vs `0.4%`, contract `100.0%` vs `99.6%`.
@@ -127,20 +130,31 @@ receipt trail proves the exposure stayed bounded.
 curl -s http://localhost:8000/lifecycle/canary/criteria | python3 scripts/fmt.py --type canary-criteria \
   --title "Check the promotion criteria" \
   --why "Every signal within threshold AND a receipt trail proving exposure stayed inside the blast radius"
+curl -s http://localhost:8000/lifecycle/canary/exposure | python3 scripts/fmt.py --type canary-exposure \
+  --title "Prove bounded exposure from the receipt trail" \
+  --why "Count the receipts by lane — the 10% exposure is measured from the receipt trail, not asserted"
 ```
 
-**Expected output:** five signals all `pass` against their objectives, then ★
-`exposure: 5 ≤ 5 allowed` (receipt trail proves bounded exposure) and ★ `eligible to
-promote: true`.
+**Expected output:** first the criteria — five signals all `pass` against their
+objectives, then ★ `exposure: 5 ≤ 5 allowed` and ★ `eligible to promote: true`. Then
+the **receipt-derived proof** of that exposure — ★ `receipt trail: 50 eligible
+requests`, the two lanes ★ `approved 45 receipts (req-cn-1001 … req-cn-1045)` and ★
+`canary 5 receipts (req-cn-1046 … req-cn-1050)`, ★ `canary exposure: 5 / 50 = 10%`, ★
+`exposure limit: 10%`, and ★ `receipt check: PASS`.
 
 **What the learner should notice:** Promotion is an `AND`, and that is the entire
 lesson of this step. Every signal has to clear its threshold — and here all five do —
 but that alone is not enough. The second condition is the one teams forget: the receipt
-trail has to *prove* the exposure never exceeded the blast radius. Five canary requests,
-five allowed, no leakage. If the signals looked great but exposure had somehow crept to
-thirty percent, promotion would still be off the table, because a good result from an
-unbounded experiment tells you nothing about a bounded rollout. Criteria met and
-exposure bounded — both true — is the only state that earns a promotion.
+trail has to *prove* the exposure never exceeded the blast radius — and here you do not
+take that on faith. The receipt trail is counted on screen: fifty eligible requests,
+forty-five receipts on the approved lane and five on the canary lane, so the measured
+exposure is `5 / 50 = 10%`, exactly at the limit, and the `receipt check` reads `PASS`.
+That is the difference between claiming bounded exposure and demonstrating it — the
+number comes from the receipts, not from a promise. If the signals looked great but the
+receipts showed exposure had crept to thirty percent, promotion would still be off the
+table, because a good result from an unbounded experiment tells you nothing about a
+bounded rollout. Criteria met and exposure provably bounded — both true — is the only
+state that earns a promotion.
 
 ### Step 3: Promote the healthy canary and roll back the degraded one
 
@@ -193,19 +207,28 @@ curl -s http://localhost:8000/lifecycle/canary/reconcile | python3 scripts/fmt.p
   --why "Production is back on the approved release, canary exposure is zero, and the blast radius never exceeded its cap"
 ```
 
-**Expected output:** ★ `disposition: CONFIRMED`, ★ `active release: rel-2026.06 ·
-v2.0.0 · balanced-std@2026-06` (approved `rel-2026.06`), ★ `canary exposure: 0%`, and
-★ `blast radius: ≤ 10% throughout`.
+**Expected output:** ★ `disposition: CONFIRMED`, then the **active release after
+rollback** broken out by axis so the approved prompt *and* model are both explicit —
+★ `prompt: support_summary v2.0.0`, ★ `model: balanced-std@2026-06`, ★ `release:
+rel-2026.06` (each marked `approved`) — then ★ `canary exposure: 0%`, and ★ `blast
+radius: ≤ 10% throughout`.
 
 **What the learner should notice:** The sign-off is `CONFIRMED`, and it rests on three
 facts you can prove rather than feel. The active release matches the approved release —
-prompt, model, and all. Canary exposure is zero, so no candidate traffic is lingering
-in production. And the blast radius stayed at or below ten percent for the entire
-experiment, breach included. That last point is the one auditors care about: you did
-not just recover, you can *demonstrate* that the exposure was bounded from start to
-finish. A canary you can reconcile like this turns "we tried a release and pulled it"
-into "we ran a bounded experiment, it failed its criteria, and here is the proof that
-production was never at risk." That is release management you can defend.
+and here that is spelled out on both axes: the prompt is back to `support_summary
+v2.0.0` and the model to `balanced-std@2026-06`, not just an opaque release tag. Canary
+exposure is zero, so no candidate traffic is lingering in production. And the blast
+radius stayed at or below ten percent for the entire experiment, breach included. That
+last point is the one auditors care about: you did not just recover, you can
+*demonstrate* that the exposure was bounded from start to finish. A canary you can
+reconcile like this turns "we tried a release and pulled it" into "we ran a bounded
+experiment, it failed its criteria, and here is the proof that production was never at
+risk." That is release management you can defend.
+
+Worth drawing the line to the earlier clip out loud in narration: in Clip 2 you rolled
+back a prompt *version* and proved it *reproduces* the same result hash; here you roll
+back a *canary rollout* and prove the *blast radius* never exceeded ten percent. Same
+word — rollback — two different guarantees, on two different mechanisms.
 
 ## Preflight check
 
@@ -228,7 +251,8 @@ and writes a readable log to `preflight-logs/m3-demo5-canary-promotion-rollback.
 - `app/lifecycle/canary.py` — the deterministic canary: traffic split, live signals,
   promotion criteria, and the promote and rollback decisions
 - `app/main.py` — the `/lifecycle/canary/run`, `/lifecycle/canary/start`,
-  `/lifecycle/canary/watch`, `/lifecycle/canary/criteria`, `/lifecycle/canary/promote`,
-  `/lifecycle/canary/rollback`, and `/lifecycle/canary/reconcile` endpoints
+  `/lifecycle/canary/watch`, `/lifecycle/canary/criteria`, `/lifecycle/canary/exposure`,
+  `/lifecycle/canary/promote`, `/lifecycle/canary/rollback`, and
+  `/lifecycle/canary/reconcile` endpoints
 - `scripts/fmt.py` — the `canary-start` / `canary-watch` / `canary-criteria` /
-  `canary-promote` / `canary-rollback` / `canary-reconcile` views
+  `canary-exposure` / `canary-promote` / `canary-rollback` / `canary-reconcile` views

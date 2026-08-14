@@ -1699,15 +1699,25 @@ def fmt_validation_reconcile(d: dict) -> str:
 def fmt_canary_start(d: dict) -> str:
     out = [header(
         "Start the canary",
-        "Ten percent of eligible traffic shifts to the candidate release — the "
-        "blast radius is bounded to that slice", width=90)]
+        "Ten percent of eligible traffic shifts to the candidate prompt+model "
+        "release — the blast radius is bounded to that slice", width=90)]
     out += _noted("canary", f"{d.get('canary_pct')}% of {d.get('eligible_requests')} eligible",
                   f"release {d.get('canary_release')}", BLUE)
     out += sect("traffic split")
     out += _noted("production", f"{d.get('production_requests')} requests",
-                  f"approved {d.get('approved_release')} ({d.get('approved_model')})", LIME)
+                  f"approved {d.get('approved_release')}", LIME)
     out += _noted("canary", f"{d.get('canary_requests')} requests",
-                  f"candidate {d.get('canary_release')} ({d.get('canary_model')})", BLUE)
+                  f"candidate {d.get('canary_release')}", BLUE)
+    # Release identity — prove the canary is a PROMPT + MODEL combination, each axis
+    # labelled so the learner never has to infer whether a version is prompt or model.
+    pid = d.get("prompt_id", "")
+    out += sect("release identity  (approved → canary: a prompt + model combination)")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'prompt':<8}{RESET}{LGRN}{pid} {d.get('approved_prompt')}{RESET}"
+               f"{GRAY}  →  {RESET}{BLUE}{pid} {d.get('canary_prompt')}{RESET}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'model':<8}{RESET}{LGRN}{d.get('approved_model')}{RESET}"
+               f"{GRAY}  →  {RESET}{BLUE}{d.get('canary_model')}{RESET}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'release':<8}{RESET}{LGRN}{d.get('approved_release')}{RESET}"
+               f"{GRAY}  →  {RESET}{BLUE}{d.get('canary_release')}{RESET}")
     bb = d.get("blast_radius_bounded")
     out += star("blast radius bounded", str(bb).lower(), LIME if bb else PINK)
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
@@ -1752,6 +1762,33 @@ def fmt_canary_criteria(d: dict) -> str:
     out += _noted("exposure", f"{d.get('canary_requests')} ≤ {d.get('expected_max_canary')} allowed",
                   "receipt trail proves bounded exposure", LIME if eb else PINK)
     out += star("eligible to promote", str(elig).lower(), LIME if elig else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_canary_exposure(d: dict) -> str:
+    out = [header(
+        "Prove bounded exposure from the receipt trail",
+        "Count the request receipts by lane — the canary exposure is measured from "
+        "the receipts, not asserted, and must stay within the 10% blast radius",
+        width=92)]
+    out += _noted("receipt trail", f"{d.get('eligible_receipts')} eligible requests",
+                  d.get("source", "request receipts"), BLUE)
+    ar = d.get("approved_range", ["", ""]); cr = d.get("canary_range", ["", ""])
+    out += sect("receipts by lane")
+    out.append(f"  {PINK}★{RESET} {LGRN}{'approved':<9}{RESET}{LIME}{str(d.get('approved_receipts')):<4}{RESET}"
+               f"{GRAY}receipts   {ar[0]} … {ar[1]}{RESET}")
+    out.append(f"  {PINK}★{RESET} {LGRN}{'canary':<9}{RESET}{BLUE}{str(d.get('canary_receipts')):<4}{RESET}"
+               f"{GRAY}receipts   {cr[0]} … {cr[1]}{RESET}")
+    out.append("")
+    ex = d.get("canary_exposure_pct"); lim = d.get("exposure_limit_pct")
+    within = isinstance(ex, (int, float)) and isinstance(lim, (int, float)) and ex <= lim
+    out += star("canary exposure",
+                f"{d.get('canary_receipts')} / {d.get('eligible_receipts')} = {ex}%",
+                LIME if within else PINK)
+    out += _noted("exposure limit", f"{lim}%", "the 10% blast-radius cap", BLUE)
+    chk = d.get("receipt_check")
+    out += star("receipt check", chk, LIME if chk == "PASS" else PINK)
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
@@ -1810,8 +1847,15 @@ def fmt_canary_reconcile(d: dict) -> str:
         "the blast radius never exceeded its cap", width=90)]
     out += star("disposition", disp, LIME if ok else PINK)
     am = d.get("active_matches_approved")
-    out += _noted("active release", f"{d.get('active_release')} · {d.get('active_prompt')} · {d.get('active_model')}",
-                  f"approved {d.get('approved_release')}", LIME if am else PINK)
+    ac = LIME if am else PINK
+    pid = d.get("prompt_id", "")
+    out += sect("active release after rollback  (prompt + model)")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'prompt':<8}{RESET}{ac}{pid} {d.get('active_prompt')}{RESET}"
+               f"   {GRAY}approved{RESET}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'model':<8}{RESET}{ac}{d.get('active_model')}{RESET}"
+               f"   {GRAY}approved{RESET}")
+    out.append(f"  {PINK}★{RESET} {BLUE}{'release':<8}{RESET}{ac}{d.get('active_release')}{RESET}"
+               f"   {GRAY}approved {d.get('approved_release')}{RESET}")
     ce = d.get("canary_exposure_pct")
     out += _noted("canary exposure", f"{ce}%", "no candidate traffic in production", LIME if ce == 0 else PINK)
     bb = d.get("blast_radius_bounded")
@@ -2016,6 +2060,7 @@ VIEWS = {
     "canary-start": fmt_canary_start,
     "canary-watch": fmt_canary_watch,
     "canary-criteria": fmt_canary_criteria,
+    "canary-exposure": fmt_canary_exposure,
     "canary-promote": fmt_canary_promote,
     "canary-rollback": fmt_canary_rollback,
     "canary-reconcile": fmt_canary_reconcile,

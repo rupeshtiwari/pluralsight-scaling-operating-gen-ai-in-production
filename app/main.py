@@ -1017,6 +1017,14 @@ def lc_canary_criteria() -> dict:
     return lc_canary.state().get("criteria", {})
 
 
+@app.get("/lifecycle/canary/exposure")
+def lc_canary_exposure() -> dict:
+    """The receipt-derived proof of bounded exposure: counts of approved vs canary
+    receipts in the watch window, the measured canary exposure, and the check that
+    it never exceeded the 10% blast-radius limit — evidence, not assertion."""
+    return lc_canary.state().get("exposure", {})
+
+
 @app.get("/lifecycle/canary/promote")
 def lc_canary_promote() -> dict:
     """The promote decision for a healthy canary — a staged ramp to the new

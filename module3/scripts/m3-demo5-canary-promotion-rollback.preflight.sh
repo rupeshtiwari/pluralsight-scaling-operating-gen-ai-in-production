@@ -116,36 +116,44 @@ if [ -z "$RAW_START" ] || [ -z "$RAW_WATCH" ]; then
   transport_fail "/lifecycle/canary/start or /watch"
 else
   A_OK=1; B_OK=1
-  echo "$RAW_START" | jq -e '.canary_pct==10 and .canary_requests==5 and .production_requests==45 and .blast_radius_bounded==true and (.eligible_requests==(.canary_requests+.production_requests))' >/dev/null 2>&1 || A_OK=0
+  echo "$RAW_START" | jq -e '.canary_pct==10 and .canary_requests==5 and .production_requests==45 and .blast_radius_bounded==true and (.eligible_requests==(.canary_requests+.production_requests)) and .prompt_id=="support_summary" and .approved_prompt=="v2.0.0" and .canary_prompt=="v3.0.0-rc1" and .approved_model=="balanced-std@2026-06" and .canary_model=="balanced-std@2026-07"' >/dev/null 2>&1 || A_OK=0
   echo "$RAW_WATCH" | jq -e '(.signals|length==5) and ([.signals[].signal]|(index("quality_score") and index("latency_p95_ms") and index("cost_per_1k_usd") and index("error_rate_pct") and index("contract_compliance_pct"))) and (.signals|all(has("canary") and has("approved")))' >/dev/null 2>&1 || B_OK=0
   if [ "$A_OK" = "1" ] && [ "$B_OK" = "1" ]; then
-    verdict 0 "the canary takes 10% of eligible traffic (5 of 50), the rest stays on approved — blast radius bounded — and it is watched on all five signals against the approved release" "" ""
-    LO+=("Step 1: a canary with a controlled 10% blast radius (EO4c)")
+    verdict 0 "the canary takes 10% of eligible traffic (5 of 50) on a prompt+model combination (support_summary v2.0.0→v3.0.0-rc1, balanced-std@2026-06→2026-07), the rest stays on approved — blast radius bounded — and it is watched on all five signals against the approved release" "" ""
+    LO+=("Step 1: a canary prompt+model combination with a controlled 10% blast radius (EO4c)")
     LO+=("Step 1: the canary is watched on quality, latency, cost, error, and contract (EO4c)")
   else
-    verdict 1 "the canary split or watch signals are wrong" \
-      "Check CANARY_PCT / ELIGIBLE_REQUESTS and the start block, and the watch block, in app/lifecycle/canary.py." \
-      "GET /lifecycle/canary/start must show canary_pct 10, canary_requests 5, production_requests 45, blast_radius_bounded true; GET /lifecycle/canary/watch must show 5 signals (quality, latency, cost, error, contract) each with canary + approved. Fix app/lifecycle/canary.py."
+    verdict 1 "the canary split, prompt+model identity, or watch signals are wrong" \
+      "Check CANARY_PCT / ELIGIBLE_REQUESTS / the PROMPT+MODEL constants and the start block, and the watch block, in app/lifecycle/canary.py." \
+      "GET /lifecycle/canary/start must show canary_pct 10, canary_requests 5, production_requests 45, blast_radius_bounded true, prompt_id support_summary, approved_prompt v2.0.0 / canary_prompt v3.0.0-rc1, approved_model balanced-std@2026-06 / canary_model balanced-std@2026-07; GET /lifecycle/canary/watch must show 5 signals (quality, latency, cost, error, contract) each with canary + approved. Fix app/lifecycle/canary.py."
   fi
 fi
 
-# STEP 2 — promotion criteria + bounded exposure
-step_head "2" "Check the promotion criteria" \
-  "Promotion needs every signal within threshold AND a receipt trail proving bounded exposure." \
-  "all five signals pass; exposure bounded; eligible to promote true."
+# STEP 2 — promotion criteria + RECEIPT-DERIVED bounded exposure
+step_head "2" "Check the promotion criteria and prove bounded exposure from receipts" \
+  "Promotion needs every signal within threshold AND a receipt trail that PROVES exposure stayed bounded — the exposure is counted from the receipts, not asserted." \
+  "all five signals pass and eligible to promote true, then the receipt trail: 45 approved + 5 canary of 50, exposure 10% within the 10% limit, receipt check PASS."
 show_cmd "curl -s \$API_BASE/lifecycle/canary/criteria | python3 scripts/fmt.py --type canary-criteria"
-get_json "/lifecycle/canary/criteria" && RAW="$GET_BODY" || RAW=""
-if [ -z "$RAW" ]; then
-  transport_fail "/lifecycle/canary/criteria"
+get_json "/lifecycle/canary/criteria" && RAW_CRIT="$GET_BODY" || RAW_CRIT=""
+[ -n "$RAW_CRIT" ] && emit "$(printf '%s' "$RAW_CRIT" | $FMT --type canary-criteria 2>&1)"
+show_cmd "curl -s \$API_BASE/lifecycle/canary/exposure | python3 scripts/fmt.py --type canary-exposure"
+get_json "/lifecycle/canary/exposure" && RAW_EXP="$GET_BODY" || RAW_EXP=""
+[ -n "$RAW_EXP" ] && emit "$(printf '%s' "$RAW_EXP" | $FMT --type canary-exposure 2>&1)"
+if [ -z "$RAW_CRIT" ] || [ -z "$RAW_EXP" ]; then
+  transport_fail "/lifecycle/canary/criteria or /exposure"
 else
-  emit "$(printf '%s' "$RAW" | $FMT --type canary-criteria 2>&1)"
-  if echo "$RAW" | jq -e '.criteria_met==true and .exposure_bounded==true and .eligible_to_promote==true and (.rows|all(.status=="pass"))' >/dev/null 2>&1; then
-    verdict 0 "every signal is within threshold and the receipt trail proves bounded exposure — eligible to promote" "" ""
-    LO+=("Step 2: promotion needs criteria met AND provably bounded exposure (EO4c)")
+  C_OK=1; E_OK=1
+  echo "$RAW_CRIT" | jq -e '.criteria_met==true and .exposure_bounded==true and .eligible_to_promote==true and (.rows|all(.status=="pass"))' >/dev/null 2>&1 || C_OK=0
+  # The exposure is receipt-DERIVED: the canary_exposure_pct must equal canary/eligible
+  # counted from the trail, and stay within the limit, with receipt_check PASS.
+  echo "$RAW_EXP" | jq -e '.eligible_receipts==50 and .approved_receipts==45 and .canary_receipts==5 and .canary_exposure_pct==10 and .exposure_limit_pct==10 and .receipt_check=="PASS" and ((.canary_receipts*100/.eligible_receipts|round)==.canary_exposure_pct)' >/dev/null 2>&1 || E_OK=0
+  if [ "$C_OK" = "1" ] && [ "$E_OK" = "1" ]; then
+    verdict 0 "every signal is within threshold and the receipt trail PROVES bounded exposure — 5 of 50 receipts on the canary lane (10% within the 10% limit), receipt check PASS — eligible to promote" "" ""
+    LO+=("Step 2: promotion needs criteria met AND receipt-proven bounded exposure (EO4c)")
   else
-    verdict 1 "the promotion criteria did not pass" \
-      "Check the criteria block and CANARY_HEALTHY in app/lifecycle/canary.py." \
-      "GET /lifecycle/canary/criteria must show criteria_met true, exposure_bounded true, eligible_to_promote true, all rows pass. Fix app/lifecycle/canary.py."
+    verdict 1 "the promotion criteria or the receipt-derived exposure proof did not pass" \
+      "Check the criteria block and CANARY_HEALTHY, and the receipt trail / exposure block, in app/lifecycle/canary.py." \
+      "GET /lifecycle/canary/criteria must show criteria_met/exposure_bounded/eligible_to_promote true, all rows pass; GET /lifecycle/canary/exposure must show eligible_receipts 50, approved_receipts 45, canary_receipts 5, canary_exposure_pct 10, exposure_limit_pct 10, receipt_check PASS. Fix app/lifecycle/canary.py."
   fi
 fi
 
@@ -186,9 +194,9 @@ if [ -z "$RAW" ]; then
   transport_fail "/lifecycle/canary/reconcile"
 else
   emit "$(printf '%s' "$RAW" | $FMT --type canary-reconcile 2>&1)"
-  if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .active_matches_approved==true and .canary_exposure_pct==0 and .blast_radius_bounded==true and (.active_release=="rel-2026.06")' >/dev/null 2>&1; then
-    verdict 0 "production is provably on the approved release, canary exposure zero, blast radius bounded throughout" "" ""
-    LO+=("Step 4: production returns to the approved release after rollback, provably (EO4c)")
+  if echo "$RAW" | jq -e '.disposition=="CONFIRMED" and .active_matches_approved==true and .canary_exposure_pct==0 and .blast_radius_bounded==true and (.active_release=="rel-2026.06") and .prompt_id=="support_summary" and .active_prompt=="v2.0.0" and .active_model=="balanced-std@2026-06"' >/dev/null 2>&1; then
+    verdict 0 "production is provably on the approved release — prompt support_summary v2.0.0 and model balanced-std@2026-06 both explicit — canary exposure zero, blast radius bounded throughout" "" ""
+    LO+=("Step 4: production returns to the approved prompt+model release after rollback, provably (EO4c)")
   else
     verdict 1 "the reconcile did not confirm the approved state" \
       "Check the reconcile block in app/lifecycle/canary.py." \
