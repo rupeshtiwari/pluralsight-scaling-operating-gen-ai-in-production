@@ -78,33 +78,33 @@ def run_readiness() -> dict:
                 "gap, and naming it is what makes the audit honest",
     }
 
-    # --- EO5b (evidence): the MEASURED workload profile the decision reads --
-    # Concrete monitored inputs, not an assumption: steady ~10 RPS, a tight latency
-    # SLO, and a cold-start penalty that would blow it. The deployment decision is
-    # DERIVED from these numbers below, so the recommendation is auditable evidence.
+    # --- EO5b (evidence): the workload profile the decision reads ----------
+    # Concrete deterministic inputs: steady ~10 RPS, a tight latency target, and a
+    # cold-start penalty that would exceed it. The deployment decision is DERIVED
+    # from these numbers below, so the recommendation is auditable evidence.
     workload = {
-        "window": "last 15 min",
+        "window": "15 min controlled workload sample",
         "measured_rps": 9.8,
         "peak_rps": 11.2,
         "variance": "low — steady, not bursty",
-        "latency_slo_ms": 500,
+        "latency_target_ms": 500,        # the deployment latency requirement (NOT the 2500ms service SLO)
         "observed_p95_ms": 420,
         "cold_start_penalty_ms": 1800,
         "latency_sensitive": True,
-        "cold_start_tolerable": False,   # a 1800ms cold start vs a 500ms SLO
+        "cold_start_tolerable": False,   # a 1800ms cold start vs a 500ms deployment target
         "signals": [
-            {"signal": "traffic", "measured": "9.8 RPS avg · 11.2 peak",
+            {"signal": "traffic", "sample": "9.8 RPS avg · 11.2 peak",
              "reading": "steady ~10 RPS"},
-            {"signal": "latency", "measured": "p95 420ms vs 500ms SLO",
+            {"signal": "latency", "sample": "p95 420ms vs 500ms target",
              "reading": "latency-sensitive"},
-            {"signal": "cold_start", "measured": "1800ms penalty vs 500ms SLO",
+            {"signal": "cold_start", "sample": "1800ms penalty vs 500ms target",
              "reading": "cold starts unacceptable"},
         ],
-        "note": "the profile is measured, not assumed — these are the exact inputs "
-                "the deployment decision is derived from",
+        "note": "the workload profile provides the inputs the deployment decision "
+                "is derived from",
     }
 
-    # Derive the pattern FROM the measured profile, so the recommendation is a
+    # Derive the pattern FROM the workload profile, so the recommendation is a
     # computed result of the evidence, not a hard-coded label.
     _steady = workload["variance"].startswith("low")
     _rps = workload["measured_rps"]
@@ -120,15 +120,15 @@ def run_readiness() -> dict:
     # --- EO5b (decision): choose the deployment pattern for the workload --
     decision = {
         "workload": "steady ~10 RPS, latency-sensitive, cold start unacceptable",
-        "derived_from": "GET /lifecycle/readiness/workload (measured profile)",
+        "derived_from": "GET /lifecycle/readiness/workload (workload profile)",
         "recommended_pattern": _recommended,
         "reasons": [
-            "cold-start penalty 1800ms would blow the 500ms SLO — rules out scale-to-zero serverless",
+            "cold-start penalty 1800ms exceeds the 500ms deployment target — rules out scale-to-zero serverless",
             "traffic is steady at ~10 RPS, so serverless burst scaling is unneeded",
             "10 RPS does not justify the cost of a dedicated GPU instance",
             "containers stay warm, autoscale for headroom, and keep ownership control",
         ],
-        "note": "the deployment pattern follows the measured workload — steady, "
+        "note": "the deployment pattern follows the workload profile — steady, "
                 "latency-sensitive traffic points at warm containers, not serverless or GPU",
     }
 
@@ -144,7 +144,7 @@ def run_readiness() -> dict:
              "fit": "chosen — warm, autoscaling, right-sized for 10 RPS"},
             {"pattern": "dedicated_gpu", "latency": "lowest", "throughput": "very high",
              "warm_start": "always warm", "ownership": "high (ops burden)",
-             "fit": "no — overkill and overpriced at 10 RPS"},
+             "fit": "no — unnecessary operating cost and ownership at 10 RPS"},
         ],
         "note": "serverless loses on cold starts, dedicated GPU is overkill at this "
                 "load — containers are the right-sized choice",
@@ -156,7 +156,7 @@ def run_readiness() -> dict:
             {"section": "deploy", "detail": "blue/green via the canary ramp "
              "(10 → 25 → 50 → 100%), each stage health-gated on the SLOs"},
             {"section": "monitoring", "detail": "p95 ≤ 2500ms, availability ≥ 99%, "
-             "quality pass ≥ 90%, cost/req ≤ $0.015, error rate ≤ 1%"},
+             "quality pass ≥ 90%, cost/1k ≤ $0.35, error rate ≤ 1%"},
             {"section": "incident_response", "detail": "page on an availability or "
              "quality breach; diagnose trace → logs → receipts; fail over via the "
              "circuit breaker"},

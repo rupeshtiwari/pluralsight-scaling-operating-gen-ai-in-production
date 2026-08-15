@@ -142,10 +142,10 @@ else
   fi
 fi
 
-# STEP 3 — measured workload evidence -> derived decision + pattern comparison
-step_head "3" "Measure the workload, derive the deployment decision, and compare the alternatives" \
-  "A MEASURED workload profile (steady ~10 RPS, latency SLO, cold-start penalty) must be shown as evidence, the deployment decision must be DERIVED from it, and serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
-  "measured signals with steady ~10 RPS, latency-sensitive, cold starts unacceptable; then a derived recommendation of containers with number-backed reasons; then three patterns compared, containers chosen."
+# STEP 3 — workload profile evidence -> derived decision + pattern comparison
+step_head "3" "Read the workload profile, derive the deployment decision, and compare the alternatives" \
+  "A workload profile (steady ~10 RPS, a latency target, a cold-start penalty) must be shown as evidence, the deployment decision must be DERIVED from it, and serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
+  "workload signals with steady ~10 RPS, latency-sensitive, cold starts unacceptable; then a derived recommendation of containers with number-backed reasons; then three patterns compared, containers chosen."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/workload | python3 scripts/fmt.py --type readiness-workload"
 get_json "/lifecycle/readiness/workload" && RAW_WL="$GET_BODY" || RAW_WL=""
 [ -n "$RAW_WL" ] && emit "$(printf '%s' "$RAW_WL" | $FMT --type readiness-workload 2>&1)"
@@ -159,19 +159,19 @@ if [ -z "$RAW_WL" ] || [ -z "$RAW_DEC" ] || [ -z "$RAW_PAT" ]; then
   transport_fail "/lifecycle/readiness/workload, /decision or /patterns"
 else
   WL_OK=1; DEC_OK=1; PAT_OK=1
-  # The workload must be MEASURED evidence: ~10 RPS, latency-sensitive, cold starts intolerable.
-  echo "$RAW_WL" | jq -e '.measured_rps>=8 and .measured_rps<=12 and .latency_sensitive==true and .cold_start_tolerable==false and (.signals|length==3) and .latency_slo_ms>0 and .cold_start_penalty_ms>.latency_slo_ms' >/dev/null 2>&1 || WL_OK=0
+  # The workload must be concrete evidence: ~10 RPS, latency-sensitive, cold starts intolerable.
+  echo "$RAW_WL" | jq -e '.measured_rps>=8 and .measured_rps<=12 and .latency_sensitive==true and .cold_start_tolerable==false and (.signals|length==3) and .latency_target_ms>0 and .cold_start_penalty_ms>.latency_target_ms' >/dev/null 2>&1 || WL_OK=0
   # The decision must be DERIVED from the workload (not a bare label).
   echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS")) and (.derived_from|test("workload"))' >/dev/null 2>&1 || DEC_OK=0
   echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
   if [ "$WL_OK" = "1" ] && [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ]; then
-    verdict 0 "a measured workload (steady ~10 RPS, latency-sensitive, cold-start penalty > SLO) derives the containers recommendation with number-backed reasons, and all three patterns are compared on the deciding factors" "" ""
-    LO+=("Step 3: a measured workload profile drives a derived deployment decision (EO5a, EO5b)")
+    verdict 0 "a workload profile (steady ~10 RPS, latency-sensitive, cold-start penalty > deployment target) derives the containers recommendation with number-backed reasons, and all three patterns are compared on the deciding factors" "" ""
+    LO+=("Step 3: a workload profile drives a derived deployment decision (EO5a, EO5b)")
     LO+=("Step 3: select a cloud-native deployment pattern by latency/throughput (EO5b)")
   else
     verdict 1 "the workload evidence, the derived decision, or the pattern comparison is wrong" \
       "Check the workload, decision, and patterns blocks in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/workload must show measured_rps ~10, latency_sensitive true, cold_start_tolerable false, 3 signals, cold_start_penalty_ms > latency_slo_ms; GET /lifecycle/readiness/decision must recommend containers with derived_from referencing the workload and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
+      "GET /lifecycle/readiness/workload must show measured_rps ~10, latency_sensitive true, cold_start_tolerable false, 3 signals, cold_start_penalty_ms > latency_target_ms; GET /lifecycle/readiness/decision must recommend containers with derived_from referencing the workload and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
   fi
 fi
 

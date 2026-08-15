@@ -1922,19 +1922,19 @@ def fmt_readiness_audit(d: dict) -> str:
 
 def fmt_readiness_workload(d: dict) -> str:
     out = [header(
-        "Measure the workload profile",
-        "The concrete, monitored inputs the deployment decision is derived from — "
-        "measured, not assumed", width=92)]
-    out += _noted("window", d.get("window"), "production traffic sample", BLUE)
-    out.append(f"    {BLUE}{'signal':<12}{'measured':<28}{'reading'}{RESET}")
+        "Read the workload profile",
+        "The workload profile that provides the inputs the deployment decision is "
+        "derived from", width=92)]
+    out += _noted("window", d.get("window"), "the decision's input window", BLUE)
+    out.append(f"    {BLUE}{'signal':<12}{'sample':<32}{'reading'}{RESET}")
     out.append("")
     for s in d.get("signals", []):
         out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('signal')):<12}{RESET}"
-                   f"{GRAY}{str(s.get('measured')):<28}{RESET}{LIME}{s.get('reading')}{RESET}")
+                   f"{GRAY}{str(s.get('sample')):<32}{RESET}{LIME}{s.get('reading')}{RESET}")
     out.append("")
     ct = d.get("cold_start_tolerable")
     out += _noted("cold start tolerable", str(ct).lower(),
-                  f"{d.get('cold_start_penalty_ms')}ms penalty vs {d.get('latency_slo_ms')}ms SLO",
+                  f"{d.get('cold_start_penalty_ms')}ms penalty vs {d.get('latency_target_ms')}ms deployment target",
                   LIME if ct else PINK)
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)

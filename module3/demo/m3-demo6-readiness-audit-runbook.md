@@ -35,7 +35,7 @@ capstone of assessing and operating a production GenAI system (TO5).
 |------|----------------|----------------|
 | 1 | EO4d | A deprecated model retires through a replacement adapter with compatibility receipts |
 | 2 | EO5a | The audit scores scalability, observability, security, cost efficiency, and reliability |
-| 3 | EO5a, EO5b | A measured workload profile drives a *derived* deployment decision, and serverless, containers, and dedicated GPU are compared on the deciding factors |
+| 3 | EO5a, EO5b | A workload profile drives a *derived* deployment decision, and serverless, containers, and dedicated GPU are compared on the deciding factors |
 | 4 | EO5c, EO5d, TO5 | The runbook exposes executable operator controls (trigger → action) across deploy, monitoring, incident response, rollback, capacity, and the maturity level is computed from the audit evidence with the gaps named |
 
 ## What this demo proves — and each step is unique
@@ -141,47 +141,48 @@ known gap beats a fake twenty every single time.
 
 ### Step 3: Choose the deployment pattern and compare the alternatives
 
-**Goal:** Start from measured evidence, not an assertion — pull the workload profile the
-monitoring produced (steady RPS, the latency SLO, the cold-start penalty), let the
-deployment decision be *derived* from those numbers, then see the three patterns side by
-side on the factors that decide and confirm why the two you did not pick lose.
+**Goal:** Start from evidence, not an assertion — read the workload profile (steady RPS,
+the latency target, the cold-start penalty), let the deployment decision be *derived* from
+those inputs, then see the three patterns side by side on the factors that decide and
+confirm why the two you did not pick lose.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/readiness/workload | python3 scripts/fmt.py --type readiness-workload \
-  --title "Measure the workload profile" \
-  --why "The measured inputs — steady RPS, latency SLO, and cold-start penalty — the decision is derived from"
+  --title "Read the workload profile" \
+  --why "The workload profile inputs — steady RPS, latency target, and cold-start penalty — the decision is derived from"
 curl -s http://localhost:8000/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision \
   --title "Choose the deployment pattern" \
-  --why "The cloud-native pattern the measured workload calls for — by latency, throughput, and warm-start"
+  --why "The cloud-native pattern the workload profile calls for — by latency, throughput, and warm-start"
 curl -s http://localhost:8000/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns \
   --title "Compare the deployment patterns" \
   --why "Serverless, containers, and dedicated GPU on latency, throughput, warm start, and ownership"
 ```
 
-**Expected output:** first the **measured workload** — three signals, each `measured →
+**Expected output:** first the **workload profile** — three signals, each `sample →
 reading`: traffic `9.8 RPS avg · 11.2 peak → steady ~10 RPS`, latency `p95 420ms vs 500ms
-SLO → latency-sensitive`, cold_start `1800ms penalty vs 500ms SLO → cold starts
+target → latency-sensitive`, cold_start `1800ms penalty vs 500ms target → cold starts
 unacceptable`, and ★ `cold start tolerable: false`. Then the decision, ★ `derived from:
 /lifecycle/readiness/workload` → ★ `recommended pattern: containers`, with reasons that
-cite the numbers (a 1800ms cold start would blow the 500ms SLO, steady ~10 RPS needs no
-burst, 10 RPS does not justify a GPU). Then the comparison — three rows: `serverless`
-(`cold starts`, ruled out), `containers` (`always warm`, `chosen`), `dedicated_gpu`
-(`overkill at 10 RPS`) — on latency, throughput, warm start, and ownership, with ★
-`chosen: containers`.
+cite the numbers (a 1800ms cold start exceeds the 500ms deployment target, steady ~10 RPS
+needs no burst, 10 RPS does not justify a GPU). Then the comparison — three rows:
+`serverless` (`cold starts`, ruled out), `containers` (`always warm`, `chosen`),
+`dedicated_gpu` (`unnecessary cost at 10 RPS`) — on latency, throughput, warm start, and
+ownership, with ★ `chosen: containers`.
 
 **What the learner should notice:** Watch the order here, because it is the whole point:
-the numbers come first, and the decision falls out of them. The workload profile is
-*measured* — 9.8 RPS average, a p95 of 420ms against a 500ms SLO, and a cold-start penalty
-of 1800ms — so `recommended pattern: containers` is not an opinion, it is a computed
-result you can trace back to those three readings. That is why the decision shows `derived
-from: /lifecycle/readiness/workload`: change the evidence and the recommendation would
-change with it. The single fact that decides the most is `cold start tolerable: false` — a
-1800ms cold start against a 500ms budget eliminates scale-to-zero serverless before the
-conversation even starts. The comparison table is the audit trail behind the choice:
+the inputs come first, and the decision falls out of them. The workload profile supplies
+the numbers — 9.8 RPS average, a p95 of 420ms against a 500ms *deployment target* (the
+interactive latency this service needs, distinct from the wider 2500ms operational SLO you
+will see in the runbook), and a cold-start penalty of 1800ms — so `recommended pattern:
+containers` is not an opinion, it is a computed result you can trace back to those three
+readings. That is why the decision shows `derived from: /lifecycle/readiness/workload`:
+change the inputs and the recommendation would change with it. The single fact that decides
+the most is `cold start tolerable: false` — a 1800ms cold start against a 500ms deployment
+target eliminates scale-to-zero serverless before the conversation even starts. The comparison table is the audit trail behind the choice:
 serverless has the lowest ownership burden but loses on cold starts; a dedicated GPU has
 the best raw latency and throughput but brings an operational burden and a price tag that
 ten RPS cannot justify; containers win precisely because their strengths line up with this
-measured workload — always warm, enough throughput, autoscaling headroom. Containers are
+workload profile — always warm, enough throughput, autoscaling headroom. Containers are
 not universally right; they are right *for this evidence*, and if the traffic were bursty
 and cold-start-tolerant, this same logic would point at serverless instead.
 
