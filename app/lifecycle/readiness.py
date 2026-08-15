@@ -248,4 +248,10 @@ def run_readiness() -> dict:
 
 
 def state() -> dict:
+    # Auto-build on first read so a GET before the POST /run (e.g. after an api
+    # restart, or when running a step out of order) never returns empty "None"
+    # fields. run_readiness() is deterministic, so lazy-seeding is safe and
+    # idempotent — the explicit POST /run in Step 1 still rebuilds it the same way.
+    if not _STATE:
+        run_readiness()
     return _STATE
