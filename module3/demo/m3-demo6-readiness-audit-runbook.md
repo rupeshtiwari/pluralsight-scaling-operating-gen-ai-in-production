@@ -127,17 +127,27 @@ curl -s http://localhost:8000/lifecycle/readiness/audit | python3 scripts/fmt.py
 
 **Expected output:** ★ `readiness score: 17/20` (`4 of 5 dimensions ready`), then the
 five rows — scalability `4/4 ready`, observability `4/4 ready`, security `2/4 gap`,
-cost_efficiency `3/4 ready`, reliability `4/4 ready` — and ★ `open gaps: security`.
+cost_efficiency `3/4 ready`, reliability `4/4 ready` — and ★ `open gaps: security`. Then,
+under **security gap — PII redaction sample**, a concrete example of what that gap means:
+★ `field: customer_ref`, ★ `raw: cust-102317` (`carries PII`), ★ `redacted: cust-XXX317`
+(`last 3 kept for support lookup, the rest masked`), and ★ `coverage: 62% of requests
+sampled` — the other 38% unverified, which is the gap.
 
 **What the learner should notice:** The most valuable number on this screen is the one
 that is not green. Four dimensions are production-ready, and they are backed by real
 controls you built — the queue and rate limits for scalability, the traces and SLO
 alerts for observability, the circuit breaker and fallback for reliability. But
-security scores a two, because PII redaction sampling is not finished, and the audit
-says so out loud. That honesty is the entire point of a readiness review. An audit that
-scores everything green is worthless, because it tells you nothing to do; an audit that
-names one concrete gap gives you a task and a reason. A seventeen out of twenty with a
-known gap beats a fake twenty every single time.
+security scores a two, and the audit does not leave that abstract — it shows you exactly
+what the gap is. Look at the PII redaction sample: a raw `customer_ref` of `cust-102317`
+carries personally identifiable information, and the redaction rule masks it to
+`cust-XXX317`, keeping only the last three characters so support can still reference a
+ticket while the identity is hidden. That part works. The gap is `coverage: 62%` — only
+sixty-two percent of requests are sampled and verified, so the other thirty-eight percent
+could be leaking unredacted PII and nobody would know. That is a real, nameable task, not
+a vibe. That honesty is the entire point of a readiness review: an audit that scores
+everything green is worthless because it tells you nothing to do; an audit that shows you
+`cust-102317 → cust-XXX317` at 62% coverage gives you a task and a reason. A seventeen out
+of twenty with a known gap beats a fake twenty every single time.
 
 ### Step 3: Choose the deployment pattern and compare the alternatives
 

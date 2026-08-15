@@ -124,21 +124,21 @@ fi
 
 # STEP 2 — readiness audit
 step_head "2" "Run the production readiness audit" \
-  "The audit must score scalability, observability, security, cost efficiency, and reliability." \
-  "five dimensions scored; four ready, security a gap; overall 17/20."
+  "The audit must score scalability, observability, security, cost efficiency, and reliability, and make the security gap concrete with a PII redaction sample (raw -> redacted) and its sampling coverage." \
+  "five dimensions scored; four ready, security a gap; overall 17/20; plus a PII redaction example (cust-102317 -> cust-XXX317) at partial sampling coverage."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/audit | python3 scripts/fmt.py --type readiness-audit"
 get_json "/lifecycle/readiness/audit" && RAW="$GET_BODY" || RAW=""
 if [ -z "$RAW" ]; then
   transport_fail "/lifecycle/readiness/audit"
 else
   emit "$(printf '%s' "$RAW" | $FMT --type readiness-audit 2>&1)"
-  if echo "$RAW" | jq -e '(.rows|length==5) and ([.rows[].dimension]|(index("scalability") and index("observability") and index("security") and index("cost_efficiency") and index("reliability"))) and ([.gaps[]]|index("security"))' >/dev/null 2>&1; then
-    verdict 0 "the audit scores all five readiness dimensions and names the open gap (security)" "" ""
+  if echo "$RAW" | jq -e '(.rows|length==5) and ([.rows[].dimension]|(index("scalability") and index("observability") and index("security") and index("cost_efficiency") and index("reliability"))) and ([.gaps[]]|index("security")) and (.redaction_sample|has("raw") and has("redacted") and has("coverage_pct")) and (.redaction_sample.redacted!=.redaction_sample.raw) and (.redaction_sample.coverage_pct<100)' >/dev/null 2>&1; then
+    verdict 0 "the audit scores all five readiness dimensions, names the open gap (security), and makes it concrete with a PII redaction sample (cust-102317 -> cust-XXX317) at 62% coverage" "" ""
     LO+=("Step 2: evaluate architecture against readiness criteria (EO5a)")
   else
     verdict 1 "the readiness audit is wrong" \
       "Check the audit block in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/audit must score scalability, observability, security, cost_efficiency, reliability, with security a gap. Fix app/lifecycle/readiness.py."
+      "GET /lifecycle/readiness/audit must score scalability, observability, security, cost_efficiency, reliability with security a gap, AND include a redaction_sample with raw != redacted and coverage_pct < 100. Fix app/lifecycle/readiness.py."
   fi
 fi
 

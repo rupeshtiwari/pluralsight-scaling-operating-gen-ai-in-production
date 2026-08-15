@@ -74,6 +74,18 @@ def run_readiness() -> dict:
         "max_score": max_total,
         "ready_dimensions": sum(1 for r in audit_rows if r["status"] == "ready"),
         "gaps": gaps,
+        # A concrete PII-redaction example makes the security gap tangible: a raw
+        # value carrying PII is masked (last 3 kept for support lookup), and only
+        # part of the traffic is sampled — that unsampled remainder IS the gap.
+        "redaction_sample": {
+            "field": "customer_ref",
+            "raw": "cust-102317",
+            "redacted": "cust-XXX317",
+            "rule": "last 3 kept for support lookup, the rest masked",
+            "coverage_pct": 62,
+            "note": "redaction works on sampled traffic, but only 62% of requests "
+                    "are sampled — the other 38% are unverified, and that is the gap",
+        },
         "note": "four dimensions are production-ready; security is the one open "
                 "gap, and naming it is what makes the audit honest",
     }

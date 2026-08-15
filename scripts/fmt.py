@@ -1916,6 +1916,19 @@ def fmt_readiness_audit(d: dict) -> str:
     gaps = d.get("gaps", [])
     out += _noted("open gaps", ", ".join(gaps) if gaps else "none",
                   "to close before scale", PINK if gaps else LIME)
+    # Make the security gap concrete: show a real PII value being redacted, and
+    # the sampling coverage that leaves the rest unverified.
+    rs = d.get("redaction_sample")
+    if rs:
+        out += sect("security gap — PII redaction sample")
+        out.append(f"  {PINK}★{RESET} {BLUE}{'field':<10}{RESET}{LGRN}{rs.get('field')}{RESET}")
+        out.append(f"  {PINK}★{RESET} {BLUE}{'raw':<10}{RESET}{PINK}{rs.get('raw')}{RESET}   {GRAY}(carries PII){RESET}")
+        out.append(f"  {PINK}★{RESET} {BLUE}{'redacted':<10}{RESET}{LIME}{rs.get('redacted')}{RESET}   {GRAY}{rs.get('rule')}{RESET}")
+        cov = rs.get("coverage_pct")
+        rem = (100 - cov) if isinstance(cov, (int, float)) else "?"
+        out.append(f"  {PINK}★{RESET} {BLUE}{'coverage':<10}{RESET}{PINK}{cov}% of requests sampled{RESET}"
+                   f"   {GRAY}the other {rem}% are unverified — the open gap{RESET}")
+        out.append("")
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
