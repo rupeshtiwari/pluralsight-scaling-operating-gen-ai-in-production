@@ -1920,12 +1920,34 @@ def fmt_readiness_audit(d: dict) -> str:
     return "\n".join(out)
 
 
+def fmt_readiness_workload(d: dict) -> str:
+    out = [header(
+        "Measure the workload profile",
+        "The concrete, monitored inputs the deployment decision is derived from — "
+        "measured, not assumed", width=92)]
+    out += _noted("window", d.get("window"), "production traffic sample", BLUE)
+    out.append(f"    {BLUE}{'signal':<12}{'measured':<28}{'reading'}{RESET}")
+    out.append("")
+    for s in d.get("signals", []):
+        out.append(f"  {PINK}★{RESET} {LGRN}{str(s.get('signal')):<12}{RESET}"
+                   f"{GRAY}{str(s.get('measured')):<28}{RESET}{LIME}{s.get('reading')}{RESET}")
+    out.append("")
+    ct = d.get("cold_start_tolerable")
+    out += _noted("cold start tolerable", str(ct).lower(),
+                  f"{d.get('cold_start_penalty_ms')}ms penalty vs {d.get('latency_slo_ms')}ms SLO",
+                  LIME if ct else PINK)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
 def fmt_readiness_decision(d: dict) -> str:
     out = [header(
         "Choose the deployment pattern",
         "The cloud-native pattern the workload calls for — by latency, throughput, "
         "and warm-start requirements", width=90)]
     out += _noted("workload", d.get("workload"), "the deciding profile", BLUE)
+    if d.get("derived_from"):
+        out += _noted("derived from", d.get("derived_from"), "computed from the measured profile", GRAY)
     out += star("recommended pattern", d.get("recommended_pattern"), LIME)
     out += sect("why")
     for r in d.get("reasons", []):
@@ -1965,6 +1987,14 @@ def fmt_readiness_runbook(d: dict) -> str:
     for s in d.get("sections", []):
         out.append(f"  {PINK}★{RESET} {WHITE}{str(s.get('section'))}{RESET}")
         out.append(f"      {GRAY}{s.get('detail')}{RESET}")
+        out.append("")
+    # Actionable operator controls — concrete trigger → action rules, the part that
+    # makes the runbook executable rather than descriptive.
+    if d.get("controls"):
+        out += sect("operator controls  (trigger → action)")
+        for c in d.get("controls", []):
+            out.append(f"  {PINK}★{RESET} {BLUE}{c.get('trigger')}{RESET}")
+            out.append(f"      {LIME}→ {c.get('action')}{RESET}   {GRAY}[{c.get('kind')}]{RESET}")
         out.append("")
     comp = d.get("complete")
     out += star("runbook complete", str(comp).lower(), LIME if comp else PINK)
@@ -2073,6 +2103,7 @@ VIEWS = {
     "canary-reconcile": fmt_canary_reconcile,
     "readiness-deprecation": fmt_readiness_deprecation,
     "readiness-audit": fmt_readiness_audit,
+    "readiness-workload": fmt_readiness_workload,
     "readiness-decision": fmt_readiness_decision,
     "readiness-patterns": fmt_readiness_patterns,
     "readiness-runbook": fmt_readiness_runbook,

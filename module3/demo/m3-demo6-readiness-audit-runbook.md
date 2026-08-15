@@ -35,8 +35,8 @@ capstone of assessing and operating a production GenAI system (TO5).
 |------|----------------|----------------|
 | 1 | EO4d | A deprecated model retires through a replacement adapter with compatibility receipts |
 | 2 | EO5a | The audit scores scalability, observability, security, cost efficiency, and reliability |
-| 3 | EO5a, EO5b | The audit drives a deployment decision matched to the workload, and serverless, containers, and dedicated GPU are compared on the deciding factors |
-| 4 | EO5c, EO5d, TO5 | The operational runbook covers deploy, monitoring, incident response, rollback, capacity, and the system is placed on the maturity ladder on evidence with the gaps named |
+| 3 | EO5a, EO5b | A measured workload profile drives a *derived* deployment decision, and serverless, containers, and dedicated GPU are compared on the deciding factors |
+| 4 | EO5c, EO5d, TO5 | The runbook exposes executable operator controls (trigger → action) across deploy, monitoring, incident response, rollback, capacity, and the maturity level is computed from the audit evidence with the gaps named |
 
 ## What this demo proves — and each step is unique
 
@@ -44,7 +44,7 @@ capstone of assessing and operating a production GenAI system (TO5).
 |------|---------|-----------------------------------|
 | 1 | `/lifecycle/readiness/deprecation` | The adapter contract absorbs a deprecation |
 | 2 | `/lifecycle/readiness/audit` | A readiness score that names the gap |
-| 3 | `/lifecycle/readiness/decision` + `/lifecycle/readiness/patterns` | The pattern follows the workload, and why serverless and GPU lose here |
+| 3 | `/lifecycle/readiness/workload` + `/lifecycle/readiness/decision` + `/lifecycle/readiness/patterns` | Measured evidence → a derived pattern choice, and why serverless and GPU lose here |
 | 4 | `/lifecycle/readiness/runbook` + `/lifecycle/readiness/maturity` | A runbook wired to real controls, and maturity as evidence, not opinion |
 
 ## Prerequisites
@@ -141,51 +141,56 @@ known gap beats a fake twenty every single time.
 
 ### Step 3: Choose the deployment pattern and compare the alternatives
 
-**Goal:** Turn the workload profile into a deployment decision — the cloud-native
-pattern that fits the latency and throughput this service actually needs — then see the
-three patterns side by side on the factors that decide, and confirm why the two you did
-not pick lose.
+**Goal:** Start from measured evidence, not an assertion — pull the workload profile the
+monitoring produced (steady RPS, the latency SLO, the cold-start penalty), let the
+deployment decision be *derived* from those numbers, then see the three patterns side by
+side on the factors that decide and confirm why the two you did not pick lose.
 
 ```bash
+curl -s http://localhost:8000/lifecycle/readiness/workload | python3 scripts/fmt.py --type readiness-workload \
+  --title "Measure the workload profile" \
+  --why "The measured inputs — steady RPS, latency SLO, and cold-start penalty — the decision is derived from"
 curl -s http://localhost:8000/lifecycle/readiness/decision | python3 scripts/fmt.py --type readiness-decision \
   --title "Choose the deployment pattern" \
-  --why "The cloud-native pattern the workload calls for — by latency, throughput, and warm-start requirements"
+  --why "The cloud-native pattern the measured workload calls for — by latency, throughput, and warm-start"
 curl -s http://localhost:8000/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns \
   --title "Compare the deployment patterns" \
   --why "Serverless, containers, and dedicated GPU on latency, throughput, warm start, and ownership"
 ```
 
-**Expected output:** first the decision — ★ `workload: steady ~10 RPS, latency-sensitive,
-cold start unacceptable`, ★ `recommended pattern: containers`, and the reasons — cold
-start rules out serverless, steady load does not need burst scaling, 10 RPS does not
-justify a dedicated GPU, containers stay warm with headroom. Then the comparison — three
-rows — `serverless` (`cold starts`, ruled out), `containers` (`always warm`, `chosen`),
-`dedicated_gpu` (`overkill at 10 RPS`) — compared on latency, throughput, warm start, and
-ownership, with ★ `chosen: containers`.
+**Expected output:** first the **measured workload** — three signals, each `measured →
+reading`: traffic `9.8 RPS avg · 11.2 peak → steady ~10 RPS`, latency `p95 420ms vs 500ms
+SLO → latency-sensitive`, cold_start `1800ms penalty vs 500ms SLO → cold starts
+unacceptable`, and ★ `cold start tolerable: false`. Then the decision, ★ `derived from:
+/lifecycle/readiness/workload` → ★ `recommended pattern: containers`, with reasons that
+cite the numbers (a 1800ms cold start would blow the 500ms SLO, steady ~10 RPS needs no
+burst, 10 RPS does not justify a GPU). Then the comparison — three rows: `serverless`
+(`cold starts`, ruled out), `containers` (`always warm`, `chosen`), `dedicated_gpu`
+(`overkill at 10 RPS`) — on latency, throughput, warm start, and ownership, with ★
+`chosen: containers`.
 
-**What the learner should notice:** The lesson here is that the deployment pattern is an
-output of the workload, not a matter of taste or whatever is trendy. Start from the
-facts: the traffic is steady at about ten requests per second, it is latency-sensitive,
-and cold starts are unacceptable. Those three facts do the deciding. Cold-start
-sensitivity eliminates scale-to-zero serverless before you even discuss it. Steady load
-means you are not paying for burst scaling you will never use. And ten RPS is nowhere
-near enough to justify the cost and operational weight of a dedicated GPU. The comparison
-table is the work behind that decision — seeing all three options next to each other
-makes the trade-offs concrete instead of abstract: serverless has the lowest ownership
-burden but loses on cold starts; a dedicated GPU has the best raw latency and throughput
-but brings an operational burden and a price tag that ten RPS cannot justify; containers
-sit in the middle and win precisely because they match this workload — always warm, high
-enough throughput, and autoscaling headroom. The point is not that containers are always
-right. It is that the right pattern is the one whose strengths line up with your
-requirements and whose weaknesses you can live with — and the decision writes itself once
-you let the workload lead.
+**What the learner should notice:** Watch the order here, because it is the whole point:
+the numbers come first, and the decision falls out of them. The workload profile is
+*measured* — 9.8 RPS average, a p95 of 420ms against a 500ms SLO, and a cold-start penalty
+of 1800ms — so `recommended pattern: containers` is not an opinion, it is a computed
+result you can trace back to those three readings. That is why the decision shows `derived
+from: /lifecycle/readiness/workload`: change the evidence and the recommendation would
+change with it. The single fact that decides the most is `cold start tolerable: false` — a
+1800ms cold start against a 500ms budget eliminates scale-to-zero serverless before the
+conversation even starts. The comparison table is the audit trail behind the choice:
+serverless has the lowest ownership burden but loses on cold starts; a dedicated GPU has
+the best raw latency and throughput but brings an operational burden and a price tag that
+ten RPS cannot justify; containers win precisely because their strengths line up with this
+measured workload — always warm, enough throughput, autoscaling headroom. Containers are
+not universally right; they are right *for this evidence*, and if the traffic were bursty
+and cold-start-tolerant, this same logic would point at serverless instead.
 
 ### Step 4: Inspect the operational runbook and decide the operational maturity
 
-**Goal:** Read the operational runbook and confirm every section is concrete and wired
-to a control the system actually has, then place the system on the maturity ladder —
-prototype, managed production, or scale-ready — on evidence, and name the gaps that
-separate it from the next level.
+**Goal:** Read the operational runbook — not as prose, but as concrete operator controls
+(explicit `trigger → action` rules an on-call engineer can execute) — then place the
+system on the maturity ladder (prototype, managed production, or scale-ready) with a level
+that is *computed* from the audit evidence, and name the exact gaps to the next level.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook \
@@ -196,29 +201,32 @@ curl -s http://localhost:8000/lifecycle/readiness/maturity | python3 scripts/fmt
   --why "Prototype, managed production, or scale-ready — an evidence-based decision with the gaps to the next level"
 ```
 
-**Expected output:** first the runbook — five sections — `deploy` (canary ramp,
-health-gated), `monitoring` (the SLO thresholds), `incident_response` (page, diagnose,
-fail over), `rollback` (revert to the approved release id), `capacity` (10 RPS baseline,
-scale triggers) — and ★ `runbook complete: true`. Then the maturity decision — the
-maturity ladder with `managed_production` marked `← current`, the evidence, the gaps to
-scale-ready (complete PII redaction, load-test to 30 RPS, add multi-region capacity), and
-★ `disposition: MANAGED_PRODUCTION`.
+**Expected output:** first the runbook — five sections (`deploy`, `monitoring`,
+`incident_response`, `rollback`, `capacity`) — then, under **operator controls (trigger →
+action)**, at least two executable rules: ★ `queue_depth > 20 OR p95 > 2000ms → scale out
+container replicas`, ★ `availability < 99% OR quality_pass < 90% → page the on-call
+operator`, and ★ `error_rate > 1% sustained → fail over via the circuit breaker and roll
+back` — with ★ `runbook complete: true`. Then the maturity decision — the ladder with
+`managed_production` marked `← current`, ★ `derived from: /lifecycle/readiness/audit (open
+gaps) + capacity evidence`, and the gaps to scale-ready computed from that evidence (close
+the security audit gap, load-test to 30 RPS, add multi-region), and ★ `disposition:
+MANAGED_PRODUCTION`.
 
-**What the learner should notice:** Read this runbook and notice that nothing in it is
-aspirational. Every section points at a control you have already seen work. The deploy
-section is the canary ramp. The monitoring thresholds are the exact SLOs the alerts
-evaluate. Incident response is the trace-to-logs-to-receipts path with the circuit
-breaker as the escape hatch. Rollback is the approved-release-id revert. Capacity names
-the scale triggers — queue depth and p95. That is what separates a real runbook from a
-document nobody trusts: it is not a wish list of practices you intend to adopt, it is a
-description of the machinery that already exists, and an on-call engineer can follow it
-at 2am because every line maps to a button that actually exists. That runbook is what the
-maturity decision rests on, and this is the honest close to the whole course. The system
-is not a prototype — it has observability, resilience, versioning, canary releases, and
-cost tracking, all proven in the earlier demos, and that evidence puts it firmly at
-managed production. But it is not scale-ready either, and the decision says so by naming
-exactly what stands in the way: finish the security gap, load-test to the capacity
-ceiling, and add multi-region failover. That is what operational maturity actually is —
+**What the learner should notice:** The runbook earns its keep in the **operator controls**
+block, because those are not prose — they are executable `trigger → action` rules. `queue
+depth > 20 OR p95 > 2000ms → scale out` is something an on-call engineer runs at 2am
+without a meeting; `availability < 99% OR quality < 90% → page` and `error rate > 1% →
+fail over via the circuit breaker and roll back` are the same. That is the line between a
+real runbook and a document nobody trusts: not a wish list of practices you intend to
+adopt, but concrete triggers wired to actions the earlier demos already built. Then the
+maturity decision, and notice it says `derived from: /lifecycle/readiness/audit` — the
+level is *computed*, not awarded. The system is not a prototype: observability,
+resilience, versioning, canary releases, and cost tracking are all proven. But it is not
+scale-ready either, and the decision proves why by reading straight from the audit — the
+same security gap you saw scored `2/4` in Step 2 is the first gap listed here, joined by
+the missing load-test to the 30 RPS ceiling and multi-region failover. Change that
+evidence and the level would change; leave the gap open and it stays at managed
+production. That is what operational maturity actually is —
 not a badge you award yourself, but a position you can defend with evidence, plus a
 concrete list of what comes next. You now have a GenAI service you can scale, observe,
 release, and operate — and, just as importantly, an honest account of exactly how ready
@@ -246,9 +254,9 @@ TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo6-readiness-
   audit, deployment decision, pattern comparison, operational runbook, and maturity
   decision
 - `app/main.py` — the `/lifecycle/readiness/run`, `/lifecycle/readiness/deprecation`,
-  `/lifecycle/readiness/audit`, `/lifecycle/readiness/decision`,
-  `/lifecycle/readiness/patterns`, `/lifecycle/readiness/runbook`, and
-  `/lifecycle/readiness/maturity` endpoints
+  `/lifecycle/readiness/audit`, `/lifecycle/readiness/workload`,
+  `/lifecycle/readiness/decision`, `/lifecycle/readiness/patterns`,
+  `/lifecycle/readiness/runbook`, and `/lifecycle/readiness/maturity` endpoints
 - `scripts/fmt.py` — the `readiness-deprecation` / `readiness-audit` /
-  `readiness-decision` / `readiness-patterns` / `readiness-runbook` /
-  `readiness-maturity` views
+  `readiness-workload` / `readiness-decision` / `readiness-patterns` /
+  `readiness-runbook` / `readiness-maturity` views

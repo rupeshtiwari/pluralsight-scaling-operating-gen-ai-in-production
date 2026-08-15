@@ -1069,6 +1069,13 @@ def lc_readiness_audit() -> dict:
     return lc_readiness.state().get("audit", {})
 
 
+@app.get("/lifecycle/readiness/workload")
+def lc_readiness_workload() -> dict:
+    """The measured workload profile — steady RPS, latency SLO, and cold-start
+    penalty — the concrete evidence the deployment decision is derived from."""
+    return lc_readiness.state().get("workload", {})
+
+
 @app.get("/lifecycle/readiness/decision")
 def lc_readiness_decision() -> dict:
     """The deployment decision — the cloud-native pattern the workload calls for."""
