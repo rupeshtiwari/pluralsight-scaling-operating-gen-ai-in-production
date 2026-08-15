@@ -1960,7 +1960,7 @@ def fmt_readiness_decision(d: dict) -> str:
         "and warm-start requirements", width=90)]
     out += _noted("workload", d.get("workload"), "the deciding profile", BLUE)
     if d.get("derived_from"):
-        out += _noted("derived from", d.get("derived_from"), "computed from the measured profile", GRAY)
+        out += _noted("derived from", d.get("derived_from"), "computed from the workload profile", GRAY)
     out += star("recommended pattern", d.get("recommended_pattern"), LIME)
     out += sect("why")
     for r in d.get("reasons", []):

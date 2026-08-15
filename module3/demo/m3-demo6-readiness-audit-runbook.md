@@ -20,7 +20,7 @@ system — a deprecated model retired through a replacement adapter with compati
 receipts; a readiness audit that scores five dimensions and names the one real gap; a
 deployment decision driven by the workload's latency and throughput and confirmed against
 a side-by-side comparison of serverless, containers, and dedicated GPU; and an
-operational runbook wired to the controls the earlier demos built, closed by an
+operational runbook wired to concrete production controls, closed by an
 evidence-based maturity decision that places the system on the ladder from prototype to
 scale-ready.
 
@@ -229,7 +229,7 @@ depth > 20 OR p95 > 2000ms → scale out` is something an on-call engineer runs 
 without a meeting; `availability < 99% OR quality < 90% → page` and `error rate > 1% →
 fail over via the circuit breaker and roll back` are the same. That is the line between a
 real runbook and a document nobody trusts: not a wish list of practices you intend to
-adopt, but concrete triggers wired to actions the earlier demos already built. Then the
+adopt, but concrete triggers each wired directly to a production action. Then the
 maturity decision, and notice it says `derived from: /lifecycle/readiness/audit` — the
 level is *computed*, not awarded. The system is not a prototype: observability,
 resilience, versioning, canary releases, and cost tracking are all proven. But it is not

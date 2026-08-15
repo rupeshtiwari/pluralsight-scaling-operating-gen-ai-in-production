@@ -191,8 +191,8 @@ def run_readiness() -> dict:
              "kind": "reliability / fail-over"},
         ],
         "complete": True,
-        "note": "every runbook section maps to a control the earlier demos built, and "
-                "each operator control is a concrete trigger → action rule, not prose",
+        "note": "every runbook section maps to a concrete production control, and each "
+                "operator rule connects a trigger directly to an action",
     }
 
     # --- EO5d: the maturity decision (DERIVED from the audit evidence) ----
