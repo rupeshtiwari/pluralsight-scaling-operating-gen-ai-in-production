@@ -142,10 +142,10 @@ else
   fi
 fi
 
-# STEP 3 — workload profile evidence -> derived decision + pattern comparison
-step_head "3" "Read the workload profile, derive the deployment decision, and compare the alternatives" \
-  "A workload profile (steady ~10 RPS, a latency target, a cold-start penalty) must be shown as evidence, the deployment decision must be DERIVED from it, and serverless, containers, and dedicated GPU must be compared on latency, throughput, warm start, ownership." \
-  "workload signals with steady ~10 RPS, latency-sensitive, cold starts unacceptable; then a derived recommendation of containers with number-backed reasons; then three patterns compared, containers chosen."
+# STEP 3 — workload evidence -> derived decision + patterns + runbook, proven live
+step_head "3" "Derive the deployment pattern, then prove the runbook fires" \
+  "A workload profile must be shown as evidence and the deployment decision DERIVED from it; the three patterns compared; the runbook must expose >=2 operator controls as trigger -> action rules (a scaling and a paging trigger); and an injected p95 breach must fire the mapped scale-out alert LIVE." \
+  "workload signals; a derived recommendation of containers; three patterns compared; the runbook's five sections plus operator controls; then an injected 2600ms breach fires the p95 alert with a scale-out action."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/workload | python3 scripts/fmt.py --type readiness-workload"
 get_json "/lifecycle/readiness/workload" && RAW_WL="$GET_BODY" || RAW_WL=""
 [ -n "$RAW_WL" ] && emit "$(printf '%s' "$RAW_WL" | $FMT --type readiness-workload 2>&1)"
@@ -155,59 +155,51 @@ get_json "/lifecycle/readiness/decision" && RAW_DEC="$GET_BODY" || RAW_DEC=""
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/patterns | python3 scripts/fmt.py --type readiness-patterns"
 get_json "/lifecycle/readiness/patterns" && RAW_PAT="$GET_BODY" || RAW_PAT=""
 [ -n "$RAW_PAT" ] && emit "$(printf '%s' "$RAW_PAT" | $FMT --type readiness-patterns 2>&1)"
-if [ -z "$RAW_WL" ] || [ -z "$RAW_DEC" ] || [ -z "$RAW_PAT" ]; then
-  transport_fail "/lifecycle/readiness/workload, /decision or /patterns"
-else
-  WL_OK=1; DEC_OK=1; PAT_OK=1
-  # The workload must be concrete evidence: ~10 RPS, latency-sensitive, cold starts intolerable.
-  echo "$RAW_WL" | jq -e '.measured_rps>=8 and .measured_rps<=12 and .latency_sensitive==true and .cold_start_tolerable==false and (.signals|length==3) and .latency_target_ms>0 and .cold_start_penalty_ms>.latency_target_ms' >/dev/null 2>&1 || WL_OK=0
-  # The decision must be DERIVED from the workload (not a bare label).
-  echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS")) and (.derived_from|test("workload"))' >/dev/null 2>&1 || DEC_OK=0
-  echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
-  if [ "$WL_OK" = "1" ] && [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ]; then
-    verdict 0 "a workload profile (steady ~10 RPS, latency-sensitive, cold-start penalty > deployment target) derives the containers recommendation with number-backed reasons, and all three patterns are compared on the deciding factors" "" ""
-    LO+=("Step 3: a workload profile drives a derived deployment decision (EO5a, EO5b)")
-    LO+=("Step 3: select a cloud-native deployment pattern by latency/throughput (EO5b)")
-  else
-    verdict 1 "the workload evidence, the derived decision, or the pattern comparison is wrong" \
-      "Check the workload, decision, and patterns blocks in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/workload must show measured_rps ~10, latency_sensitive true, cold_start_tolerable false, 3 signals, cold_start_penalty_ms > latency_target_ms; GET /lifecycle/readiness/decision must recommend containers with derived_from referencing the workload and >=3 reasons; GET /lifecycle/readiness/patterns must compare serverless, containers, dedicated_gpu on latency/throughput/warm_start/ownership with containers chosen. Fix app/lifecycle/readiness.py."
-  fi
-fi
-
-# STEP 4 — runbook controls, LIVE breach proof, and derived maturity decision
-step_head "4" "Inspect the runbook controls, prove one fires, and decide the maturity" \
-  "The runbook must cover deploy, monitoring, incident response, rollback, and capacity AND expose >=2 operator controls as trigger -> action rules (a scaling and a paging trigger); an injected p95 breach must fire the mapped scale-out alert LIVE; and the maturity level must be DERIVED from the audit evidence with each gap naming its investment." \
-  "five sections plus >=2 operator controls; then an injected 2600ms breach fires the p95 alert with a scale-out action; then current managed_production derived from the audit, with investment-named gaps to scale-ready."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook"
 get_json "/lifecycle/readiness/runbook" && RAW_RUN="$GET_BODY" || RAW_RUN=""
 [ -n "$RAW_RUN" ] && emit "$(printf '%s' "$RAW_RUN" | $FMT --type readiness-runbook 2>&1)"
-# Prove the runbook is live: inject a breach above the SLO, then read the fired alert.
+# Now BREAK IT: inject a breach above the SLO, then read the alert the runbook fired.
 show_cmd "curl -s -X POST \$API_BASE/lifecycle/readiness/inject-breach?p95_ms=2600 >/dev/null; curl -s \$API_BASE/lifecycle/readiness/alert | python3 scripts/fmt.py --type readiness-alert"
 curl -s -X POST "$API_BASE/lifecycle/readiness/inject-breach?p95_ms=2600" >/dev/null 2>&1
 get_json "/lifecycle/readiness/alert" && RAW_ALERT="$GET_BODY" || RAW_ALERT=""
 [ -n "$RAW_ALERT" ] && emit "$(printf '%s' "$RAW_ALERT" | $FMT --type readiness-alert 2>&1)"
+if [ -z "$RAW_WL" ] || [ -z "$RAW_DEC" ] || [ -z "$RAW_PAT" ] || [ -z "$RAW_RUN" ] || [ -z "$RAW_ALERT" ]; then
+  transport_fail "/lifecycle/readiness/workload, /decision, /patterns, /runbook or /alert"
+else
+  WL_OK=1; DEC_OK=1; PAT_OK=1; RUN_OK=1; ALERT_OK=1
+  echo "$RAW_WL" | jq -e '.measured_rps>=8 and .measured_rps<=12 and .latency_sensitive==true and .cold_start_tolerable==false and (.signals|length==3) and .latency_target_ms>0 and .cold_start_penalty_ms>.latency_target_ms' >/dev/null 2>&1 || WL_OK=0
+  echo "$RAW_DEC" | jq -e '.recommended_pattern=="containers" and (.reasons|length>=3) and (.workload|test("RPS")) and (.derived_from|test("workload"))' >/dev/null 2>&1 || DEC_OK=0
+  echo "$RAW_PAT" | jq -e '.chosen=="containers" and (.rows|length==3) and ([.rows[].pattern]|(index("serverless") and index("containers") and index("dedicated_gpu"))) and (.rows|all(has("latency") and has("throughput") and has("warm_start") and has("ownership")))' >/dev/null 2>&1 || PAT_OK=0
+  echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity"))) and (.controls|length>=2) and (.controls|all(has("trigger") and has("action"))) and ([.controls[].action]|any(test("scale"))) and ([.controls[].action]|any(test("page")))' >/dev/null 2>&1 || RUN_OK=0
+  echo "$RAW_ALERT" | jq -e '.fired==true and .measured_ms>.threshold_ms and (.alert|test("latency")) and (.action_taken|test("scale"))' >/dev/null 2>&1 || ALERT_OK=0
+  if [ "$WL_OK" = "1" ] && [ "$DEC_OK" = "1" ] && [ "$PAT_OK" = "1" ] && [ "$RUN_OK" = "1" ] && [ "$ALERT_OK" = "1" ]; then
+    verdict 0 "a workload profile derives the containers recommendation, the three patterns are compared, the runbook exposes actionable controls (scale + page), and an injected 2600ms breach fired the p95 alert with a live scale-out action" "" ""
+    LO+=("Step 3: a workload profile drives a derived deployment decision, patterns compared (EO5b)")
+    LO+=("Step 3: an operational runbook with trigger->action controls, proven live by an injected breach (EO5c)")
+  else
+    verdict 1 "the workload/decision/patterns, the runbook controls, or the live breach alert is wrong" \
+      "Check the workload, decision, patterns, runbook, and inject-breach/alert logic in app/lifecycle/readiness.py." \
+      "GET /workload (measured_rps ~10, latency_sensitive, cold_start_tolerable false, penalty>target), /decision (containers, derived_from workload), /patterns (3 patterns compared, containers chosen), /runbook (5 sections + >=2 controls with a scale + a page action); POST /inject-breach?p95_ms=2600 then GET /alert must show fired true, measured_ms>threshold_ms, a latency alert with a scale action. Fix app/lifecycle/readiness.py."
+  fi
+fi
+
+# STEP 4 — maturity decision, derived from the audit, with investment-named gaps
+step_head "4" "Decide the operational maturity" \
+  "The maturity level must be DERIVED from the audit evidence, name the three ladder levels, and list gaps to scale-ready where each gap names its investment." \
+  "current managed_production derived from the audit, with investment-named gaps to scale-ready."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity"
 get_json "/lifecycle/readiness/maturity" && RAW_MAT="$GET_BODY" || RAW_MAT=""
-[ -n "$RAW_MAT" ] && emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
-if [ -z "$RAW_RUN" ] || [ -z "$RAW_ALERT" ] || [ -z "$RAW_MAT" ]; then
-  transport_fail "/lifecycle/readiness/runbook, /alert or /maturity"
+if [ -z "$RAW_MAT" ]; then
+  transport_fail "/lifecycle/readiness/maturity"
 else
-  RUN_OK=1; ALERT_OK=1; MAT_OK=1
-  # Sections present AND >=2 actionable controls: at least one scale trigger and one page trigger.
-  echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity"))) and (.controls|length>=2) and (.controls|all(has("trigger") and has("action"))) and ([.controls[].action]|any(test("scale"))) and ([.controls[].action]|any(test("page")))' >/dev/null 2>&1 || RUN_OK=0
-  # The injected breach must FIRE the alert with the mapped scale-out action.
-  echo "$RAW_ALERT" | jq -e '.fired==true and .measured_ms>.threshold_ms and (.alert|test("latency")) and (.action_taken|test("scale"))' >/dev/null 2>&1 || ALERT_OK=0
-  # Maturity must be DERIVED (references the audit), name the audit gap, and each gap must name its investment.
-  echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1) and (.derived_from|test("audit")) and (.gap_to_next|all(has("gap") and has("investment"))) and ([.gap_to_next[].gap]|any(test("audit")))' >/dev/null 2>&1 || MAT_OK=0
-  if [ "$RUN_OK" = "1" ] && [ "$ALERT_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
-    verdict 0 "the runbook exposes actionable controls (scale + page), an injected 2600ms breach fired the p95 alert with a live scale-out action, and the maturity level is derived from the audit — managed production, gaps named with their investment" "" ""
-    LO+=("Step 4: an operational runbook with executable trigger->action controls, proven live (EO5c)")
+  emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
+  if echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1) and (.derived_from|test("audit")) and (.gap_to_next|all(has("gap") and has("investment"))) and ([.gap_to_next[].gap]|any(test("audit")))' >/dev/null 2>&1; then
+    verdict 0 "the maturity level is derived from the audit — managed production, with each gap to scale-ready naming its investment" "" ""
     LO+=("Step 4: maturity derived from evidence with investment-named gaps, prototype to scale (EO5d, TO5)")
   else
-    verdict 1 "the runbook controls, the live breach alert, or the maturity decision is wrong" \
-      "Check the runbook controls, the inject-breach/alert logic, and the maturity derivation in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/runbook must return 5 sections AND controls[] (>=2, scale + page action); POST /lifecycle/readiness/inject-breach?p95_ms=2600 then GET /lifecycle/readiness/alert must show fired true, measured_ms > threshold_ms, a latency alert with a scale action; GET /lifecycle/readiness/maturity must show current managed_production, derived_from referencing the audit, and gap_to_next entries each with gap+investment incl. the audit gap. Fix app/lifecycle/readiness.py."
+    verdict 1 "the maturity decision is not evidence-derived or the gaps do not name their investment" \
+      "Check the maturity derivation and gap_to_next in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, derived_from referencing the audit, and gap_to_next entries each with gap+investment incl. the audit gap. Fix app/lifecycle/readiness.py."
   fi
 fi
 
