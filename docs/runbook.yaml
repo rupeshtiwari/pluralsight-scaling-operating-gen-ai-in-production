@@ -1,0 +1,42 @@
+# Operational runbook (Module 3, Clip 6).
+#
+# Deployment, monitoring, incident response, rollback, and capacity as concrete
+# controls. The readiness runbook endpoint and the Step 3 alert evaluator read the
+# monitoring thresholds and controls here, so the runbook is a real artifact, not
+# prose. yq-readable: `yq '.controls' docs/runbook.yaml`.
+deploy:
+  strategy: "blue/green via the canary ramp (10 -> 25 -> 50 -> 100%)"
+  gate: "each stage health-gated on the SLOs"
+
+monitoring:
+  p95_ms: 2500
+  availability_pct: 99
+  quality_pass_pct: 90
+  cost_per_1k_usd: 0.35
+  error_rate_pct: 1
+
+incident_response:
+  page_on: "an availability or quality breach"
+  diagnose: "traces -> logs -> receipts"
+  failover: "the circuit breaker"
+
+rollback:
+  action: "revert to the approved release id (prompt + model)"
+  canary_exposure_after_pct: 0
+
+capacity:
+  baseline_rps: 10
+  headroom_rps: 30
+  scale_when: "queue depth > 20 or p95 > 2000ms"
+
+# Actionable operator controls: each a concrete trigger -> action rule.
+controls:
+  - trigger: "queue_depth > 20  OR  p95 > 2000ms"
+    action: "scale out container replicas toward the 30 RPS ceiling"
+    kind: "capacity / auto-scale"
+  - trigger: "availability < 99%  OR  quality_pass < 90%"
+    action: "page the on-call operator, then diagnose traces -> logs -> receipts"
+    kind: "incident / page"
+  - trigger: "error_rate > 1% sustained"
+    action: "fail over via the circuit breaker and roll back to the approved release"
+    kind: "reliability / fail-over"

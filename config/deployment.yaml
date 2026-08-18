@@ -1,0 +1,39 @@
+# Deployment workload profile and pattern criteria (Module 3, Clip 6).
+#
+# workload_decision.py reads this file to derive the deployment pattern from the
+# measured workload. Values are a deterministic controlled-workload sample so the
+# demo reproduces the same decision on every take.
+workload:
+  window: "15 min controlled workload sample"
+  measured_rps: 9.8
+  peak_rps: 11.2
+  variance: "low — steady, not bursty"
+  observed_p95_ms: 420
+  latency_target_ms: 500       # the deployment latency requirement (NOT the 2500ms service SLO)
+  cold_start_penalty_ms: 1800  # a cold start would blow the 500ms deployment target
+
+# The three cloud-native patterns compared on the deciding factors.
+patterns:
+  - name: serverless
+    warm_latency_ms: 400
+    cold_start_ms: 1800
+    throughput: burst
+    warm_start: "cold starts"
+    ownership: "low (managed)"
+  - name: containers
+    warm_latency_ms: 420
+    cold_start_ms: 0           # always warm
+    throughput: high
+    warm_start: "always warm"
+    ownership: medium
+  - name: dedicated_gpu
+    warm_latency_ms: 180
+    cold_start_ms: 0
+    throughput: "very high"
+    warm_start: "always warm"
+    ownership: "high (ops burden)"
+
+# The operational service SLO the runbook monitors (distinct from the deployment
+# latency target above). A p95 above this fires the runbook's latency alert.
+service_slo:
+  p95_ms: 2500

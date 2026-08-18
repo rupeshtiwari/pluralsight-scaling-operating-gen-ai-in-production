@@ -57,6 +57,7 @@ from app.lifecycle import prompts as lc_prompts
 from app.lifecycle import validation as lc_validation
 from app.lifecycle import canary as lc_canary
 from app.lifecycle import readiness as lc_readiness
+from app.lifecycle import migration as lc_migration
 from app.resilience import admission, circuit
 from app.routing.payload import route_smart, smart_decision
 from app.routing.router import route
@@ -1101,6 +1102,49 @@ def lc_readiness_maturity() -> dict:
     """The maturity decision — prototype, managed production, or scale-ready — with
     the evidence and the gaps to the next level."""
     return lc_readiness.state().get("maturity", {})
+
+
+# --- Module 3 Clip 6: hands-on deprecation migration (Step 1) ---------------
+@app.post("/admin/deprecate")
+def admin_deprecate(model: str = "balanced-std@2026-04",
+                    replacement: str = "balanced-std@2026-06") -> dict:
+    """Activate the replacement adapter: route the deprecated model's traffic to
+    the replacement through the uniform contract."""
+    return lc_migration.deprecate(model, replacement)
+
+
+@app.post("/v1/completions")
+def v1_completions(body: dict | None = None, model: str | None = None) -> dict:
+    """A completion request. If it targets the deprecated model, the adapter routes
+    it to the replacement and records the migration. Accepts {"model": ...} JSON
+    (what k6 sends) or a ?model= query param."""
+    chosen = (body or {}).get("model") if isinstance(body, dict) else None
+    chosen = chosen or model or "balanced-std@2026-04"
+    return lc_migration.complete(chosen)
+
+
+@app.get("/receipts/migration")
+def receipts_migration() -> dict:
+    """The compatibility receipt aggregated from the migrated requests."""
+    return lc_migration.migration_receipt()
+
+
+# --- Module 3 Clip 6: runbook breach injection + alerts (Step 3) -------------
+@app.post("/admin/inject-latency")
+def admin_inject_latency(p95_ms: float = 2600, duration_s: int = 90) -> dict:
+    """Inject a p95 latency spike to prove the runbook fires. Defaults above the
+    SLO so the alert fires; pass ?p95_ms=2400 to watch it stay silent."""
+    out = lc_readiness.inject_breach(p95_ms)
+    out["duration_s"] = duration_s
+    out["alert_expected_in"] = "~60s"
+    return out
+
+
+@app.get("/admin/alerts")
+def admin_alerts() -> dict:
+    """Fired runbook alerts, derived from the last injected latency."""
+    a = lc_readiness.alert()
+    return {"alerts": [a] if a.get("fired") else [], "latest": a}
 
 
 @app.post("/lifecycle/readiness/inject-breach")

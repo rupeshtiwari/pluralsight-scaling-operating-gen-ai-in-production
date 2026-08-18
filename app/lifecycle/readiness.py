@@ -86,9 +86,16 @@ def run_readiness() -> dict:
             "raw": "cust-102317",
             "redacted": "cust-XXX317",
             "rule": "last 3 kept for support lookup, the rest masked",
-            "coverage_pct": 62,
-            "note": "redaction works on sampled traffic, but only 62% of requests "
-                    "are sampled — the other 38% are unverified, and that is the gap",
+            "verified_requests": 1240,
+            "total_requests": 2000,
+            "coverage_pct": 62,          # 1240 / 2000
+            "unverified_requests": 760,  # 2000 - 1240, no redaction proof
+            "required_pct": 95,
+            "gap_pp": 33,                # 95 - 62
+            "action": "scale blocked until sampling coverage reaches 95%+ — increase "
+                      "the sample rate or switch to inline redaction",
+            "note": "redaction works on sampled traffic, but only 62% of requests are "
+                    "sampled — the other 38% (760/2000) are unverified, and that is the gap",
         },
         "note": "four dimensions are production-ready; security is the one open "
                 "gap, and naming it is what makes the audit honest",
@@ -241,6 +248,17 @@ def run_readiness() -> dict:
         "evidence": [
             "observability, resilience, prompt/model versioning, canary release, "
             "and cost tracking are all in place and proven",
+        ],
+        # The seven capabilities proven across the module — each ties a prior clip's
+        # evidence into the finale, so the maturity call rests on receipts, not claims.
+        "proven_capabilities": [
+            {"capability": "observability", "evidence": "traces + logs + metrics + SLO alerts"},
+            {"capability": "resilience", "evidence": "circuit breaker + fallback + retry backoff"},
+            {"capability": "prompt versioning", "evidence": "rollback proven with a receipt trail"},
+            {"capability": "canary release", "evidence": "promotion + rollback + hold decisions"},
+            {"capability": "cost tracking", "evidence": "$0.28/1K against a $0.35 budget"},
+            {"capability": "model migration", "evidence": "adapter receipt with 4 compatibility checks"},
+            {"capability": "runbook execution", "evidence": "a latency breach triggered scale-out live"},
         ],
         "gap_to_next": _gap_to_next,
         "disposition": _current.upper(),

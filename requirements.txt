@@ -12,3 +12,5 @@ prometheus-client==0.25.0
 pytest==9.1.1
 httpx==0.28.1
 pyyaml==6.0.3
+# Rich terminal tables for the Module 3 Clip 6 readiness/deployment/maturity CLIs.
+rich==15.0.0
