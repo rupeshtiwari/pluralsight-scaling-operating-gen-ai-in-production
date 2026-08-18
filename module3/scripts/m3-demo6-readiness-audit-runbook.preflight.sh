@@ -175,32 +175,39 @@ else
   fi
 fi
 
-# STEP 4 — runbook with actionable operator controls + derived maturity decision
-step_head "4" "Inspect the operational runbook controls and decide the operational maturity" \
-  "The runbook must cover deploy, monitoring, incident response, rollback, and capacity AND expose at least two concrete operator controls as trigger -> action rules (one scaling trigger, one paging trigger); the maturity level must be DERIVED from the audit evidence with the gaps named." \
-  "five sections plus >=2 operator controls (a scale trigger and a paging trigger); then current managed_production derived from the audit, with the gaps to scale-ready."
+# STEP 4 — runbook controls, LIVE breach proof, and derived maturity decision
+step_head "4" "Inspect the runbook controls, prove one fires, and decide the maturity" \
+  "The runbook must cover deploy, monitoring, incident response, rollback, and capacity AND expose >=2 operator controls as trigger -> action rules (a scaling and a paging trigger); an injected p95 breach must fire the mapped scale-out alert LIVE; and the maturity level must be DERIVED from the audit evidence with each gap naming its investment." \
+  "five sections plus >=2 operator controls; then an injected 2600ms breach fires the p95 alert with a scale-out action; then current managed_production derived from the audit, with investment-named gaps to scale-ready."
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook"
 get_json "/lifecycle/readiness/runbook" && RAW_RUN="$GET_BODY" || RAW_RUN=""
 [ -n "$RAW_RUN" ] && emit "$(printf '%s' "$RAW_RUN" | $FMT --type readiness-runbook 2>&1)"
+# Prove the runbook is live: inject a breach above the SLO, then read the fired alert.
+show_cmd "curl -s -X POST \$API_BASE/lifecycle/readiness/inject-breach?p95_ms=2600 >/dev/null; curl -s \$API_BASE/lifecycle/readiness/alert | python3 scripts/fmt.py --type readiness-alert"
+curl -s -X POST "$API_BASE/lifecycle/readiness/inject-breach?p95_ms=2600" >/dev/null 2>&1
+get_json "/lifecycle/readiness/alert" && RAW_ALERT="$GET_BODY" || RAW_ALERT=""
+[ -n "$RAW_ALERT" ] && emit "$(printf '%s' "$RAW_ALERT" | $FMT --type readiness-alert 2>&1)"
 show_cmd "curl -s \$API_BASE/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity"
 get_json "/lifecycle/readiness/maturity" && RAW_MAT="$GET_BODY" || RAW_MAT=""
 [ -n "$RAW_MAT" ] && emit "$(printf '%s' "$RAW_MAT" | $FMT --type readiness-maturity 2>&1)"
-if [ -z "$RAW_RUN" ] || [ -z "$RAW_MAT" ]; then
-  transport_fail "/lifecycle/readiness/runbook or /maturity"
+if [ -z "$RAW_RUN" ] || [ -z "$RAW_ALERT" ] || [ -z "$RAW_MAT" ]; then
+  transport_fail "/lifecycle/readiness/runbook, /alert or /maturity"
 else
-  RUN_OK=1; MAT_OK=1
+  RUN_OK=1; ALERT_OK=1; MAT_OK=1
   # Sections present AND >=2 actionable controls: at least one scale trigger and one page trigger.
   echo "$RAW_RUN" | jq -e '.complete==true and (.sections|length==5) and ([.sections[].section]|(index("deploy") and index("monitoring") and index("incident_response") and index("rollback") and index("capacity"))) and (.controls|length>=2) and (.controls|all(has("trigger") and has("action"))) and ([.controls[].action]|any(test("scale"))) and ([.controls[].action]|any(test("page")))' >/dev/null 2>&1 || RUN_OK=0
-  # Maturity must be DERIVED (references the audit) and name the audit gap among the gaps.
-  echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1) and (.derived_from|test("audit")) and ([.gap_to_next[]]|any(test("audit")))' >/dev/null 2>&1 || MAT_OK=0
-  if [ "$RUN_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
-    verdict 0 "the runbook covers all five sections and exposes actionable operator controls (a scale trigger and a paging trigger), and the maturity level is derived from the audit — managed production, one open audit gap short of scale-ready" "" ""
-    LO+=("Step 4: an operational runbook with executable trigger->action controls (EO5c)")
-    LO+=("Step 4: maturity derived from evidence, prototype to scale (EO5d, TO5)")
+  # The injected breach must FIRE the alert with the mapped scale-out action.
+  echo "$RAW_ALERT" | jq -e '.fired==true and .measured_ms>.threshold_ms and (.alert|test("latency")) and (.action_taken|test("scale"))' >/dev/null 2>&1 || ALERT_OK=0
+  # Maturity must be DERIVED (references the audit), name the audit gap, and each gap must name its investment.
+  echo "$RAW_MAT" | jq -e '.current=="managed_production" and .disposition=="MANAGED_PRODUCTION" and ([.levels[]]|(index("prototype") and index("managed_production") and index("scale_ready"))) and (.gap_to_next|length>=1) and (.derived_from|test("audit")) and (.gap_to_next|all(has("gap") and has("investment"))) and ([.gap_to_next[].gap]|any(test("audit")))' >/dev/null 2>&1 || MAT_OK=0
+  if [ "$RUN_OK" = "1" ] && [ "$ALERT_OK" = "1" ] && [ "$MAT_OK" = "1" ]; then
+    verdict 0 "the runbook exposes actionable controls (scale + page), an injected 2600ms breach fired the p95 alert with a live scale-out action, and the maturity level is derived from the audit — managed production, gaps named with their investment" "" ""
+    LO+=("Step 4: an operational runbook with executable trigger->action controls, proven live (EO5c)")
+    LO+=("Step 4: maturity derived from evidence with investment-named gaps, prototype to scale (EO5d, TO5)")
   else
-    verdict 1 "the runbook controls are missing/incomplete or the maturity decision is not evidence-derived" \
-      "Check the runbook controls and the maturity derivation in app/lifecycle/readiness.py." \
-      "GET /lifecycle/readiness/runbook must return 5 sections AND a controls[] list (>=2) with trigger+action, including a scale action and a page action; GET /lifecycle/readiness/maturity must show current managed_production, disposition MANAGED_PRODUCTION, the three levels, derived_from referencing the audit, and the audit gap among gap_to_next. Fix app/lifecycle/readiness.py."
+    verdict 1 "the runbook controls, the live breach alert, or the maturity decision is wrong" \
+      "Check the runbook controls, the inject-breach/alert logic, and the maturity derivation in app/lifecycle/readiness.py." \
+      "GET /lifecycle/readiness/runbook must return 5 sections AND controls[] (>=2, scale + page action); POST /lifecycle/readiness/inject-breach?p95_ms=2600 then GET /lifecycle/readiness/alert must show fired true, measured_ms > threshold_ms, a latency alert with a scale action; GET /lifecycle/readiness/maturity must show current managed_production, derived_from referencing the audit, and gap_to_next entries each with gap+investment incl. the audit gap. Fix app/lifecycle/readiness.py."
   fi
 fi
 

@@ -2033,11 +2033,41 @@ def fmt_readiness_maturity(d: dict) -> str:
     for e in d.get("evidence", []):
         out.append(f"    {GRAY}• {e}{RESET}")
     out.append("")
-    out += sect("gaps to scale-ready")
+    out += sect("gaps to scale-ready  (each names the investment)")
     for g in d.get("gap_to_next", []):
-        out.append(f"    {GRAY}• {g}{RESET}")
+        if isinstance(g, dict):
+            out.append(f"  {PINK}★{RESET} {PINK}{g.get('gap')}{RESET}")
+            out.append(f"      {GRAY}investment: {g.get('investment')}{RESET}")
+        else:
+            out.append(f"    {GRAY}• {g}{RESET}")
     out.append("")
     out += star("disposition", disp, LIME)
+    out.append(f"  {GRAY}{d.get('note')}{RESET}")
+    return "\n".join(out)
+
+
+def fmt_readiness_alert(d: dict) -> str:
+    fired = d.get("fired")
+    out = [header(
+        "Prove the runbook fires — inject a breach",
+        "The injected p95 is evaluated against the monitored SLO; the mapped "
+        "scale-out action fires only on a real breach — a live trigger, not prose",
+        width=92)]
+    if not fired:
+        out += star("alert fired", "no", LIME)
+        m = d.get("measured_ms")
+        if m is not None:
+            out += _noted("measured", f"{m}ms",
+                          f"within the {d.get('threshold_ms')}ms SLO", LIME)
+        out.append(f"  {GRAY}{d.get('note')}{RESET}")
+        return "\n".join(out)
+    out += star("ALERT FIRED", d.get("alert"), PINK)
+    out += _noted("measured", f"{d.get('measured_ms')}ms",
+                  f"threshold {d.get('threshold_ms')}ms — breached", PINK)
+    out += _noted("action taken", d.get("action_taken"), "the mapped runbook control", LIME)
+    out += _noted("escalation", d.get("escalation"), "if unresolved", GRAY)
+    out += _noted("diagnosis", d.get("diagnosis_path"), "how to find root cause", GRAY)
+    out += _noted("rollback", d.get("rollback"), "the safe fallback", GRAY)
     out.append(f"  {GRAY}{d.get('note')}{RESET}")
     return "\n".join(out)
 
@@ -2120,6 +2150,7 @@ VIEWS = {
     "readiness-decision": fmt_readiness_decision,
     "readiness-patterns": fmt_readiness_patterns,
     "readiness-runbook": fmt_readiness_runbook,
+    "readiness-alert": fmt_readiness_alert,
     "readiness-maturity": fmt_readiness_maturity,
 }
 

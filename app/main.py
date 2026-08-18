@@ -1103,6 +1103,20 @@ def lc_readiness_maturity() -> dict:
     return lc_readiness.state().get("maturity", {})
 
 
+@app.post("/lifecycle/readiness/inject-breach")
+def lc_readiness_inject_breach(p95_ms: float = 2600) -> dict:
+    """Prove the runbook is live: inject a p95 latency. Defaults to a value above
+    the SLO so the alert fires; pass ?p95_ms=2400 to watch it stay silent."""
+    return lc_readiness.inject_breach(p95_ms)
+
+
+@app.get("/lifecycle/readiness/alert")
+def lc_readiness_alert() -> dict:
+    """The runbook alert derived from the last injected p95 — fired, with the
+    scale-out action, only when the injection breached the monitored SLO."""
+    return lc_readiness.alert()
+
+
 @app.get("/receipts")
 def receipts(limit: int = 5) -> dict:
     rows = postgres.latest_receipts(limit)

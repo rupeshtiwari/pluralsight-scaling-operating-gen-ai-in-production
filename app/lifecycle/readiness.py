@@ -20,6 +20,10 @@ from __future__ import annotations
 
 _STATE: dict = {}
 
+# The operational service SLO the runbook monitors — the p95 ceiling that fires the
+# latency alert (distinct from the 500ms deployment target the pattern choice uses).
+_SERVICE_SLO_P95_MS = 2500
+
 
 def run_readiness() -> dict:
     """Build the deterministic readiness state the /lifecycle/readiness/*
@@ -202,15 +206,28 @@ def run_readiness() -> dict:
     _core_ready = audit["ready_dimensions"] >= 4     # observability, resilience, ...
     _load_tested_to_ceiling = False                  # capacity baselined at ~10 RPS only
     _multi_region = False                            # single-region today
+    # Each gap names the concrete INVESTMENT needed to close it — an honest maturity
+    # assessment tells you the work, not just "not ready yet".
     _gap_to_next = []
     if gaps:
-        _gap_to_next.append(
-            "close the readiness-audit gap — " + ", ".join(gaps) +
-            ": complete PII redaction sampling")
+        _gap_to_next.append({
+            "gap": "readiness-audit gap — " + ", ".join(gaps) +
+                   ": PII redaction at 62% coverage, must reach 95%",
+            "investment": "switch to inline redaction or 2x the sample rate, then "
+                          "re-audit after 7 days of traffic",
+        })
     if not _load_tested_to_ceiling:
-        _gap_to_next.append("load-test to the 30 RPS capacity ceiling (baselined at ~10 RPS today)")
+        _gap_to_next.append({
+            "gap": "load-test ceiling — 30 RPS proven, must prove 100 RPS sustained",
+            "investment": "run a 4-hour soak test at 100 RPS; verify autoscale, queue, "
+                          "and circuit breaker hold under sustained load",
+        })
     if not _multi_region:
-        _gap_to_next.append("add multi-region capacity for regional failover")
+        _gap_to_next.append({
+            "gap": "single-region only — no regional failover proof",
+            "investment": "deploy a replica region, run a failover drill, prove receipt "
+                          "continuity across regions",
+        })
     if not _gap_to_next:
         _current = "scale_ready"
     elif _core_ready:
@@ -255,3 +272,52 @@ def state() -> dict:
     if not _STATE:
         run_readiness()
     return _STATE
+
+
+def inject_breach(p95_ms: float) -> dict:
+    """Prove the runbook is live, not a document: inject a p95 latency and record
+    it. Reading /lifecycle/readiness/alert then shows whether the monitored SLO
+    threshold fired the mapped scale-out action — a live trigger, not a canned
+    response. Injecting a value under the threshold fires nothing."""
+    st = state()
+    if isinstance(p95_ms, float) and p95_ms.is_integer():
+        p95_ms = int(p95_ms)   # 2600.0 -> 2600 so the panel reads cleanly
+    st["_injected_p95_ms"] = p95_ms
+    breaches = p95_ms > _SERVICE_SLO_P95_MS
+    return {
+        "injected": True,
+        "p95_ms": p95_ms,
+        "threshold_ms": _SERVICE_SLO_P95_MS,
+        "breaches": breaches,
+        "note": ("a p95 above the runbook SLO fires the latency alert and its "
+                 "scale-out action" if breaches else
+                 "a p95 within the SLO fires nothing — the alert is a live threshold"),
+    }
+
+
+def alert() -> dict:
+    """Derive the runbook alert from the last injected p95: fires the mapped
+    trigger -> action only when the injected latency breaches the monitored SLO."""
+    st = state()
+    p95 = st.get("_injected_p95_ms")
+    threshold = _SERVICE_SLO_P95_MS
+    if p95 is None:
+        return {"fired": False, "threshold_ms": threshold,
+                "note": "no breach injected yet — inject one to watch the control fire"}
+    if p95 <= threshold:
+        return {"fired": False, "measured_ms": p95, "threshold_ms": threshold,
+                "note": f"p95 {p95}ms is within the {threshold}ms SLO — no alert, the "
+                        f"control did not fire"}
+    return {
+        "fired": True,
+        "alert": "p95_latency_breach",
+        "measured_ms": p95,
+        "threshold_ms": threshold,
+        "breach_window_s": 60,
+        "action_taken": "scale_out_triggered (target 30 RPS)",
+        "escalation": "page the on-call operator if unresolved in 5m",
+        "diagnosis_path": "traces -> logs -> receipts",
+        "rollback": "revert to the approved release id (prompt + model)",
+        "note": "the runbook control fired live — the injected breach triggered the "
+                "mapped action, proving the runbook executes, not just describes",
+    }

@@ -36,7 +36,7 @@ capstone of assessing and operating a production GenAI system (TO5).
 | 1 | EO4d | A deprecated model retires through a replacement adapter with compatibility receipts |
 | 2 | EO5a | The audit scores scalability, observability, security, cost efficiency, and reliability |
 | 3 | EO5a, EO5b | A workload profile drives a *derived* deployment decision, and serverless, containers, and dedicated GPU are compared on the deciding factors |
-| 4 | EO5c, EO5d, TO5 | The runbook exposes executable operator controls (trigger → action) across deploy, monitoring, incident response, rollback, capacity, and the maturity level is computed from the audit evidence with the gaps named |
+| 4 | EO5c, EO5d, TO5 | The runbook exposes executable operator controls (trigger → action), an injected breach fires the mapped alert *live*, and the maturity level is computed from the audit evidence with each gap naming its investment |
 
 ## What this demo proves — and each step is unique
 
@@ -199,14 +199,20 @@ and cold-start-tolerant, this same logic would point at serverless instead.
 ### Step 4: Inspect the operational runbook and decide the operational maturity
 
 **Goal:** Read the operational runbook — not as prose, but as concrete operator controls
-(explicit `trigger → action` rules an on-call engineer can execute) — then place the
-system on the maturity ladder (prototype, managed production, or scale-ready) with a level
-that is *computed* from the audit evidence, and name the exact gaps to the next level.
+(explicit `trigger → action` rules) — then *prove one fires* by injecting a latency breach
+and watching the mapped scale-out action trigger live; finally place the system on the
+maturity ladder with a level *computed* from the audit evidence, each gap naming the
+investment to close it.
 
 ```bash
 curl -s http://localhost:8000/lifecycle/readiness/runbook | python3 scripts/fmt.py --type readiness-runbook \
   --title "Inspect the operational runbook" \
   --why "Deploy, monitoring thresholds, incident response, rollback, and capacity planning — each wired to a real control"
+# Prove the runbook is live: inject a p95 breach above the 2500ms SLO, then read the alert
+curl -s -X POST "http://localhost:8000/lifecycle/readiness/inject-breach?p95_ms=2600" >/dev/null
+curl -s http://localhost:8000/lifecycle/readiness/alert | python3 scripts/fmt.py --type readiness-alert \
+  --title "Prove the runbook fires" \
+  --why "The injected breach is evaluated against the SLO — the mapped scale-out action fires only on a real breach"
 curl -s http://localhost:8000/lifecycle/readiness/maturity | python3 scripts/fmt.py --type readiness-maturity \
   --title "Decide the operational maturity" \
   --why "Prototype, managed production, or scale-ready — an evidence-based decision with the gaps to the next level"
@@ -217,11 +223,14 @@ curl -s http://localhost:8000/lifecycle/readiness/maturity | python3 scripts/fmt
 action)**, at least two executable rules: ★ `queue_depth > 20 OR p95 > 2000ms → scale out
 container replicas`, ★ `availability < 99% OR quality_pass < 90% → page the on-call
 operator`, and ★ `error_rate > 1% sustained → fail over via the circuit breaker and roll
-back` — with ★ `runbook complete: true`. Then the maturity decision — the ladder with
-`managed_production` marked `← current`, ★ `derived from: /lifecycle/readiness/audit (open
-gaps) + capacity evidence`, and the gaps to scale-ready computed from that evidence (close
-the security audit gap, load-test to 30 RPS, add multi-region), and ★ `disposition:
-MANAGED_PRODUCTION`.
+back` — with ★ `runbook complete: true`. Then, after the injected breach, the alert —
+★ `ALERT FIRED: p95_latency_breach`, ★ `measured: 2600ms` (`threshold 2500ms — breached`),
+★ `action taken: scale_out_triggered (target 30 RPS)`, plus the escalation, diagnosis, and
+rollback path. Then the maturity decision — the ladder with `managed_production` marked
+`← current`, ★ `derived from: /lifecycle/readiness/audit (open gaps) + capacity evidence`,
+and the gaps to scale-ready, **each naming its investment**: the security audit gap (PII
+62% → 95%), the load-test ceiling (30 RPS proven → prove 100 RPS), and multi-region
+failover — with ★ `disposition: MANAGED_PRODUCTION`.
 
 **What the learner should notice:** The runbook earns its keep in the **operator controls**
 block, because those are not prose — they are executable `trigger → action` rules. `queue
@@ -229,19 +238,23 @@ depth > 20 OR p95 > 2000ms → scale out` is something an on-call engineer runs 
 without a meeting; `availability < 99% OR quality < 90% → page` and `error rate > 1% →
 fail over via the circuit breaker and roll back` are the same. That is the line between a
 real runbook and a document nobody trusts: not a wish list of practices you intend to
-adopt, but concrete triggers each wired directly to a production action. Then the
+adopt, but concrete triggers each wired directly to a production action. Then comes the
+part most demos skip — proving it. Injecting a p95 of `2600ms` pushes latency past the
+`2500ms` SLO, and the alert fires *live*: `ALERT FIRED`, `action taken:
+scale_out_triggered`. That is not a canned response — inject `2400ms` instead and no alert
+fires, because the control is a real threshold, not a screenshot. A runbook that executes
+in front of you is a runbook; a document nobody opens during an incident is not. Then the
 maturity decision, and notice it says `derived from: /lifecycle/readiness/audit` — the
 level is *computed*, not awarded. The system is not a prototype: observability,
 resilience, versioning, canary releases, and cost tracking are all proven. But it is not
 scale-ready either, and the decision proves why by reading straight from the audit — the
-same security gap you saw scored `2/4` in Step 2 is the first gap listed here, joined by
-the missing load-test to the 30 RPS ceiling and multi-region failover. Change that
-evidence and the level would change; leave the gap open and it stays at managed
-production. That is what operational maturity actually is —
-not a badge you award yourself, but a position you can defend with evidence, plus a
-concrete list of what comes next. You now have a GenAI service you can scale, observe,
-release, and operate — and, just as importantly, an honest account of exactly how ready
-it is.
+same security gap you saw scored `2/4` in Step 2 leads the list. And each gap names the
+*investment*, not just the shortfall: PII redaction 62% → 95% (switch to inline redaction
+or double the sample rate), 30 RPS proven → prove 100 RPS (a four-hour soak test), and a
+replica region with a failover drill. That is what operational maturity actually is — not
+a badge you award yourself, but a position you can defend with evidence, plus a costed
+list of what comes next. You now have a GenAI service you can scale, observe, release, and
+operate — and, just as importantly, an honest account of exactly how ready it is.
 
 ## Preflight check
 
@@ -267,7 +280,8 @@ TO5 / EO5a–d, and writes a readable log to `preflight-logs/m3-demo6-readiness-
 - `app/main.py` — the `/lifecycle/readiness/run`, `/lifecycle/readiness/deprecation`,
   `/lifecycle/readiness/audit`, `/lifecycle/readiness/workload`,
   `/lifecycle/readiness/decision`, `/lifecycle/readiness/patterns`,
-  `/lifecycle/readiness/runbook`, and `/lifecycle/readiness/maturity` endpoints
+  `/lifecycle/readiness/runbook`, `/lifecycle/readiness/inject-breach`,
+  `/lifecycle/readiness/alert`, and `/lifecycle/readiness/maturity` endpoints
 - `scripts/fmt.py` — the `readiness-deprecation` / `readiness-audit` /
   `readiness-workload` / `readiness-decision` / `readiness-patterns` /
-  `readiness-runbook` / `readiness-maturity` views
+  `readiness-runbook` / `readiness-alert` / `readiness-maturity` views
