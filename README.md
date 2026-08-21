@@ -1,6 +1,6 @@
 # Scaling & Operating Gen AI in Production
 
-**[Watch on Pluralsight](https://www.pluralsight.com/courses/scaling-operating-gen-ai-in-production)**
+[![Watch on Pluralsight](https://img.shields.io/badge/Watch_on-Pluralsight-FF1675?labelColor=2D2D2D)](https://www.pluralsight.com/courses/scaling-operating-gen-ai-in-production)
 
 Learn how to take a GenAI feature from a working prototype to a service that
 survives real traffic: intelligent multi-model routing, resilience under
