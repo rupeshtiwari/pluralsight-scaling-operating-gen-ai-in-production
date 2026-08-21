@@ -341,11 +341,19 @@ endpoints (prompt versioning, model validation, canary, readiness) are listed in
 
 | Framework / Tool | Version / Date | Where Used |
 |------------------|----------------|------------|
+| FastAPI | 0.139.0 | All modules — the AI service layer / adapter boundary |
+| Redis | 8 | Modules 1–3 — live provider conditions, routing counters, admission control |
+| PostgreSQL | 18 | Modules 1–3 — normalized request receipts (decoupling proof) |
+| Weighted & payload-based routing | — | Module 1 — multi-model load balancing with deterministic overrides |
 | OpenTelemetry | 1.43.0 | Module 2 — distributed tracing |
 | Prometheus + Grafana | 3.11.2 / 11.1.4+ | Module 2 — metrics and dashboards |
-| Grafana k6 | 1.0+ | Module 2 — load and spike testing |
+| Grafana k6 | 1.0+ | Modules 2–3 — load/spike traffic and the migration traffic run |
 | SLOs / error budgets | — | Module 2 — latency, availability, quality objectives |
 | Circuit breaker & retry patterns | — | Module 2 — resilience controls |
-| Canary release | — | Module 3 — controlled prompt/model rollout |
+| Prompt versioning & reproducible rollback | — | Module 3 — versioned prompt repo with a receipt trail |
+| Model baseline validation | pytest 9.1.1 | Module 3 — a real Pytest gate before a model update ships |
+| Canary release | — | Module 3 — controlled 10% prompt/model rollout with promote/rollback |
+| Model deprecation & migration | — | Module 3 — replacement-adapter swap with a compatibility receipt |
 | Cloud-native deployment patterns | — | Module 3 — serverless / containers / dedicated GPU trade-offs |
+| Production readiness & maturity | — | Module 3 — five-dimension audit, operational runbook, evidence-based maturity |
 | Twelve-Factor / config-driven ops | — | All modules — env-driven service, no code changes across environments |
