@@ -73,10 +73,10 @@ step.
 | Module | Demo | What You Prove | README |
 |--------|------|----------------|--------|
 | 1 ✅ | Multi-Model Routing | Put three model tiers behind one adapter contract → route by weight (prove the 10/6/4 spread straight from Redis) → route by declared complexity with deterministic overrides in both directions → back every decision with a PostgreSQL receipt → reconcile a mixed batch across API, Redis, and receipts into one operator disposition | [module1/README.md](module1/README.md) |
-| 2 | Resilience & Observability | Absorb spikes with a queue → fail fast at capacity → trip a circuit breaker → retry with backoff → fail over to a healthy model → trace, log, and measure it end to end _(planned)_ | module2/README.md |
-| 3 | LLMOps & Readiness | Version prompts → validate a model update against a baseline → run a canary → manage deprecation → audit production readiness and finalize a runbook _(planned)_ | module3/README.md |
+| 2 ✅ | Resilience & Observability | Absorb spikes with a queue → fail fast at capacity → trip a circuit breaker → retry with backoff → fail over to a healthy model → trace, log, and measure it end to end → diagnose latency, quota, cost, and quality from evidence | [module2/README.md](module2/README.md) |
+| 3 ✅ | LLMOps & Readiness | Version prompts with reproducible rollback → validate a model update against a Pytest baseline → run a 10% canary with promote/rollback → migrate off a deprecated model with a receipt → audit production readiness, derive a deployment pattern, prove the runbook fires, and decide maturity on evidence | [module3/README.md](module3/README.md) |
 
-**Start with Module 1.** Each module builds on the same service layer.
+**All three modules are complete.** Start with Module 1 — each module builds on the same service layer.
 
 ## One-Time Setup
 
@@ -222,13 +222,13 @@ All package and container versions are pinned in `requirements.txt` and
 | Concern | Module | What You See |
 |---------|--------|--------------|
 | Provider coupling | 1 | One adapter contract; app never sees a vendor payload |
-| Traffic distribution & cost | 1 | Weighted + payload routing balances cost and latency _(planned)_ |
-| Overload & quota exhaustion | 2 | Queue absorbs bursts; fail-fast returns 429 at capacity _(planned)_ |
-| Provider failure | 2 | Circuit breaker + fallback route to a healthy model _(planned)_ |
-| Blind spots | 2 | Traces, logs, metrics, and quality sampling _(planned)_ |
-| Unsafe change | 3 | Prompt/model versioning, baseline gates, canary _(planned)_ |
-| Deprecation | 3 | Adapter compatibility + receipt-backed migration _(planned)_ |
-| Operational readiness | 3 | Readiness audit, deployment choice, runbook _(planned)_ |
+| Traffic distribution & cost | 1 | Weighted + payload routing balances cost and latency |
+| Overload & quota exhaustion | 2 | Queue absorbs bursts; fail-fast returns 429 at capacity |
+| Provider failure | 2 | Circuit breaker + fallback route to a healthy model |
+| Blind spots | 2 | Traces, logs, metrics, and quality sampling |
+| Unsafe change | 3 | Prompt/model versioning, baseline gates, canary |
+| Deprecation | 3 | Adapter compatibility + receipt-backed migration |
+| Operational readiness | 3 | Readiness audit, deployment choice, runbook, maturity |
 
 ## API Reference
 
@@ -303,12 +303,13 @@ endpoints (prompt versioning, model validation, canary, readiness) are listed in
 │   │   └── m1-demo6-routing-receipts-and-disposition.md  receipts/counters disposition ✅
 │   └── scripts/                 demo_up.sh, demo_down.sh, capture, preflight
 ├── module2/                     Module 2: Reliability + observability
-│   ├── README.md                module index → 6 clips
-│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5 ✅ · clip6 (planned)
-│   └── scripts/                 demo_up.sh, demo_down.sh, clip2/clip3/clip5 preflight
-├── module3/                     Module 3: LLMOps + readiness (planned)
-│   ├── README.md                module index → 6 clips
-│   └── demo/                     clip2, clip3, clip5, clip6 (planned)
+│   ├── README.md                module index → 6 clips (2 presentation, 4 demo)
+│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5 ✅ · clip6 ✅
+│   └── scripts/                 demo_up.sh, demo_down.sh, capture, clip2/3/5/6 preflight
+├── module3/                     Module 3: LLMOps + readiness
+│   ├── README.md                module index → 6 clips (2 presentation, 4 demo)
+│   ├── demo/                     clip2 ✅ · clip3 ✅ · clip5 ✅ · clip6 ✅
+│   └── scripts/                 demo_up.sh, demo_down.sh, capture, clip2/3/5/6 preflight
 │
 ├── app/                         FastAPI AI service layer
 │   ├── main.py                  endpoints
@@ -321,10 +322,15 @@ endpoints (prompt versioning, model validation, canary, readiness) are listed in
 ├── scripts/
 │   ├── fmt.py                   Pluralsight-branded output formatter
 │   ├── ensure-ready.sh          readiness check (auto-starts Docker Desktop)
-│   └── module1-demo-reset.sh    clean-state reset for Module 1
+│   ├── readiness_audit.py       rich CLIs for the Module 3 readiness finale
+│   ├── workload_decision.py       (audit, workload decision, maturity, receipts)
+│   ├── maturity_check.py
+│   ├── ops_view.py
+│   └── moduleN-demo-reset.sh    clean-state reset, one per module
 │
 ├── data/payloads/               request payloads for the demos
-├── docs/                        reusable operator artifacts
+├── config/deployment.yaml       measured workload profile + deployment patterns (M3)
+├── docs/                        reusable operator artifacts (incl. runbook.yaml)
 ├── environment-setup/setup.sh   one installer for every dependency
 ├── requirements.txt             pinned dependencies
 ├── Dockerfile                   container build
